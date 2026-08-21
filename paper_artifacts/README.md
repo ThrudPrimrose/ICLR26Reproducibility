@@ -49,9 +49,47 @@ per call. On the same token spend, gpt-oss with skills reached **130** kernels w
 reached **192** (`figures/coverage.png`). Reporting only `solved / 242` would have published a
 throughput artifact as a capability claim.
 
-`figures/speedup_ecdf.png` shows performance as a distribution rather than a level: the median
-speedup is 1.00x for six of seven arms while the tail reaches 12.5x, so any summary statistic of
-the centre reports "no effect" and hides the result.
+## Performance
+
+`figures/fastp.png` is the headline performance figure: fast_p, the fraction of matched problems
+that are both correct and at least p times faster. At p=1 it is the success rate, so one curve
+carries correctness and speed together and cannot be gamed by returning a correct but unoptimised
+kernel. `figures/speedup_ecdf.png` shows the raw distribution, faceted by language.
+
+| pair | fast_1 | fast_2 | fast_4 |
+|---|---|---|---|
+| Qwen3-Coder-30B - C | 73.3 -> 74.2 | 8.8 -> 6.0 | 5.1 -> 2.3 |
+| gpt-oss-120b - C | 26.7 -> 37.1 | 6.7 -> 8.6 | 3.8 -> 1.9 |
+| gpt-oss-120b - Fortran | 26.2 -> 21.4 | 3.6 -> 2.4 | 0.0 -> 1.2 |
+
+Skills raise fast_1 on gpt-oss C but lower fast_4 in two of three pairs: more answers are correct,
+fewer are aggressively optimised. At fast_4 that is 11 problems against 5 out of 217, so the
+direction is suggestive and the magnitude is not.
+
+**Caveat on the speedup column.** 512 of 801 submissions report exactly 1.000000, and the
+`baseline_ns` / `native_ns` recorded beside them do not reproduce it (one row is 1.29x by its own
+timings, another 0.75x, both stored as 1.00). Only 90 distinct speedup values occur across 801
+submissions, on the grid 1/0.99, 1/0.98, 1/0.97, so the ratio is rounded to two decimals before
+inversion. The likely explanation is that `/submit` re-times on a second seed and `speedup` comes
+from that measurement rather than from the stored ns columns, but this has not been confirmed
+against the harness. If the value is floored at 1.0, the mass at x=1 in both performance figures is
+a property of the metric rather than of the generated code. Confirm before publishing a speedup
+claim.
+
+## Does the skills packet cause compile failures? No -- it prevents them
+
+| pair | build_error, off -> on |
+|---|---|
+| Qwen3-Coder-30B - C | 3.6% -> 2.7% |
+| gpt-oss-120b - C | 7.6% -> 7.2% |
+| gpt-oss-120b - Fortran | 22.4% -> 17.6% |
+
+Build errors fall in every pair, most on Fortran. What rises instead is timeouts and wrong
+answers: on Qwen C, timeouts go 3.4% -> 5.2% and incorrect 7.5% -> 9.6%. That is consistent with
+prompt length rather than bad advice -- the packet is 23,249 characters against 93, so agents spend
+more of a fixed budget reading and less iterating. The skills teach OpenMP (13 `#pragma omp` and 16
+`parallel for` mentions in the C packet; `openacc` and, for Fortran, `doconcurrent-fortran` are
+inlined too), and the effect shows up as a build-error reduction rather than as more speedup.
 
 ## Limitations
 

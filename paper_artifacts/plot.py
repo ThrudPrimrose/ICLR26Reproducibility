@@ -231,6 +231,68 @@ def matched(data_dir: pathlib.Path, out: pathlib.Path) -> None:
     print(f"  {out}.png / .svg")
 
 
+def fastp(data_dir: pathlib.Path, out: pathlib.Path) -> None:
+    """fast_p over the matched subset: fraction of problems solved AND at least p times faster.
+
+    At p=1 this is the success rate, so one curve carries correctness and performance together.
+    Computed from the per-problem best correct submission, on the kernels both arms of a pair
+    reached, so the two sides face identical problems.
+    """
+    with (data_dir / "submissions.csv").open() as handle:
+        subs = [r for r in csv.DictReader(handle) if r["speedup"] and r["suspect"] == "0"]
+    with (data_dir / "calls.csv").open() as handle:
+        reached: dict[str, set[str]] = {}
+        for row in csv.DictReader(handle):
+            reached.setdefault(row["arm"], set()).add(row["benchmark"])
+    best: dict[str, dict[str, float]] = {}
+    for r in subs:
+        d = best.setdefault(r["arm"], {})
+        d[r["benchmark"]] = max(d.get(r["benchmark"], 0.0), float(r["speedup"]))
+
+    with (data_dir / "matched.csv").open() as handle:
+        pairs = list(csv.DictReader(handle))
+    languages = sorted({r["language"] for r in pairs})
+    fig, axes = plt.subplots(1, len(languages), figsize=(7.6, 3.4), sharey=True, squeeze=False)
+    grid = [1.0 + 0.02 * i for i in range(0, 350)]
+    for ax, language in zip(axes[0], languages, strict=True):
+        for row in [r for r in pairs if r["language"] == language]:
+            common = reached[row["arm_off"]] & reached[row["arm_skills"]]
+            for side, arm in (("off", row["arm_off"]), ("skills", row["arm_skills"])):
+                curve = [sum(1 for b in common if best.get(arm, {}).get(b, 0.0) >= p) / len(common) for p in grid]
+                ax.plot(grid,
+                        curve,
+                        linewidth=2.0,
+                        color=MODEL_COLOR[row["model"]],
+                        linestyle="-" if side == "off" else "--",
+                        label=f"{LABEL[row['model']]} - skills {'on' if side == 'skills' else 'off'}"
+                        f" (n={len(common)})")
+        ax.axvline(2.0, color=MUTED, linewidth=1.0, linestyle=":", zorder=1)
+        ax.text(2.06, 0.02, "p=2", fontsize=7, color=MUTED)
+        ax.set_xscale("log")
+        ax.set_xticks([1, 2, 4, 8])
+        ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+        # Log minor ticks otherwise render as 3x10^0, which reads as a different unit.
+        ax.get_xaxis().set_minor_formatter(matplotlib.ticker.NullFormatter())
+        ax.set_xlabel("speedup threshold p")
+        ax.set_title(language.upper() if language == "c" else language.capitalize(), loc="left", pad=6)
+        ax.grid(True, zorder=0)
+        ax.set_axisbelow(True)
+        ax.legend(frameon=False, fontsize=7, loc="upper right", bbox_to_anchor=(1.0, 1.0))
+    axes[0][0].set_ylabel("fast_p  (solved and >= p times faster)")
+    axes[0][0].set_ylim(0, 1.0)
+    fig.suptitle("fast_p on matched problems", x=0.012, ha="left", fontsize=10)
+    fig.text(0.012,
+             -0.02, "fast_1 is the success rate; the gap between the curves is how much of "
+             "that success is actually fast",
+             fontsize=7,
+             color=MUTED)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    for suffix in ("png", "svg"):
+        fig.savefig(out.with_suffix(f".{suffix}"), bbox_inches="tight")
+    plt.close(fig)
+    print(f"  {out}.png / .svg")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=pathlib.Path, default=pathlib.Path("data"))
@@ -240,6 +302,7 @@ def main() -> int:
     style()
 
     matched(args.data, args.out / "matched")
+    fastp(args.data, args.out / "fastp")
     rows = read_summary(args.data / "summary.csv")
     paired_bars(rows, "success_rate", 100.0, "solved / 242 problems (%)", "Success rate at a fixed budget (yield)",
                 "{:.1f}", args.out / "success")

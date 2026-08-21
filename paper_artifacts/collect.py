@@ -182,7 +182,7 @@ def summarise(calls: list[list], submissions: list[list]) -> list[dict[str, obje
     return out
 
 
-def matched_pairs(calls: list[list]) -> list[dict[str, object]]:
+def matched_pairs(calls: list[list], submissions: list[list]) -> list[dict[str, object]]:
     """Per (model, language), compare the two arms only on kernels BOTH of them reached.
 
     Arms covered different amounts of the set, so solved/242 mixes capability with throughput and
@@ -199,6 +199,16 @@ def matched_pairs(calls: list[list]) -> list[dict[str, object]]:
         reached[arm].add(str(rec["benchmark"]))
         if rec["route"] == "submit" and rec["status"] == "ok":
             solved[arm].add(str(rec["benchmark"]))
+
+    # fast_p: fraction of problems solved AND reaching speedup >= p. At p=1 it is the success
+    # rate, so one metric carries correctness and performance together and cannot be gamed by
+    # returning a correct but unoptimised kernel.
+    best: dict[str, dict[str, float]] = collections.defaultdict(dict)
+    for row in submissions:
+        rec = dict(zip(SUBMISSION_COLUMNS, row, strict=True))
+        if rec["speedup"] and not rec["suspect"]:
+            arm, bench = str(rec["arm"]), str(rec["benchmark"])
+            best[arm][bench] = max(best[arm].get(bench, 0.0), float(rec["speedup"]))
 
     cells: dict[tuple[str, str], dict[str, str]] = collections.defaultdict(dict)
     for arm, (model, language, skills) in meta.items():
@@ -238,6 +248,9 @@ def matched_pairs(calls: list[list]) -> list[dict[str, object]]:
             "only_skills": only_on,
             "discordant": n_disc,
             "mcnemar_p": round(p_value, 4),
+            **{f"fast{p:g}_{side}": round(
+                sum(1 for b in common if best[arm].get(b, 0.0) >= p) / len(common), 4)
+               for p in (1.0, 2.0, 4.0) for side, arm in (("off", off), ("skills", on))},
         })
     return out
 
@@ -270,7 +283,7 @@ def main() -> int:
     write_csv(args.out / "calls.csv", CALL_COLUMNS, all_calls)
     write_csv(args.out / "submissions.csv", SUBMISSION_COLUMNS, all_submissions)
 
-    matched = matched_pairs(all_calls)
+    matched = matched_pairs(all_calls, all_submissions)
     if matched:
         columns = list(matched[0])
         write_csv(args.out / "matched.csv", columns, [[r[c] for c in columns] for r in matched])
