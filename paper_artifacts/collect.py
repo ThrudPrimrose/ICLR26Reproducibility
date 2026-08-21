@@ -117,21 +117,27 @@ def summarise(calls: list[list], submissions: list[list]) -> list[dict[str, obje
     for row in calls:
         rec = dict(zip(CALL_COLUMNS, row, strict=True))
         arm = by_arm.setdefault(
-            str(rec["arm"]), {
+            str(rec["arm"]),
+            {
                 "arm": rec["arm"],
                 "model": rec["model"],
                 "language": rec["language"],
                 "skills": rec["skills"],
                 "job": rec["job"],
                 "calls": 0,
-                "tokens": 0,
+                # Per-kernel HIGH WATER, not a running sum: the tokens field on a judge call is the
+                # agent's CUMULATIVE usage at that moment, so adding the calls up counts the same
+                # tokens once per call. The last call on a kernel is what that kernel cost.
+                "spend": collections.defaultdict(int),
                 "attempted": set(),
                 "solved": set(),
                 "submits": 0,
                 "submits_ok": 0
             })
         arm["calls"] = int(arm["calls"]) + 1
-        arm["tokens"] = int(arm["tokens"]) + int(rec["tokens"] or 0)
+        spend = arm["spend"]
+        key = str(rec["benchmark"])
+        spend[key] = max(spend[key], int(rec["tokens"] or 0))  # type: ignore[index]
         arm["attempted"].add(rec["benchmark"])  # type: ignore[union-attr]
         if rec["route"] == "submit":
             arm["submits"] = int(arm["submits"]) + 1
@@ -149,6 +155,8 @@ def summarise(calls: list[list], submissions: list[list]) -> list[dict[str, obje
     for name, arm in by_arm.items():
         values = sorted(speedups[name])
         solved = len(arm["solved"])  # type: ignore[arg-type]
+        reached = len(arm["attempted"])  # type: ignore[arg-type]
+        tokens = sum(arm["spend"].values())  # type: ignore[union-attr]
         out.append({
             "arm": name,
             "model": arm["model"],
@@ -156,7 +164,7 @@ def summarise(calls: list[list], submissions: list[list]) -> list[dict[str, obje
             "skills": arm["skills"],
             "job": arm["job"],
             "problems": PROBLEM_COUNT,
-            "attempted": len(arm["attempted"]),  # type: ignore[arg-type]
+            "attempted": reached,
             "solved": solved,
             "success_rate": round(solved / PROBLEM_COUNT, 4),
             # Two denominators, because they answer different questions and can disagree.
@@ -165,12 +173,16 @@ def summarise(calls: list[list], submissions: list[list]) -> list[dict[str, obje
             # call, so that arm reached 130 problems where its pair reached 192 on the same token
             # spend. Reporting only solved/242 would read as "skills hurt" when the arm simply got
             # through less of the set.
-            "success_rate_attempted": round(solved / len(arm["attempted"]), 4) if arm["attempted"] else 0.0,
+            "success_rate_attempted": round(solved / reached, 4) if reached else 0.0,
             "calls": arm["calls"],
             "submits": arm["submits"],
             "submits_ok": arm["submits_ok"],
-            "tokens": arm["tokens"],
-            "tokens_per_solved": int(int(arm["tokens"]) / solved) if solved else 0,
+            "tokens": tokens,
+            # The budget question: what one kernel costs an arm from first turn to last grade. This
+            # is the term the skills packet moves, and it is why the two success denominators
+            # disagree -- a dearer kernel means fewer kernels reached at a fixed budget.
+            "tokens_per_kernel": int(tokens / reached) if reached else 0,
+            "tokens_per_solved": int(tokens / solved) if solved else 0,
             "speedup_n": len(values),
             "speedup_median": round(values[len(values) // 2], 4) if values else 0.0,
             "speedup_mean": round(sum(values) / len(values), 4) if values else 0.0,
@@ -248,9 +260,11 @@ def matched_pairs(calls: list[list], submissions: list[list]) -> list[dict[str, 
             "only_skills": only_on,
             "discordant": n_disc,
             "mcnemar_p": round(p_value, 4),
-            **{f"fast{p:g}_{side}": round(
-                sum(1 for b in common if best[arm].get(b, 0.0) >= p) / len(common), 4)
-               for p in (1.0, 2.0, 4.0) for side, arm in (("off", off), ("skills", on))},
+            **{
+                f"fast{p:g}_{side}": round(sum(1 for b in common if best[arm].get(b, 0.0) >= p) / len(common), 4)
+                for p in (1.0, 2.0, 4.0)
+                for side, arm in (("off", off), ("skills", on))
+            },
         })
     return out
 

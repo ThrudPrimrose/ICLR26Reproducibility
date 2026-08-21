@@ -1,4 +1,4 @@
-"""Render the three paper figures from data/*.csv.
+"""Render the paper figures from data/*.csv.
 
 Form follows the job each metric does:
 
@@ -8,6 +8,11 @@ Form follows the job each metric does:
            entire result. An ECDF on a log axis shows the whole distribution and needs no binning.
   tokens   cost. Totals are not comparable across models that solved different numbers of
            problems, so this plots tokens per SOLVED problem.
+  cost     the mechanism behind the two disagreeing success denominators, in two bars each:
+           tokens per KERNEL is what the skills packet moves, coverage is what that buys. They are
+           plotted as a pair because neither is a finding on its own -- a dearer kernel is only a
+           problem because the budget is fixed, and fewer kernels reached is only explained by the
+           price going up.
 
 Colour identifies the model and nothing else; the skills condition is carried by fill and line
 style, so a reader who cannot separate the hues still reads the comparison. Palette validated with
@@ -119,7 +124,14 @@ def paired_bars(rows: list[dict[str, str]], field: str, scale: float, ylabel: st
         plt.Rectangle((0, 0), 1, 1, facecolor="white", edgecolor=INK, hatch="///", linewidth=1.4),
         plt.Rectangle((0, 0), 1, 1, facecolor=INK, edgecolor=INK, linewidth=1.4)
     ]
-    ax.legend(handles, ["skills off", "skills on"], frameon=False, loc="upper right", fontsize=8)
+    # On the TITLE row, not inside the axes: these bars ascend left-to-right in most figures,
+    # so an in-axes legend lands on the tallest pair and its delta label.
+    ax.legend(handles, ["skills off", "skills on"],
+              frameon=False,
+              loc="lower right",
+              bbox_to_anchor=(1.0, 1.0),
+              ncol=2,
+              fontsize=8)
     fig.text(0.012,
              0.015,
              "bold value above each pair is the skills-on minus skills-off delta",
@@ -312,6 +324,8 @@ def main() -> int:
                 "Coverage: how much of the set each arm got through", "{:.0f}", args.out / "coverage")
     paired_bars(rows, "tokens_per_solved", 1e-6, "million tokens per solved problem", "Token cost per solved problem",
                 "{:.1f}", args.out / "tokens")
+    paired_bars(rows, "tokens_per_kernel", 1e-6, "million tokens per kernel reached",
+                "What one kernel costs: the price the skills packet moves", "{:.2f}", args.out / "cost_per_kernel")
     speedup_ecdf(args.data, args.out / "speedup_ecdf")
     return 0
 

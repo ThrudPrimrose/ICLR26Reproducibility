@@ -4,8 +4,11 @@ Reproducibility artifact. Every number and figure in the paper is derived from `
 `plot.py`; `data/` itself is derived from the judge databases by `collect.py`.
 
 ```bash
-./reproduce.sh          # figures/ from data/ -- needs only Python + matplotlib
+./reproduce.sh          # figures/ from data/ -- needs Python >= 3.10 + matplotlib
 ```
+
+The skill packet that is the treatment in every skills-on arm lives in `../skill_history/`: one
+directory per version, with the ledger of what changed and what the run said about it.
 
 ## What was run
 
@@ -43,11 +46,31 @@ Three denominators are reported because they disagree, and the disagreement is i
 - **matched subset** (`figures/matched.png`) -- the only fair comparison, scoring both arms on the
   kernels *both* reached.
 
-The cause is coverage, not capability. The skills packet is inlined into the prompt, making the
-`task` field **23,249 characters against 93** -- about 250x larger -- which costs ~33% more tokens
-per call. On the same token spend, gpt-oss with skills reached **130** kernels where its pair
-reached **192** (`figures/coverage.png`). Reporting only `solved / 242` would have published a
-throughput artifact as a capability claim.
+The cause is coverage, not capability, and the mechanism is prompt length.
+
+The skills packet is inlined into the prompt, making the `task` field **22,791 characters against
+93**. A prompt is re-read on every agent turn, so the packet is charged **once per turn, not once
+per task**. Measured on the gpt-oss-120b C pair (`figures/cost_per_kernel.png`):
+
+| | tokens per kernel | kernels reached |
+|---|---|---|
+| skills off | 1.86M | 192 |
+| skills on | 2.28M | 130 |
+
+The 418k difference is **~72x the packet's own token count** -- the packet was paid about
+seventy-two times per kernel. At a fixed budget that buys 62 fewer kernels, and `solved / 242`
+records the shortfall as if it were incapability. Reporting only that denominator would have
+published a throughput artifact as a capability claim.
+
+The packet was cut by ~40% in response; `../skill_history/` holds every version of the packet and
+the ledger of what changed and why. The confound is reduced by that much and not removed, so the
+matched subset stays the honest comparison.
+
+**A larger effect than skills sits underneath this.** `score` records nothing; only `submit` earns
+a grade. **136 of the 192 kernels the gpt-oss C arm reached (71%) were scored and never submitted**
+-- worked on, then lost. Across all arms only 18 of 608 kernels ever had a last submission worse
+than an earlier one, so the protocol failure is non-submission, not bad stopping. Any comparison of
+models on `solved / 242` reads submission discipline as much as optimization skill.
 
 ## Performance
 
@@ -86,10 +109,15 @@ claim.
 
 Build errors fall in every pair, most on Fortran. What rises instead is timeouts and wrong
 answers: on Qwen C, timeouts go 3.4% -> 5.2% and incorrect 7.5% -> 9.6%. That is consistent with
-prompt length rather than bad advice -- the packet is 23,249 characters against 93, so agents spend
-more of a fixed budget reading and less iterating. The skills teach OpenMP (13 `#pragma omp` and 16
-`parallel for` mentions in the C packet; `openacc` and, for Fortran, `doconcurrent-fortran` are
-inlined too), and the effect shows up as a build-error reduction rather than as more speedup.
+prompt length rather than bad advice: agents spend more of a fixed budget reading and less
+iterating, and iteration is where speedup comes from. The skills teach OpenMP (13 `#pragma omp` and
+16 `parallel for` mentions in the C packet); the effect shows up as a build-error reduction rather
+than as more speedup.
+
+One page was pure overhead. `openacc` (2,141 chars of every prompt, ~40k tokens per kernel at the
+turn multiplier above) opens by saying that no submission build in this harness passes `-fopenacc`
+or `-acc` -- a page whose whole subject is unreachable on a CPU image. It is now gated on the
+hardware image and no longer ships. `doconcurrent-fortran` was merged into `lang-fortran`.
 
 ## Limitations
 
@@ -114,6 +142,10 @@ data/matched.csv         paired comparison on the common subset, with McNemar p
 problems/                the exact problem sets, skills packet inlined
 experiments/<arm>/       arm.env, submit.sh, README.md, per-arm results
 ```
+
+`tokens` on a judge call is the agent's CUMULATIVE usage at that moment, so per-kernel cost is the
+LAST call's value, not the sum of the calls. `collect.py` takes the high-water mark per kernel;
+summing would multiply the totals about fourfold.
 
 ## Raw data
 
