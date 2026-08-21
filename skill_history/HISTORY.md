@@ -20,7 +20,7 @@ Characters in the packet one agent reads, per language.
 | v4 | 2026-08-11 | `ca2be2a7` | 12,284 | 13,145 | 13,961 |
 | **v4.1 as-run** | 2026-08-19 | `ad5b1b46` | **22,791** | 23,669 | **27,939** |
 | v5 | 2026-08-21 | `681599ad` | 13,703 | 15,091 | 16,872 |
-| v6 | 2026-08-21 | `a0623e53` | 8,803 | 9,924 | 10,492 |
+| v6 | 2026-08-21 | `564d3fb7` | 9,360 | 10,294 | 10,622 |
 
 The C packet quadrupled between v2 and the version that actually ran, by accretion, and nothing
 measured the cost side until the campaign was over. Only C and Fortran were run; the C++ column is
@@ -73,8 +73,14 @@ the same fact was paid two to four times per prompt.
 | main prompt corrected | it claimed a scored-but-unsubmitted version "counts as the submission" (false -- `score` records nothing; the likely cause of the 71% non-submission) and that build flags pass unfiltered (false -- only `-I -D -l -L` survive) |
 | `v6` records `main-prompt-hints` beside the packet | the hints ride the prompt every turn exactly like the packet, so the record carries them |
 
-The v6 packet totals above INCLUDE the 1,872-char hints block; the task-field packet alone is
-C 6,931 / C++ 8,052 / Fortran 8,620.
+The v6 packet totals above INCLUDE the ~2k-char hints block; the task-field packet alone is
+C 7,384 / C++ 8,318 / Fortran 8,646. After review, v6 also dropped the lang pages' harness-facts
+blocks entirely (the task text already prints signature, flags and scoring -- and its C dialect
+bullet was STALE at -std=c17 while the judge builds c23, the drift that comes from stating one
+fact in two places), corrected the over-broad "symbols are int64_t" claim, added a "what the
+dialect allows" section for C, and led the C++ <execution> section with "prefer par_unseq when
+legal". The build list is fully inert on llr5 (grading.allow_agent_build_tokens=false): even
+-I/-D/-l/-L are dropped, so no page or prompt teaches flags at all.
 
 ## What this does NOT settle
 
