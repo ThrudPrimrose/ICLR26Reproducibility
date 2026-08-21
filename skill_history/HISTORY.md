@@ -20,6 +20,7 @@ Characters in the packet one agent reads, per language.
 | v4 | 2026-08-11 | `ca2be2a7` | 12,284 | 13,145 | 13,961 |
 | **v4.1 as-run** | 2026-08-19 | `ad5b1b46` | **22,791** | 23,669 | **27,939** |
 | v5 | 2026-08-21 | `681599ad` | 13,703 | 15,091 | 16,872 |
+| v6 | 2026-08-21 | `a0623e53` | 8,803 | 9,924 | 10,492 |
 
 The C packet quadrupled between v2 and the version that actually ran, by accretion, and nothing
 measured the cost side until the campaign was over. Only C and Fortran were run; the C++ column is
@@ -59,9 +60,25 @@ an ABI pointer. The compile gate checks 8 examples where it checked 6, and
 `tests/test_skill_content.py::test_the_skills_packet_for_one_language_stays_inside_its_budget`
 fails the build if a packet passes 18,000 characters, so the growth cannot return by accretion.
 
+## What changed in v6
+
+Same day as v5, after review: v5 was still written page-by-page as if each page stood alone, so
+the same fact was paid two to four times per prompt.
+
+| change | why |
+|---|---|
+| `openmp` split into `openmp-c` / `openmp-cpp` / `openmp-fortran` | the generic page's examples were all C, so every Fortran agent read a third of a page it could not paste; each language now ships only its own spelling and build errors |
+| `loopnest` + `memory` + `vectorization` + `parallelism` deleted | merged into `containers/agent/hints.md` (~1.9k chars), injected into the MAIN prompt via `{{HINTS}}` when `AGENT_HINTS_FILE` is set -- main-prompt material with a config knob, not a skill |
+| lang pages cut to language-specific facts | the "Judge realities" and "Tools" blocks were near-verbatim x3 and duplicated the main prompt; harness-compile detail reduced to one flags line |
+| main prompt corrected | it claimed a scored-but-unsubmitted version "counts as the submission" (false -- `score` records nothing; the likely cause of the 71% non-submission) and that build flags pass unfiltered (false -- only `-I -D -l -L` survive) |
+| `v6` records `main-prompt-hints` beside the packet | the hints ride the prompt every turn exactly like the packet, so the record carries them |
+
+The v6 packet totals above INCLUDE the 1,872-char hints block; the task-field packet alone is
+C 6,931 / C++ 8,052 / Fortran 8,620.
+
 ## What this does NOT settle
 
-Shortening is proportional, not curative. At 14 kB the C packet still costs on the order of 260k
+Shortening is proportional, not curative. Even at v6's ~9 kB the C packet+hints still cost on the order of 170k
 tokens per kernel, so a skills arm still reaches fewer kernels than its control at equal wall-clock.
 Comparing on the matched subset stays the honest reading; equalising the token BUDGET rather than
 the wall-clock would remove the confound outright, and v5 has no measured verdict until it is run.

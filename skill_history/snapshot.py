@@ -21,7 +21,8 @@ import subprocess
 HERE = pathlib.Path(__file__).resolve().parent
 HEAD = re.compile(r"(?m)^## Skill: (\S+)$")
 #: The pages that can appear in a packet. A version that lacks one simply has no file for it.
-PACKET_PAGES = ("lang-c", "lang-cpp", "lang-fortran", "openmp", "openacc", "doconcurrent-fortran", "stdpar-cpp")
+PACKET_PAGES = ("lang-c", "lang-cpp", "lang-fortran", "openmp", "openmp-c", "openmp-cpp", "openmp-fortran", "openacc",
+                "doconcurrent-fortran", "stdpar-cpp")
 #: Which pages make up the packet for a language, per version, for the INDEX totals.
 LANGUAGES = ("c", "cpp", "fortran")
 
@@ -78,11 +79,22 @@ def from_git(repo: pathlib.Path, commit: str) -> dict[str, dict[str, str]]:
         lang_page = f"lang-{language}"
         if lang_page not in bodies:
             continue
-        # The model pages a language can spell, in the order make_problems.py inlines them.
-        models = [p for p in sorted(bodies) if p in ("openmp", "openacc", "stdpar-cpp", "doconcurrent-fortran")]
-        models = [p for p in models if not p.endswith("-fortran") or language == "fortran"]
-        models = [p for p in models if p != "stdpar-cpp" or language == "cpp"]
+        # The model pages a language can spell, in the order make_problems.py inlines them. A page
+        # with a language suffix (openmp-c, stdpar-cpp, doconcurrent-fortran) belongs to that
+        # language alone; a bare page (openmp, openacc) applied to every language of its era.
+        def applies(page: str) -> bool:
+            for lang in ("fortran", "cpp", "c"):
+                if page.endswith(f"-{lang}"):
+                    return lang == language
+            return True
+
+        models = [p for p in sorted(bodies) if p not in ("lang-c", "lang-cpp", "lang-fortran") and applies(p)]
         out[language] = {name: bodies[name] for name in [lang_page] + models}
+        # v6 on: the general-optimization hints ride in the MAIN prompt ({{HINTS}}), charged per
+        # turn exactly like the packet, so the record carries them beside it.
+        hints = strip_frontmatter(show(repo, commit, "containers/agent/hints.md"))
+        if hints:
+            out[language]["main-prompt-hints"] = hints
     return out
 
 

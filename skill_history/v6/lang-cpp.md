@@ -1,0 +1,69 @@
+# lang-cpp
+
+Score = MULTI-CORE speedup vs a SERIAL same-toolchain build. Threading: the openmp-cpp page, or a
+parallel algorithm below -- one spelling per loop.
+
+## Harness facts
+
+- Flags (fixed, also shown in the main prompt): `g++ -std=c++23 -O3 -march=native -fopenmp` plus
+  the strict-FP set. `-ffast-math` is never on -- reassociation is yours to authorize per loop and
+  must stay inside tolerance. LLVM 22 (`clang++`) via the submission's `compiler` field.
+- `<execution>` asks nothing of you: the judge finds oneTBB and appends `-ltbb` to every C++ link.
+  Declare no library.
+- The signature is fixed and already spells `__restrict__`; keep every qualifier. `workspace` may
+  be NULL and `workspace_size` 0 unless you asked via `workspace_bytes` -- check both. It is the
+  only 256B-aligned buffer.
+
+## The expensive mistakes
+
+1. **Dropping the stub's include block.** The file opens with `<cstdint> ... <execution> <omp.h>`
+   and the signature is spelled in `std::int64_t`. Pasting back only the function loses the
+   headers and dies on the signature -- the LARGEST build failure on record (71 of 81 across two
+   C++ arms). **Edit in place. Never replace the whole file.**
+2. **Claiming alignment on an ABI pointer.** `assume_aligned` or an OpenMP `aligned(p:...)` clause
+   on a judge input pointer SIGSEGVs at vector width. Inputs carry NATURAL alignment only; the
+   workspace and storage you allocate yourself are fair game.
+3. **Rewriting a loop must not change WHICH elements it writes.** A hand-unrolled
+   `i < n - 3; i += 4` body stops at the last whole group on purpose; rerolling to `i < n` writes
+   elements the reference does not. Sizes are fuzzed, so `n % 4 != 0` is the normal case.
+
+## Parallel algorithms (`<execution>`)
+
+`par` / `par_unseq` are genuinely parallel here -- same standing as an OpenMP directive, and the
+same independence PROMISE: a recurrence or colliding indexed write under a policy races and
+returns wrong answers with no diagnostic. Classify the loop first (openmp-cpp bins).
+
+- Say what the loop means: `transform`, `reduce`, `transform_reduce`, `inclusive_scan` /
+  `exclusive_scan` (the parallel spelling of a running sum), `for_each` over an index view.
+  `accumulate` / `partial_sum` are ordered by definition and take no policy.
+- `par_unseq` over `par` where the body allows it. `reduce`/`transform_reduce` reassociate FP --
+  that is what makes them parallel; `score` is the check.
+- The element callable must be self-contained: no allocation, no locks, no shared mutable capture,
+  no throwing.
+- Contiguous random-access iterators only -- raw pointers or `std::span`. One policy call per
+  loop, hoisted out of any enclosing loop.
+
+```cpp
+double s = std::transform_reduce(std::execution::par_unseq, w, w + n, v, 0.0, std::plus<>{},
+                                 std::multiplies<>{});
+```
+
+## Writing fast C++
+
+- **Row-major**: the innermost loop walks the LAST index, unit stride.
+- **`__restrict__` on every non-aliasing pointer**; helpers and local copies lose it unless
+  re-spelled. Inner loop over a raw pointer or `std::span`, bound once outside.
+- **Scalars over length-1 arrays**: accumulate in a scalar local, store once.
+- **One index type everywhere**: `int64_t`, matching the ABI symbols.
+- **No hidden calls in hot loops**: `virtual`, `std::function`, out-of-TU helpers. Keep helpers
+  `static` and in-file.
+- Plain countable loops: bound known at entry, one exit, induction variable not mutated.
+
+## Workflow
+
+- Compile locally with the judge's own build line (main prompt) and READ the errors and warnings;
+  iterate until clean before spending a judge call. `syntax_check` is the free in-turn variant.
+- Iterate with `score`; `submit` every correct improvement.
+- Profiling is its own tool (`profile`, see its page): reach for it when a correct version stops
+  improving, not before.
+- Your context is finite: do NOT re-read the file after an edit that reported success.
