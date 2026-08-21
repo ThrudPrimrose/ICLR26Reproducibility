@@ -1,14 +1,14 @@
 | language | page | chars |
 |---|---|---|
-| c | lang-c | 3458 |
+| c | lang-c | 3435 |
 | c | openmp-c | 4379 |
-| c | main-prompt-hints | 1976 |
-| **c** | **packet total** | **9813** |
-| cpp | lang-cpp | 4163 |
+| c | main-prompt-hints | 2115 |
+| **c** | **packet total** | **9929** |
+| cpp | lang-cpp | 4140 |
 | cpp | openmp-cpp | 4608 |
-| cpp | main-prompt-hints | 1976 |
-| **cpp** | **packet total** | **10747** |
-| fortran | lang-fortran | 4013 |
+| cpp | main-prompt-hints | 2115 |
+| **cpp** | **packet total** | **10863** |
+| fortran | lang-fortran | 3948 |
 | fortran | openmp-fortran | 5021 |
-| fortran | main-prompt-hints | 1976 |
-| **fortran** | **packet total** | **11010** |
+| fortran | main-prompt-hints | 2115 |
+| **fortran** | **packet total** | **11084** |
