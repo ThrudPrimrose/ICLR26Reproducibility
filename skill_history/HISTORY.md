@@ -88,3 +88,16 @@ Shortening is proportional, not curative. Even at v6's ~9 kB the C packet+hints 
 tokens per kernel, so a skills arm still reaches fewer kernels than its control at equal wall-clock.
 Comparing on the matched subset stays the honest reading; equalising the token BUDGET rather than
 the wall-clock would remove the confound outright, and v5 has no measured verdict until it is run.
+
+## v8 (2026-08-22, optarena 8ade4b7c) -- the review pass after llr6-qwen30b-c
+
+The paired llr6 read (35 kernels, median 1.49 -> 2.00, but four collapses where the control
+restructured and the skills leg took a directive) plus a family audit against llr-focus40 found
+three teaching gaps: false dependences (rotated scalars, future-element reads) were FILED AS
+RECURRENCES by the four bins -- the packet actively taught keeping those loops serial; argmax
+(max+index) had no reduction form at all; fusion was one sentence and unswitching absent. v8 adds
+the fourth dependence case, an argmax declare-reduction (C/C++) and two-pass form (Fortran),
+and a fusion/unswitching section. All examples written fresh against the corpus listing -- no
+benchmark body is mirrored. COST: C packet grows 13.0k -> 16.6k chars, the largest yet, directly
+against the per-turn-rent findings; v8's bet is that misclassification was more expensive than
+the rent. Unmeasured until 604649/604650 (queued on the regenerated lists) complete.
