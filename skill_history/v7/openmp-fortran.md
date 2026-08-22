@@ -154,5 +154,3 @@ answer under load. Loop indices are private already.
   keeps its trip count and reduces instead: `reduction(min:first)` over a per-iteration candidate.
 - `nowait` does not exist on a combined `parallel do`; `schedule` is worksharing-only (on a bare
   `simd` it is a build error).
-
-Optimize benchmark kernel loop_level_reasoning/argmax_with_index/argmax_with_index. Target language: fortran.

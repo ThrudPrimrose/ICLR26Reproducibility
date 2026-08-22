@@ -28,7 +28,16 @@ LANGUAGES = ("c", "cpp", "fortran")
 
 
 def pages_from_packet(task: str) -> dict[str, str]:
-    """``{page name: body}`` for every ``## Skill: <name>`` section in one inlined packet."""
+    """``{page name: body}`` for every ``## Skill: <name>`` section in one inlined packet.
+
+    The packet sits at the TOP of the task text and the per-problem assignment follows it, so the
+    last page must stop where the assignment begins -- carving to end-of-string put the line
+    "Optimize benchmark kernel <name>" inside v7's openmp pages, which reads as corpus leakage in
+    a page that never contained it.
+    """
+    end = task.find("\nOptimize benchmark kernel ")
+    if end >= 0:
+        task = task[:end]
     marks = list(HEAD.finditer(task))
     return {
         m.group(1): task[m.end():marks[i + 1].start() if i + 1 < len(marks) else len(task)].strip()
