@@ -66,11 +66,27 @@ ARMS: list[dict[str, object]] = [
         "language": "fortran",
         "skills": True
     },
+    # llr6: the focused two-leg experiment on the llr-focus40 tag, three samples per kernel.
+    {
+        "campaign": "llr6",
+        "job": 604475,
+        "model": "qwen30b",
+        "language": "c",
+        "skills": False
+    },
+    {
+        "campaign": "llr6",
+        "job": 604476,
+        "model": "qwen30b",
+        "language": "c",
+        "skills": True
+    },
 ]
 
-# Every arm draws from the same 242-kernel loop_level_reasoning set, so success is reported
-# against it rather than against however many kernels an arm managed to reach.
-PROBLEM_COUNT = 242
+# Success is reported against the kernel set the arm DREW FROM, not against however many it
+# managed to reach. llr4 drew from the whole 242-kernel loop_level_reasoning track; llr6 draws
+# from the llr-focus40 tag, 40 kernels sampled three times each.
+PROBLEM_COUNT = {"llr4": 242, "llr6": 40}
 
 CALL_COLUMNS = [
     "arm", "model", "language", "skills", "job", "benchmark", "route", "status", "correct", "tokens", "speedup",
@@ -83,7 +99,7 @@ SUBMISSION_COLUMNS = [
 
 def arm_name(arm: dict[str, object]) -> str:
     suffix = "-skills" if arm["skills"] else ""
-    return f"llr4-{arm['model']}-{arm['language']}{suffix}"
+    return f"{arm.get('campaign', 'llr4')}-{arm['model']}-{arm['language']}{suffix}"
 
 
 def shards(run_root: pathlib.Path, job: int) -> list[str]:
@@ -163,10 +179,10 @@ def summarise(calls: list[list], submissions: list[list]) -> list[dict[str, obje
             "language": arm["language"],
             "skills": arm["skills"],
             "job": arm["job"],
-            "problems": PROBLEM_COUNT,
+            "problems": PROBLEM_COUNT[name.split("-", 1)[0]],
             "attempted": reached,
             "solved": solved,
-            "success_rate": round(solved / PROBLEM_COUNT, 4),
+            "success_rate": round(solved / PROBLEM_COUNT[name.split("-", 1)[0]], 4),
             # Two denominators, because they answer different questions and can disagree.
             # solved/242 is yield at a fixed budget; solved/attempted is per-problem capability.
             # For oss120b C they point opposite ways: the skills packet costs ~33% more tokens per
@@ -283,12 +299,19 @@ def main() -> int:
                         type=pathlib.Path,
                         default=pathlib.Path("/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs"))
     parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path("data"))
+    # Campaigns draw from DIFFERENT kernel sets, so pooling them into one figure invents a
+    # distribution nothing was measured on: llr4 ran the 242-kernel track, llr6 the 40-kernel
+    # llr-focus40 tag. Collect them into separate data directories and plot each on its own.
+    parser.add_argument("--campaign", default="", help="only arms of this campaign (llr4, llr6)")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
     all_calls: list[list] = []
     all_submissions: list[list] = []
-    for arm in ARMS:
+    selected = [a for a in ARMS if not args.campaign or a.get("campaign", "llr4") == args.campaign]
+    if not selected:
+        raise SystemExit(f"no arms for campaign {args.campaign!r}")
+    for arm in selected:
         calls, submissions = read_arm(args.run_root, arm)
         print(f"{arm_name(arm)}: calls={len(calls)} submissions={len(submissions)}")
         all_calls += calls

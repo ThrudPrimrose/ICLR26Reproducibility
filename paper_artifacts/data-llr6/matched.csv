@@ -1,0 +1,2 @@
+model,language,arm_off,arm_skills,reached_off,reached_skills,common,solved_off,solved_skills,rate_off,rate_skills,delta_pp,only_off,only_skills,discordant,mcnemar_p,fast1_off,fast1_skills,fast2_off,fast2_skills,fast4_off,fast4_skills
+qwen30b,c,llr6-qwen30b-c,llr6-qwen30b-c-skills,39,40,39,36,35,0.9231,0.8974,-2.56,1,0,1,1.0,0.9231,0.8974,0.3333,0.4615,0.1795,0.1538
