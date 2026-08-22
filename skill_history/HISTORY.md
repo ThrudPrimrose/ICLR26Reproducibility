@@ -112,3 +112,15 @@ and the five-row clause table collapsed into a paragraph. fortran 17.5k -> 15.5k
 it, and moving it mid-queue would mean the measured v8 verdict describes text no page holds. So
 the first v8 number will come from the LARGEST of the three packets, which is the conservative
 direction for the rent bet above.
+
+### v8 audit fix (2026-08-22, optarena 0f227ae0) -- flang cannot lower reduction(inscan)
+
+Every fenced snippet on all nine pages was compiled against the graded toolchains (spack gcc
+16.1.0, llvm 22.1.5). One failed: `reduction(inscan, +:s)`, which gfortran accepts and flang
+rejects outright (*not yet implemented: Unhandled clause reduction with modifier*). The page
+taught the clause unconditionally while lang-fortran tells the agent to score BOTH families, so
+a prefix-sum kernel on the LLVM leg cost a turn with no explanation -- the same shape as the
+2026-08-13 F2023 `reduce(+:s)` regression, and invisible to the gate that catches that one
+because the spelling is valid F2018. openmp-fortran now names the limitation and carries a
+hand-rolled two-pass scan (chunk sums, serial prefix over per-chunk totals, offset re-walk),
+verified bit-exact against the serial sweep on both compilers. fortran packet 15.5k -> 16.3k.

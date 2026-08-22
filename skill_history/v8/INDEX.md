@@ -6,5 +6,5 @@
 | **c** | **packet total** | **16616** |
 | fortran | lang-fortran | 4132 |
 | fortran | loop-transformations-fortran | 4597 |
-| fortran | openmp-fortran | 6746 |
-| **fortran** | **packet total** | **15475** |
+| fortran | openmp-fortran | 7578 |
+| **fortran** | **packet total** | **16307** |
