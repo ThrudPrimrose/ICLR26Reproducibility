@@ -5,6 +5,6 @@
 | c | openmp-c | 7996 |
 | **c** | **packet total** | **16616** |
 | fortran | lang-fortran | 4132 |
-| fortran | loop-transformations-fortran | 5168 |
-| fortran | openmp-fortran | 8236 |
-| **fortran** | **packet total** | **17536** |
+| fortran | loop-transformations-fortran | 4597 |
+| fortran | openmp-fortran | 6746 |
+| **fortran** | **packet total** | **15475** |

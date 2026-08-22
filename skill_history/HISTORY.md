@@ -101,3 +101,14 @@ and a fusion/unswitching section. All examples written fresh against the corpus 
 benchmark body is mirrored. COST: C packet grows 13.0k -> 16.6k chars, the largest yet, directly
 against the per-turn-rent findings; v8's bet is that misclassification was more expensive than
 the rent. Unmeasured until 604649/604650 (queued on the regenerated lists) complete.
+
+### v8 trim (2026-08-22, optarena 7dff64e6) -- C++ and Fortran said in fewer words
+
+v8 was written on the C pages first and ported; the ports carried demo code the legality tests
+already carry in prose. Trimmed with no teaching removed: the distribution and fusion examples
+became text, the Fortran bind(C) histogram subroutine and the PARALLEL/REDUCTION one-liners went,
+and the five-row clause table collapsed into a paragraph. fortran 17.5k -> 15.5k chars, cpp
+17.6k -> 15.8k. The C packet is DELIBERATELY untouched at 16.6k: arms 604649/604650 are queued on
+it, and moving it mid-queue would mean the measured v8 verdict describes text no page holds. So
+the first v8 number will come from the LARGEST of the three packets, which is the conservative
+direction for the rent bet above.
