@@ -1,0 +1,5 @@
+arm,model,language,skills,job,problems,attempted,solved,success_rate,success_rate_attempted,calls,submits,submits_ok,tokens,tokens_per_kernel,tokens_per_solved,speedup_n,speedup_median,speedup_mean,speedup_max,frac_speedup_gt_1_1
+llr6v8-qwen30b-c,qwen30b,c,0,604719,40,40,37,0.925,0.925,1225,275,255,32553239,813830,879817,255,1.0101,2.5798,25.0,0.4157
+llr6v8-qwen30b-c-skills,qwen30b,c,1,604720,40,40,37,0.925,0.925,1215,347,316,46199650,1154991,1248639,316,1.0,1.7911,16.6667,0.3101
+llr6v8-oss120b-c,oss120b,c,0,604723,40,37,26,0.65,0.7027,250,41,41,211289376,5710523,8126514,41,1.4085,3.7787,14.2857,0.6098
+llr6v8-oss120b-c-skills,oss120b,c,1,604731,40,37,24,0.6,0.6486,239,48,47,182047087,4920191,7585295,47,1.6667,3.3743,14.2857,0.7021

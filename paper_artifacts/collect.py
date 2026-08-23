@@ -81,12 +81,43 @@ ARMS: list[dict[str, object]] = [
         "language": "c",
         "skills": True
     },
+    # llr6v8: same llr-focus40 kernels, but the v8 packet and a rewritten main prompt (10119 chars
+    # vs the 11057 the arms above read), so these are a SEPARATE experiment -- collect them into
+    # their own data dir rather than pooling generations of the packet into one distribution.
+    {
+        "campaign": "llr6v8",
+        "job": 604719,
+        "model": "qwen30b",
+        "language": "c",
+        "skills": False
+    },
+    {
+        "campaign": "llr6v8",
+        "job": 604720,
+        "model": "qwen30b",
+        "language": "c",
+        "skills": True
+    },
+    {
+        "campaign": "llr6v8",
+        "job": 604723,
+        "model": "oss120b",
+        "language": "c",
+        "skills": False
+    },
+    {
+        "campaign": "llr6v8",
+        "job": 604731,
+        "model": "oss120b",
+        "language": "c",
+        "skills": True
+    },
 ]
 
 # Success is reported against the kernel set the arm DREW FROM, not against however many it
 # managed to reach. llr4 drew from the whole 242-kernel loop_level_reasoning track; llr6 draws
 # from the llr-focus40 tag, 40 kernels sampled three times each.
-PROBLEM_COUNT = {"llr4": 242, "llr6": 40}
+PROBLEM_COUNT = {"llr4": 242, "llr6": 40, "llr6v8": 40}
 
 CALL_COLUMNS = [
     "arm", "model", "language", "skills", "job", "benchmark", "route", "status", "correct", "tokens", "speedup",

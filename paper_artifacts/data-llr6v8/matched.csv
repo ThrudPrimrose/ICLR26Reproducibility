@@ -1,0 +1,3 @@
+model,language,arm_off,arm_skills,reached_off,reached_skills,common,solved_off,solved_skills,rate_off,rate_skills,delta_pp,only_off,only_skills,discordant,mcnemar_p,fast1_off,fast1_skills,fast2_off,fast2_skills,fast4_off,fast4_skills
+qwen30b,c,llr6v8-qwen30b-c,llr6v8-qwen30b-c-skills,40,40,40,37,37,0.925,0.925,0.0,0,0,0,1.0,0.925,0.925,0.475,0.4,0.3,0.175
+oss120b,c,llr6v8-oss120b-c,llr6v8-oss120b-c-skills,37,37,35,26,22,0.7429,0.6286,-11.43,7,3,10,0.3438,0.7429,0.6286,0.4,0.3143,0.2571,0.1714

@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 # Chars of skill text a C agent carries, per packet version. Measured from skill_history/, which
 # snapshots what the agents actually read rather than what the tree says today.
-PACKET_CHARS = {"v4": 6308, "v5": 6111, "v6": 7742, "v7": 13034}
+PACKET_CHARS = {"v4": 6308, "v5": 6111, "v6": 7742, "v7": 13034, "v8": 18115}
 
 
 def best_per_kernel(rows, arm):
@@ -60,20 +60,32 @@ def main() -> int:
     left.plot([lo, hi], [lo, hi], color="0.6", linewidth=1, zorder=1)
     better = [i for i in range(len(shared)) if ys[i] > xs[i] * 1.02]
     worse = [i for i in range(len(shared)) if xs[i] > ys[i] * 1.02]
-    left.scatter([xs[i] for i in better], [ys[i] for i in better], s=46, color="#2c7fb8",
-                 label=f"skills faster ({len(better)})", zorder=3)
-    left.scatter([xs[i] for i in worse], [ys[i] for i in worse], s=46, color="#d95f0e",
-                 label=f"skills slower ({len(worse)})", zorder=3)
+    left.scatter([xs[i] for i in better], [ys[i] for i in better],
+                 s=46,
+                 color="#2c7fb8",
+                 label=f"skills faster ({len(better)})",
+                 zorder=3)
+    left.scatter([xs[i] for i in worse], [ys[i] for i in worse],
+                 s=46,
+                 color="#d95f0e",
+                 label=f"skills slower ({len(worse)})",
+                 zorder=3)
     tied = len(shared) - len(better) - len(worse)
     if tied:
         left.scatter([xs[i] for i in range(len(shared)) if i not in better + worse],
                      [ys[i] for i in range(len(shared)) if i not in better + worse],
-                     s=40, color="0.5", label=f"within 2% ({tied})", zorder=2)
+                     s=40,
+                     color="0.5",
+                     label=f"within 2% ({tied})",
+                     zorder=2)
     # Name the collapses: these are the kernels where the control found a restructuring worth
     # many x and the skills leg settled for a directive worth ~1.
     for index in sorted(worse, key=lambda i: ys[i] / xs[i])[:4]:
-        left.annotate(shared[index], (xs[index], ys[index]), fontsize=8,
-                      xytext=(4, -9), textcoords="offset points", color="#8c3a00")
+        left.annotate(shared[index], (xs[index], ys[index]),
+                      fontsize=8,
+                      xytext=(4, -9),
+                      textcoords="offset points",
+                      color="#8c3a00")
     left.set_xscale("log")
     left.set_yscale("log")
     left.set_xlim(lo, hi)
@@ -90,15 +102,18 @@ def main() -> int:
     right.set_ylabel("C packet, thousands of characters")
     right.set_title("The packet has grown, not shrunk")
     right.grid(alpha=0.3, axis="y")
-    for version, bar in zip(versions, bars):
-        right.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.2,
-                   f"{PACKET_CHARS[version] / 1000:.1f}k", ha="center", fontsize=9)
+    for version, bar in zip(versions, bars, strict=True):
+        right.text(bar.get_x() + bar.get_width() / 2,
+                   bar.get_height() + 0.2,
+                   f"{PACKET_CHARS[version] / 1000:.1f}k",
+                   ha="center",
+                   fontsize=9)
 
     fig.suptitle("Skills A/B, paired per kernel -- and what the packet costs to say it", fontsize=13)
     fig.tight_layout()
     for suffix in ("png", "svg"):
-        fig.savefig(args.out / f"paired_skills.{suffix}", dpi=140)
-    print(f"  {args.out}/paired_skills.png / .svg")
+        fig.savefig(args.out / f"paired_skills_{args.arm}.{suffix}", dpi=140)
+    print(f"  {args.out}/paired_skills_{args.arm}.png / .svg")
     print(f"  paired median   off={statistics.median(xs):.3f}  on={statistics.median(ys):.3f}")
     print(f"  per kernel      skills faster={len(better)}  slower={len(worse)}  tied={tied}")
     return 0
