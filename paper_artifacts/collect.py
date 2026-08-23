@@ -34,31 +34,40 @@ import sys
 # They also timed the call itself: a submission that started asynchronous work and returned was
 # charged for none of it, and its outputs were read while they were still being written. Both were
 # fixed before this campaign (optarena ca8d9514). Git history holds the dropped entries.
+#
+# 605434-37 were cancelled mid-run and replaced by 605458-61, for a defect of the same shape one
+# layer up: role_srun asked for --cpus-per-task on the JUDGE step only, so the INFERENCE and AGENT
+# steps also took Slurm's one-core default. Every vLLM worker came up pinned to `0,96` -- and with
+# four workers to a node they shared it, three of the four running on a socket that does not own
+# their GPU's memory. The agent node ran ~240 processes there: 605434 recorded load average 61.9
+# at 1.5% node utilisation. Fixed in optarena 9baa70d7; the workers now take a socket each
+# (`0-23,96-119` ... `72-95,168-191`). Nothing measured before that fix is comparable to what
+# follows it, throughput and submission counts least of all.
 ARMS: list[dict[str, object]] = [
     {
         "campaign": "llr6v10",
-        "job": 605434,
+        "job": 605458,
         "model": "qwen30b",
         "language": "c",
         "skills": False
     },
     {
         "campaign": "llr6v10",
-        "job": 605435,
+        "job": 605459,
         "model": "qwen30b",
         "language": "c",
         "skills": True
     },
     {
         "campaign": "llr6v10",
-        "job": 605436,
+        "job": 605460,
         "model": "oss120b",
         "language": "c",
         "skills": False
     },
     {
         "campaign": "llr6v10",
-        "job": 605437,
+        "job": 605461,
         "model": "oss120b",
         "language": "c",
         "skills": True
