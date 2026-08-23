@@ -23,91 +23,39 @@ import sqlite3
 import sys
 
 # Job ids are the record of which Slurm run produced which arm; see experiments/<arm>/README.md.
+#
+# Every arm before llr6v10 was dropped from this list on purpose, and none of them is comparable
+# to what is here. Their judge step never asked for a width, so the cores a graded submission got
+# were whatever Slurm handed the step rather than a number the experiment chose -- and a speed-up
+# is a ratio measured at ONE width, so a run that cannot state its width cannot state its result.
+# They also timed the call itself: a submission that started asynchronous work and returned was
+# charged for none of it, and its outputs were read while they were still being written. Both were
+# fixed before this campaign (optarena ca8d9514). Git history holds the dropped entries.
 ARMS: list[dict[str, object]] = [
     {
-        "job": 601850,
+        "campaign": "llr6v10",
+        "job": 605434,
         "model": "qwen30b",
         "language": "c",
         "skills": False
     },
     {
-        "job": 601851,
-        "model": "qwen30b",
-        "language": "c",
-        "skills": True
-    },
-    {
-        "job": 601852,
-        "model": "qwen30b",
-        "language": "fortran",
-        "skills": False
-    },
-    {
-        "job": 602070,
-        "model": "oss120b",
-        "language": "c",
-        "skills": False
-    },
-    {
-        "job": 602071,
-        "model": "oss120b",
-        "language": "c",
-        "skills": True
-    },
-    {
-        "job": 602072,
-        "model": "oss120b",
-        "language": "fortran",
-        "skills": False
-    },
-    {
-        "job": 602073,
-        "model": "oss120b",
-        "language": "fortran",
-        "skills": True
-    },
-    # llr6: the focused two-leg experiment on the llr-focus40 tag, three samples per kernel.
-    {
-        "campaign": "llr6",
-        "job": 604475,
-        "model": "qwen30b",
-        "language": "c",
-        "skills": False
-    },
-    {
-        "campaign": "llr6",
-        "job": 604476,
-        "model": "qwen30b",
-        "language": "c",
-        "skills": True
-    },
-    # llr6v8: same llr-focus40 kernels, but the v8 packet and a rewritten main prompt (10119 chars
-    # vs the 11057 the arms above read), so these are a SEPARATE experiment -- collect them into
-    # their own data dir rather than pooling generations of the packet into one distribution.
-    {
-        "campaign": "llr6v8",
-        "job": 604719,
-        "model": "qwen30b",
-        "language": "c",
-        "skills": False
-    },
-    {
-        "campaign": "llr6v8",
-        "job": 604720,
+        "campaign": "llr6v10",
+        "job": 605435,
         "model": "qwen30b",
         "language": "c",
         "skills": True
     },
     {
-        "campaign": "llr6v8",
-        "job": 604723,
+        "campaign": "llr6v10",
+        "job": 605436,
         "model": "oss120b",
         "language": "c",
         "skills": False
     },
     {
-        "campaign": "llr6v8",
-        "job": 604731,
+        "campaign": "llr6v10",
+        "job": 605437,
         "model": "oss120b",
         "language": "c",
         "skills": True
@@ -115,9 +63,8 @@ ARMS: list[dict[str, object]] = [
 ]
 
 # Success is reported against the kernel set the arm DREW FROM, not against however many it
-# managed to reach. llr4 drew from the whole 242-kernel loop_level_reasoning track; llr6 draws
-# from the llr-focus40 tag, 40 kernels sampled three times each.
-PROBLEM_COUNT = {"llr4": 242, "llr6": 40, "llr6v8": 40}
+# managed to reach. llr6v10 draws from the llr-focus40 tag, 40 kernels sampled three times each.
+PROBLEM_COUNT = {"llr6v10": 40}
 
 CALL_COLUMNS = [
     "arm", "model", "language", "skills", "job", "benchmark", "route", "status", "correct", "tokens", "speedup",
