@@ -25,9 +25,12 @@ import sys
 # Job ids are the record of which Slurm run produced which arm; see experiments/<arm>/README.md.
 #
 # Every arm before llr6v10 was dropped from this list on purpose, and none of them is comparable
-# to what is here. Their judge step never asked for a width, so the cores a graded submission got
-# were whatever Slurm handed the step rather than a number the experiment chose -- and a speed-up
-# is a ratio measured at ONE width, so a run that cannot state its width cannot state its result.
+# to what is here. Their judge step never asked for a width, and Slurm's default for a step that
+# does not is ONE core: measured on this machine as `cpus_allowed=0,96`, a single physical core
+# plus its SMT sibling, on a node with 96 of them. A threaded submission cannot outrun a serial
+# one on one core, and a race on the parallelised axis has too few threads to show itself, so
+# those arms measured serial optimisation and scored some racy code as correct. The fixed step
+# measures `cpus_allowed=0-23`, 24 physical cores.
 # They also timed the call itself: a submission that started asynchronous work and returned was
 # charged for none of it, and its outputs were read while they were still being written. Both were
 # fixed before this campaign (optarena ca8d9514). Git history holds the dropped entries.
