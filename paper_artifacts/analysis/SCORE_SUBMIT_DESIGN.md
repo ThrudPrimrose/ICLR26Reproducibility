@@ -254,3 +254,85 @@ the recoverable volume actually is (32 of 192 submits for oss120b).
   form that is correct: once per agent-kernel, only when nothing was submitted.
 - **No discouraging exploration.** A failed score costs rounds, not correctness. The
   submission gate demonstrably holds.
+
+## Seed separation: verified correct
+
+`service.py:497` sets `hidden = route != "score"`, and that flag is the only thing that
+separates the two routes' grading:
+
+| | score | submit |
+|---|---|---|
+| public inputs | `seeds.public_tests` = 42 | `seeds.public_tests` = 42 |
+| held-out correctness suite | not run | `hidden_cases()` under a per-process 8-byte `os.urandom` seed |
+| independent re-verify fresh seed | not run | `seeds.reverify` = 777 |
+| preset | body may override | body override IGNORED, always `cfg.preset` |
+
+So an agent iterating on `score` never sees a hidden-seed verdict to overfit against, and a
+recorded row always grades the run's configured size. Both properties hold in the code.
+
+One inconsistency worth closing. Two different "hidden" seeds exist and their comments argue
+OPPOSITE threat models for the same repo:
+
+- `config.yaml:11` -- `reverify: 777`, "never returned to the agent, so a fixed constant is safe".
+- `hidden_tests/__init__.py:31` -- "not a fixed public constant (the source is public, so a
+  hard-coded seed could just be read off)", and draws `os.urandom(8)`.
+
+Both survive today because the agent image ships no `hpcagent_bench` package, so `config.yaml`
+never reaches the agent. But the reverify value is never needed reproducibly either -- a correct
+kernel generalises to any inputs -- so drawing it from the same per-process random source costs
+nothing and removes the disagreement. Defence in depth is currently carried entirely by
+`hidden_tests`.
+
+## Timed-work economics: the multiplier is cells, not reps
+
+`measurement.repeat: 20` is reps per CELL, not per grade. The real cost is:
+
+    timed runs = configs x perf.n_large_shapes x repeat x 2 sides x (1 + warmup)
+
+| kernel | configs | cells | timed runs per grade |
+|---|---|---|---|
+| no config space | 1 | 3 | 3 x 20 x 2 x 2 = **240** |
+| at `perf.max_configs` | 5 | 15 | 15 x 20 x 2 x 2 = **1200** |
+
+**Do not cut the 20.** The backend is `mannwhitney_delta`, a rank test that credits a speedup
+only when the shift is significant; it needs ~20 samples per side to have the power to declare
+anything, which is exactly what `config.yaml:102` says (">= 20 keeps the CI meaningful"). Below
+that the gate stops rejecting noise, which is the one thing it exists to do. 606482 is the
+worked example of what happens when repeat drops: at `--repeat 1` the backend refuses outright
+and the whole run reports nothing.
+
+**Cut cells instead, and note they are nearly redundant.** `fuzz.xl_lo_mult` / `xl_hi_mult` are
+0.85 / 1.15, so all three timed shapes are drawn within +/-15% of XL. Three shapes that close in
+size mostly re-measure the same point -- which is what the 20 reps already do, better and more
+cheaply. Either drop `n_large_shapes` to 2 (a straight 33% cut with little statistical loss) or
+widen the band so the three shapes actually probe different size regimes. The current setting
+pays for coverage it does not get.
+
+**The cells are combined by GEOMEAN, not min** (`metric.py`): `raw_speedup` is the geomean over
+timed cells, and the `gsd_z` dispersion gate floors the ranked score to 1.0 when
+`geomean / gsd^z <= 1`. So a single bad shape does not veto the result the way a min would --
+it drags the geomean and widens the gsd, and a wide enough spread is what trips the gate.
+
+## On retrying an OOM
+
+Retry-with-backoff is the wrong primary fix for the failure measured above, because that
+failure is arithmetic and not transient: expected + actual alone equal the child's entire
+`RLIMIT_AS` budget, so the retry has exactly as much room as the attempt that just failed and
+fails identically. Sleeping buys nothing when nothing else on the node is holding the memory.
+
+It IS the right backstop for the residual node-level case (several grades materialising at
+once), where the pressure really is transient. Two conditions on doing it:
+
+1. **Drop the traceback before retrying.** A Python exception holds the frames that hold the
+   arrays, so an OOM traceback keeps the very allocations that caused it alive. Retrying inside
+   the `except` block starts with LESS memory than the first attempt had. Bind the error, `del`
+   the locals and clear `__traceback__` first.
+2. **Prefer admission control.** A byte-budget semaphore prevents the overshoot instead of
+   recovering from it, and it is deterministic. Retry is what catches what the budget mis-sized.
+
+On reclaiming: for these array sizes glibc serves the request with `mmap` and returns it with
+`munmap` on free, so RSS goes back to the OS as soon as the last reference drops -- no
+`malloc_trim` needed. What DOES delay it is reference cycles (tracebacks again, and any cached
+`VerifyResult` holding outputs), so an explicit `del` at the end of each leg plus a
+`gc.collect()` between grades is the cheap correct reclaim. `malloc_trim(0)` only helps the
+parent's many-small-allocation churn, not the big arrays.
