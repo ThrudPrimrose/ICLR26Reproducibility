@@ -135,6 +135,56 @@ should be deferred behind real builders, as the hidden-case path already does.
    40% of its iterations per kernel to skills-packet rent (15 -> 9) -- take it from the
    packet's length, not from the verification.
 
+## Allocate on demand, and admit by bytes
+
+Two separate faults, both visible at `scoring.py:344-380`.
+
+**1. Preallocation for legs that have not started.** `redata` is built at line 348 and first
+used at line 378. `np_re` is built at line 355 and first used in the reverify leg after the
+determinism and dual-oracle legs have finished. Both sit resident through work that does not
+touch them. `verify_references` compounds it by passing `[(REVERIFY_LABEL, lambda: redata)]`
+into `_run_c_reference` -- an interface that exists to take BUILDERS, handed an already
+materialised dict.
+
+The discipline already exists in this codebase and is applied to hidden cases:
+
+```python
+hidden_data = [(case.label, functools.partial(_data_seeded, task.kernel, case.preset, ...))
+               for case in cases]
+```
+
+`run_followup` then builds one, calls, reduces, and `del`s it. The verify path should do the
+same: pass `functools.partial(_data_seeded, ..., reverify_seed)` rather than a built dict, and
+let the fresh-seed set come into existence only when its leg runs. Combined with sequencing,
+peak drops from 8 array sets to 4 -- and to 3 if the public set is released before the
+reverify leg rather than after it.
+
+**2. No admission control, so N parents allocate concurrently.** CPU serialises the timed
+children naturally: one judge rank owns one socket, `OMP_NUM_THREADS=GRADE_CPUS`, and the
+parent BLOCKS in `_call_isolated` while its child runs. So only one child is ever computing
+per rank, and that is what keeps timings honest.
+
+Memory does not serialise. uvicorn accepts requests concurrently and runs blocking handlers on
+a threadpool, so several parents can each be materialising their own array sets while only one
+child is on the cores. One child running, N parents resident -- that is the OOM, and it is why
+"one child at a time" does not by itself bound memory.
+
+The fix is a byte-budget semaphore at REQUEST admission, not at child spawn:
+
+```
+budget = node_ram_share - headroom
+cost   = sets_in_flight * array_bytes(spec, preset)     # 3-4 after sequencing
+```
+
+A grade acquires `cost` before it allocates anything and releases after its last comparison.
+Small kernels then run many-at-once; a 3.88 GiB wavefront kernel runs alone. This is what makes
+the failure impossible rather than unlikely, and it is what lets `--ntasks-per-node=4` be safe:
+four ranks x 4 sets x 3.88 GiB = 62 GiB, admitted against a known budget instead of hoped for.
+
+Sizing the budget from the preset's declared arrays -- not from a fixed constant -- is what
+stops the defect returning the next time a kernel grows. The current `XL_BYTE_CEILING` is a
+per-kernel cap with no notion of how many grades share a node.
+
 ## What NOT to do
 
 - **No auto-submit.** It solves a problem this tag does not have (0-4 agents lost a result to
