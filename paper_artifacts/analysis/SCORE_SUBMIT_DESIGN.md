@@ -185,10 +185,35 @@ Sizing the budget from the preset's declared arrays -- not from a fixed constant
 stops the defect returning the next time a kernel grows. The current `XL_BYTE_CEILING` is a
 per-kernel cap with no notion of how many grades share a node.
 
+## Harvest fallback: an agent that never submits still has a result
+
+What is recorded is what counts. An agent that times out, runs out of tokens, or loses its
+submit to a harness fault has produced correct, graded work that the campaign then throws away.
+
+The rule: **at run teardown, for every (agent, kernel) with no submission, promote the last
+score that graded correct.** The judge already held that source when it graded it, so capture
+it at score time -- keep the last correct-scoring source per (run, kernel) in the service and
+promote at harvest, rather than trying to reconstruct it from the DB (`submissions` stores
+`prompt_hash` and timings, not the source).
+
+Promote through the SAME verification a submit gets, including the hidden seed. The agent is
+gone, so there is no round to charge and no reason to weaken the gate -- and the hidden seed is
+what separates "fits the public seed" from "correct" (it caught 11, 16, 0, 1 overfits here).
+A promoted row must be flagged `promoted` so the analysis can tell an agent's own terminal
+answer from a harvested one.
+
+This is NOT the auto-submit that should be avoided. Auto-submitting every correct score would
+run the hidden seed dozens of times per kernel and multiply the judge memory pressure that is
+already the top defect. This runs it at most ONCE per (agent, kernel), only when the agent
+produced no submission at all.
+
+Expected recovery on focus40 is small -- non-submission is 0/118, 0/120, 3/119, 4/116 -- but it
+is the correct floor, and it also catches the 90 submits lost to the judge OOM, which is where
+the recoverable volume actually is (32 of 192 submits for oss120b).
+
 ## What NOT to do
 
-- **No auto-submit.** It solves a problem this tag does not have (0-4 agents lost a result to
-  non-submission) and would run the hidden seed on every correct score, multiplying exactly
-  the judge memory pressure that is already the top defect.
+- **No auto-submit on every correct score.** See the harvest fallback above for the narrow
+  form that is correct: once per agent-kernel, only when nothing was submitted.
 - **No discouraging exploration.** A failed score costs rounds, not correctness. The
   submission gate demonstrably holds.
