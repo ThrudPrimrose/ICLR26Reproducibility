@@ -40,8 +40,37 @@ shape (22820, 22820)`.
 - For oss120b that is **32 of 192 submits (17%)** lost to a fault the agent did not cause and
   cannot fix -- its code was correct.
 
-It is not a per-allocation limit. Measured on an idle compute node: 22820^2 allocates fine,
-`MemAvailable` 501 GB, no cgroup cap on the step, `ulimit -v` unlimited.
+### Root cause, measured (supersedes the fragmentation reading below)
+
+It is not fragmentation and not concurrency. Job 606482 reproduces the SAME OOM in a
+single-node, single-grade stub run, and the traceback names the site:
+
+    native_call.run_followup -> followup.reduce -> grading._grade_against
+      -> grading.compare_arrays -> frameworks/utilities.py:63  denom = np.abs(e).copy()
+
+`compare_arrays` runs INSIDE the timed child, which is capped at
+`RLIMIT_AS = MEMORY_COPIES (2) x arrays`. Modelled directly (`scratchpad/as_probe.py`):
+
+    RLIMIT_AS = current_vmsize + 7.76 GiB      (the harness formula at 22820^2)
+      alloc 1 (3.88 GiB): OK
+      alloc 2 (3.88 GiB): FAIL  ENOMEM        <- e and a alone exhaust the budget
+
+The expected and actual arrays alone consume the ENTIRE child budget, before the comparison
+allocates a single temporary -- and `compare_arrays` needs about six full-size temporaries
+(`denom`, `e - a`, `np.abs(...)`, `rel`, `rel[both_finite]`, `np.allclose` internals),
+roughly 23 GiB. The failure is arithmetic, not luck.
+
+That also explains the submit/score asymmetry with no appeal to load: the hidden-case
+comparison runs in the memory-capped CHILD, a plain `score` comparison runs in the uncapped
+PARENT. `MEMORY_COPIES = 2` budgets for the DATA and not for the comparison, so the cap is
+structurally too small for any kernel whose arrays approach it.
+
+Note the cap is on VIRTUAL ADDRESS SPACE: the probe above failed on untouched `mmap`
+reservations with zero RSS. Any allocator that reserves VA eagerly makes this WORSE.
+
+Superseded reading, kept for the record: the node is not full. On an idle compute node
+22820^2 allocates fine, `MemAvailable` 501 GB, no cgroup cap on the step, `ulimit -v`
+unlimited -- which is what made fragmentation look like the explanation.
 
 The mechanism is in `harness/scoring.py:verify_references`, which returns BOTH reference
 outputs at once:
@@ -65,8 +94,9 @@ With 120 agents over 12-16 judge nodes (7.5-10 per node) and no concurrency boun
 in the upstream service, the 22820 row is the failure. A 3.88 GiB CONTIGUOUS request fails on
 fragmentation well before the node is full.
 
-NOT YET CONFIRMED: peak RSS on a judge node during a submit burst. That is the decisive
-measurement and it has not been taken.
+Peak RSS on a judge node during a submit burst is still unmeasured. It no longer gates the
+diagnosis -- the child cap above is sufficient on its own -- but it still governs how many
+ranks per node are safe.
 
 ### The size ladders are also wrong
 
@@ -87,7 +117,9 @@ one rung in isolation is what produced that; any size change has to move the who
 
 The one-at-a-time discipline exists only in the TIMED CHILD. `native_call.run_followup`
 materialises one held-out input set, calls, reduces and drops it, against an RLIMIT_AS the
-harness derives as `MEMORY_COPIES` (2) x arrays -- which is why the child never OOMs.
+harness derives as `MEMORY_COPIES` (2) x arrays. That cap counts the DATA only, so it does
+NOT protect the child -- it is what makes the child OOM once the grading comparison runs
+inside it (see the measured root cause above).
 
 The judge PARENT has no such cap, and `scoring.independent_verify` builds everything up front.
 At `scoring.py:378`:
@@ -119,8 +151,13 @@ should be deferred behind real builders, as the hidden-case path already does.
 
 ## Changes, in order of expected effect
 
+0. **Size the child's cap for the comparison, not just the data**, or compare in chunks.
+   This is the actual defect; every size change below is a workaround for it. `MEMORY_COPIES`
+   must account for the ~6 full-size temporaries `compare_arrays` allocates, or the comparison
+   must move out of the capped child.
 1. **Cut XL for `wf_diff_skew` and `wf_triangular` to 12000**, matching the fix already
-   applied to `wf_north_west`. Recovers ~85 lost grades per campaign; one-line change each.
+   applied to `wf_north_west` -- through `apply_sizes.py`, not by hand: the hand edit left
+   `wf_north_west`'s XL BELOW its own M and L. Recovers ~85 lost grades per campaign.
 2. **Bound grading concurrency per judge node by BYTES, not by request count.** A semaphore
    sized from the preset's array footprint lets ten small kernels run at once and serialises
    the 4 GiB ones. Without it the failure returns whenever a preset grows.
