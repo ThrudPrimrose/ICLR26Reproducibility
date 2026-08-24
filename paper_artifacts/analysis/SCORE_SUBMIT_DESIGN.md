@@ -83,6 +83,40 @@ one rung in isolation is what produced that; any size change has to move the who
 `wf_north_west` XL is already 22820 -> 12000 (3.88 -> 1.07 GiB). `wf_diff_skew` and
 `wf_triangular` are still 22820 and hold 85 of the 90 losses.
 
+## Why the peak is ~8x the arrays, not 2x
+
+The one-at-a-time discipline exists only in the TIMED CHILD. `native_call.run_followup`
+materialises one held-out input set, calls, reduces and drops it, against an RLIMIT_AS the
+harness derives as `MEMORY_COPIES` (2) x arrays -- which is why the child never OOMs.
+
+The judge PARENT has no such cap, and `scoring.independent_verify` builds everything up front.
+At `scoring.py:378`:
+
+```python
+o1, o2, ro = _run(data), _run(data), _run(redata)
+```
+
+live simultaneously: `data`, `redata` (built at line 348, unused until 378), `np_public`,
+`np_re` (both from line 355, the second unused until the reverify leg), `o1`, `o2`, `ro`, and
+then `c_pub`. Eight full array sets for a kernel whose declared arrays are one set.
+
+`verify_references` also passes `[(REVERIFY_LABEL, lambda: redata)]` into `_run_c_reference` --
+a builder in form only, closing over a dict that is already materialised. `run_followup`'s own
+docstring is explicit that this is the pattern to avoid: "Followups arrive as builders rather
+than as data because every one of them is the size of the public run ... handing them over as
+dicts kept 6 full input sets resident at once."
+
+Sequencing the three legs holds the peak at 4 sets and weakens nothing:
+
+| leg | live sets |
+|---|---|
+| determinism (`o1`, `o2` vs `np_public`) | data, np_public, o1, o2 = 4 |
+| dual-oracle (`o1` vs `c_pub`), after freeing `o2` | data, np_public, o1, c_pub = 4 |
+| fresh-seed (`ro` vs `np_re`), after freeing the public set | redata, np_re, ro = 3 |
+
+That is a 2x cut with no change to kernel sizes and no check removed. `redata` and `np_re`
+should be deferred behind real builders, as the hidden-case path already does.
+
 ## Changes, in order of expected effect
 
 1. **Cut XL for `wf_diff_skew` and `wf_triangular` to 12000**, matching the fix already
