@@ -1,0 +1,1093 @@
+<title>Skills Ablation Readout</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap">
+<style>
+:root{
+  color-scheme: light;
+  --plane:#f7f7f4; --surface:#fcfcfb; --surface-2:#f2f2ee;
+  --ink:#14140f; --ink-2:#55554c; --ink-3:#82827a;
+  --rule:#e3e3dc; --rule-2:#cfcfc6;
+  --m1:#2a78d6; --m2:#eb6834; --m3:#1baf7a;
+  --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+  --pos:#2a78d6; --neg:#d03b3b; --mid:#f0efec;
+  --band:#eda10018;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --plane:#0d0d0d; --surface:#1a1a19; --surface-2:#232321;
+    --ink:#f7f7f2; --ink-2:#c3c2b7; --ink-3:#8e8d84;
+    --rule:#333330; --rule-2:#45453f;
+    --m1:#3987e5; --m2:#d95926; --m3:#199e70;
+    --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+    --pos:#3987e5; --neg:#d03b3b; --mid:#383835;
+    --band:#fab21914;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --plane:#0d0d0d; --surface:#1a1a19; --surface-2:#232321;
+  --ink:#f7f7f2; --ink-2:#c3c2b7; --ink-3:#8e8d84;
+  --rule:#333330; --rule-2:#45453f;
+  --m1:#3987e5; --m2:#d95926; --m3:#199e70;
+  --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+  --pos:#3987e5; --neg:#d03b3b; --mid:#383835;
+  --band:#fab21914;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--plane); color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  font-size:16px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px;margin:0 auto;padding:56px 24px 96px}
+h1,h2,h3{font-family:"Source Serif 4",Georgia,serif;text-wrap:balance;margin:0}
+h1{font-size:clamp(2rem,4.4vw,3.1rem);font-weight:700;line-height:1.08;letter-spacing:-.018em}
+h2{font-size:1.42rem;font-weight:600;letter-spacing:-.01em}
+h3{font-size:1.02rem;font-weight:600}
+p{margin:0}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;font-size:.7rem;font-weight:500;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3)
+}
+.sub{color:var(--ink-2);font-size:1.06rem;max-width:64ch;margin-top:14px}
+header{border-bottom:1px solid var(--rule);padding-bottom:30px;margin-bottom:44px}
+.meta{
+  display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:20px;
+  font-family:"IBM Plex Mono",monospace;font-size:.76rem;color:var(--ink-3)
+}
+.meta b{color:var(--ink-2);font-weight:500}
+section{margin-bottom:52px}
+.shead{display:flex;align-items:baseline;gap:14px;margin-bottom:6px;flex-wrap:wrap}
+.snote{color:var(--ink-2);font-size:.95rem;max-width:70ch;margin-bottom:22px}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:22px}
+/* verdict */
+.verdict{
+  background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--ink-3);
+  border-radius:10px;padding:28px 30px;display:grid;
+  grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:34px;align-items:center
+}
+.big{font-family:"Source Serif 4",Georgia,serif;font-size:3.5rem;font-weight:700;line-height:1;letter-spacing:-.03em}
+.big small{font-size:1rem;font-weight:500;color:var(--ink-3);font-family:"IBM Plex Mono",monospace;letter-spacing:0}
+.tally{display:flex;gap:0;height:38px;border-radius:5px;overflow:hidden;margin-top:8px}
+.tally div{display:flex;align-items:center;justify-content:center;font-family:"IBM Plex Mono",monospace;font-size:.78rem;font-weight:600;color:#fff}
+.tallykey{display:flex;gap:16px;margin-top:10px;flex-wrap:wrap;font-size:.79rem;color:var(--ink-2)}
+.tallykey span{display:flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:2px;flex:none}
+/* grids */
+.multi{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:18px}
+.panel{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:16px 16px 10px}
+.ptitle{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+.ptitle h3{font-size:.95rem}
+.pstat{font-family:"IBM Plex Mono",monospace;font-size:.74rem;color:var(--ink-3);margin-bottom:10px}
+.pstat b{color:var(--ink-2);font-weight:500}
+svg{display:block;width:100%;height:auto;overflow:visible}
+.gridline{stroke:var(--rule);stroke-width:1}
+.axis{stroke:var(--rule-2);stroke-width:1}
+.tick{font-family:"IBM Plex Mono",monospace;font-size:9.5px;fill:var(--ink-3)}
+.axlabel{font-family:"IBM Plex Sans",sans-serif;font-size:10.5px;fill:var(--ink-3)}
+.diag{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:3 3;opacity:.65}
+.dot{stroke:var(--surface);stroke-width:2;cursor:pointer}
+/* table */
+table{width:100%;border-collapse:collapse;font-size:.86rem}
+th,td{padding:9px 10px;text-align:right;border-bottom:1px solid var(--rule)}
+th:first-child,td:first-child{text-align:left}
+th{
+  font-family:"IBM Plex Mono",monospace;font-size:.68rem;font-weight:500;
+  letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);
+  border-bottom:1px solid var(--rule-2)
+}
+td{font-variant-numeric:tabular-nums;font-family:"IBM Plex Mono",monospace;color:var(--ink-2)}
+td:first-child{font-family:"IBM Plex Sans",sans-serif;color:var(--ink);font-weight:500}
+tr:last-child td{border-bottom:none}
+.tag{
+  display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:.66rem;
+  padding:1px 6px;border-radius:3px;border:1px solid var(--rule-2);color:var(--ink-3);margin-left:6px
+}
+.scroll{overflow-x:auto}
+/* callout */
+.callout{
+  background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--warning);
+  border-radius:10px;padding:20px 24px
+}
+.callout h3{margin-bottom:8px}
+.callout p{color:var(--ink-2);font-size:.93rem;max-width:76ch}
+.callout p+p{margin-top:10px}
+code{font-family:"IBM Plex Mono",monospace;font-size:.86em;background:var(--surface-2);padding:1px 5px;border-radius:3px;color:var(--ink)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;font-size:.8rem;color:var(--ink-2)}
+.legend span{display:flex;align-items:center;gap:7px}
+/* tooltip */
+#tip{
+  position:fixed;pointer-events:none;opacity:0;transition:opacity .1s;
+  background:var(--ink);color:var(--plane);font-family:"IBM Plex Mono",monospace;
+  font-size:.73rem;padding:7px 10px;border-radius:5px;z-index:50;white-space:nowrap;
+  box-shadow:0 4px 14px #0003
+}
+footer{border-top:1px solid var(--rule);padding-top:22px;color:var(--ink-3);font-size:.82rem}
+@media (max-width:760px){ .verdict{grid-template-columns:1fr} }
+</style>
+<div class="wrap">
+<header>
+  <p class="eyebrow">llr6v10 &middot; beverin / MI300A</p>
+  <h1>The skills packet does not move the needle</h1>
+  <p class="sub">Three paired ablations across two models and two languages, scored on the
+  40-kernel <code>llr-focus40</code> set. Every arm holds the runner configuration fixed and
+  varies only whether the optimization-hints packet is injected.</p>
+  <div class="meta">
+    <span><b>arms</b> 7</span>
+    <span><b>paired kernels</b> 102</span>
+    <span><b>submissions</b> 1357</span>
+    <span><b>judged calls</b> 6120</span>
+    <span><b>collected</b> 2026-08-24</span>
+  </div>
+</header>
+
+<section>
+  <div class="verdict">
+    <div>
+      <p class="eyebrow" style="margin-bottom:10px">Pooled exact sign test</p>
+      <div class="big">p = 1.000<br><small>34 better &middot; 35 worse &middot; 33 tied</small></div>
+      <p style="color:var(--ink-2);font-size:.93rem;margin-top:16px;max-width:44ch">
+      Across all 102 kernels judged in both legs, the packet helps as often as it hurts.
+      No individual ablation reaches significance either.</p>
+    </div>
+    <div>
+      <p class="eyebrow" style="margin-bottom:8px">Per-kernel outcome</p>
+      <div class="tally" id="tally"></div>
+      <div class="tallykey">
+        <span><i class="sw" style="background:var(--pos)"></i>skills better</span>
+        <span><i class="sw" style="background:var(--mid);border:1px solid var(--rule-2)"></i>tied</span>
+        <span><i class="sw" style="background:var(--neg)"></i>skills worse</span>
+      </div>
+      <table style="margin-top:18px">
+        <thead><tr><th>Ablation</th><th>n</th><th>+</th><th>&minus;</th><th>=</th><th>p</th></tr></thead>
+        <tbody id="abrows"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><h2>Every kernel, both legs</h2></div>
+  <p class="snote">Each dot is one kernel: its best speedup without the packet against its best
+  speedup with it. The dashed line is parity &mdash; a real effect would push the cloud
+  consistently to one side of it. The shaded band marks speedups above 5&times;, where the
+  recorded values sit on a coarse grid and differences are not trustworthy (see the caveat below).</p>
+  <div class="multi" id="scatters"></div>
+</section>
+
+<section>
+  <div class="shead"><h2>Where the calls actually go</h2></div>
+  <p class="snote">The packet is a rounding error next to the language. Fortran loses more than a
+  third of its judged calls to wrong answers; C arms lose under 12%. This is the effect worth
+  chasing.</p>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--good)"></i>ok</span>
+    <span><i class="sw" style="background:var(--critical)"></i>incorrect</span>
+    <span><i class="sw" style="background:var(--serious)"></i>build error</span>
+    <span><i class="sw" style="background:var(--warning)"></i>score error</span>
+    <span><i class="sw" style="background:var(--ink-3)"></i>timeout / overfit</span>
+  </div>
+  <div class="card"><div id="outcomes"></div></div>
+</section>
+
+<section>
+  <div class="shead"><h2>Coverage and yield</h2></div>
+  <p class="snote">Kernels that never produce a submission are invisible in any speedup statistic.
+  Fortran reaches barely two-thirds of the set. Note also that more submissions do not buy more
+  speedup &mdash; qwen30b submits 2.4&times; as often as oss120b on C and lands at half the median.</p>
+  <div class="scroll card">
+    <table>
+      <thead><tr>
+        <th>Arm</th><th>Job</th><th>Kernels /40</th><th>Submissions</th>
+        <th>ok %</th><th>incorrect %</th><th>Median speedup</th>
+      </tr></thead>
+      <tbody id="armrows"></tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="callout">
+    <h3>Caveat: the speedup column is quantized, and disagrees with the timings</h3>
+    <p>Every recorded speedup lies on a reciprocal grid of two-decimal values &mdash; 33.333, 25.0,
+    20.0, 16.667, 11.111. Above roughly 5&times; a single grid step is a 25&ndash;33% jump with no
+    intermediate value available, so differences in that region are resolution, not signal. Between
+    31% and 59% of each arm's kernels sit there.</p>
+    <p>Separately, <code>speedup</code> is not consistent with the stored <code>baseline_ns</code>
+    and <code>native_ns</code>: raw ratios of 35.27, 31.24 and 22.92 are recorded as 33.333, 25.0
+    and 20.0 respectively. The two columns do not come from the same measurement, and which one is
+    authoritative is unresolved.</p>
+    <p>This does not threaten the null result &mdash; the paired tests are dominated by kernels near
+    parity, where the grid is fine &mdash; but it does make every <em>mean</em> speedup unusable, and
+    the medians for oss120b and kimi27 fall inside the coarse region.</p>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><h2>Reading notes</h2></div>
+  <p class="snote">
+  <b>Paired, not aggregate.</b> The two legs of an ablation do not cover identical kernel sets, so an
+  unpaired median compares different populations. On Fortran the unpaired medians read 1.099 against
+  1.496 and look like a win; paired on the 26 kernels both legs reached, the packet is behind
+  6&ndash;9. Only the paired figure is reported above.<br><br>
+  <b>Ties are excluded from the sign test</b>, which is standard, but they are large here (33 of 102)
+  and they are informative: on a third of kernels both legs land on precisely the same best speedup,
+  usually 1.000 &mdash; the agent found nothing either way.<br><br>
+  <b>kimi27 is not part of any ablation.</b> It appears for context only: a partial, still-running
+  no-skills arm (22 of 40 kernels at time of collection) served through SGLang rather than vLLM.
+  Its numbers are not comparable to the qwen and oss arms, which differ in model and serving stack
+  at once.</p>
+</section>
+
+<footer>
+  Source: judge SQLite databases under <code>hpcagent-bench-runs/&lt;job&gt;/judge/rank-*/</code>.
+  Best-per-kernel speedup, exact two-sided sign test, ties excluded.
+  Jobs 605458, 605459, 605460, 605461, 605696, 605697, 605700.
+</footer>
+</div>
+<div id="tip"></div>
+<script>
+const D = {
+ "ab": [
+  {
+   "model": "qwen30b",
+   "lang": "C",
+   "points": [
+    {
+     "k": "argmax_with_index",
+     "no": 1.4925,
+     "sk": 2.7027
+    },
+    {
+     "k": "ext_break_capture",
+     "no": 1.1111,
+     "sk": 1.1111
+    },
+    {
+     "k": "ext_break_find_first",
+     "no": 1.0309,
+     "sk": 1.0
+    },
+    {
+     "k": "ext_break_post_body",
+     "no": 1.0526,
+     "sk": 1.0638
+    },
+    {
+     "k": "ext_war_unit",
+     "no": 1.0526,
+     "sk": 1.0526
+    },
+    {
+     "k": "fuse_diamond",
+     "no": 25.0,
+     "sk": 25.0
+    },
+    {
+     "k": "fuse_move_ifs",
+     "no": 3.7037,
+     "sk": 3.3333
+    },
+    {
+     "k": "fuse_stencil_through_transient",
+     "no": 11.1111,
+     "sk": 11.1111
+    },
+    {
+     "k": "quasi_affine_reduce_odd",
+     "no": 4.7619,
+     "sk": 5.2632
+    },
+    {
+     "k": "tsvc_2_s115",
+     "no": 1.0204,
+     "sk": 1.0
+    },
+    {
+     "k": "tsvc_2_s119",
+     "no": 1.0204,
+     "sk": 1.087
+    },
+    {
+     "k": "tsvc_2_s1232",
+     "no": 5.0,
+     "sk": 5.5556
+    },
+    {
+     "k": "tsvc_2_s1244",
+     "no": 4.5455,
+     "sk": 4.5455
+    },
+    {
+     "k": "tsvc_2_s13110",
+     "no": 1.4925,
+     "sk": 5.5556
+    },
+    {
+     "k": "tsvc_2_s152",
+     "no": 2.439,
+     "sk": 2.439
+    },
+    {
+     "k": "tsvc_2_s2233",
+     "no": 6.6667,
+     "sk": 5.8824
+    },
+    {
+     "k": "tsvc_2_s2275",
+     "no": 6.25,
+     "sk": 33.3333
+    },
+    {
+     "k": "tsvc_2_s231",
+     "no": 9.0909,
+     "sk": 16.6667
+    },
+    {
+     "k": "tsvc_2_s233",
+     "no": 1.0638,
+     "sk": 7.6923
+    },
+    {
+     "k": "tsvc_2_s235",
+     "no": 5.5556,
+     "sk": 5.8824
+    },
+    {
+     "k": "tsvc_2_s252",
+     "no": 1.1364,
+     "sk": 1.0526
+    },
+    {
+     "k": "tsvc_2_s255",
+     "no": 1.0638,
+     "sk": 1.0
+    },
+    {
+     "k": "tsvc_2_s2710",
+     "no": 16.6667,
+     "sk": 12.5
+    },
+    {
+     "k": "tsvc_2_s275",
+     "no": 6.25,
+     "sk": 5.2632
+    },
+    {
+     "k": "tsvc_2_s311",
+     "no": 5.8824,
+     "sk": 5.8824
+    },
+    {
+     "k": "tsvc_2_s3110",
+     "no": 1.3699,
+     "sk": 2.0833
+    },
+    {
+     "k": "tsvc_2_s3111",
+     "no": 5.2632,
+     "sk": 5.8824
+    },
+    {
+     "k": "tsvc_2_s3112",
+     "no": 1.0,
+     "sk": 1.0
+    },
+    {
+     "k": "tsvc_2_s316",
+     "no": 5.8824,
+     "sk": 5.8824
+    },
+    {
+     "k": "tsvc_2_s318",
+     "no": 1.6949,
+     "sk": 1.0
+    },
+    {
+     "k": "tsvc_2_s319",
+     "no": 4.0,
+     "sk": 1.0
+    },
+    {
+     "k": "tsvc_2_s323",
+     "no": 1.0,
+     "sk": 1.0
+    },
+    {
+     "k": "tsvc_2_s4112",
+     "no": 5.8824,
+     "sk": 5.8824
+    },
+    {
+     "k": "tsvc_2_vag",
+     "no": 6.25,
+     "sk": 5.8824
+    },
+    {
+     "k": "tsvc_2_vpvts",
+     "no": 2.5641,
+     "sk": 2.3256
+    },
+    {
+     "k": "tsvc_2_vtvtv",
+     "no": 2.3256,
+     "sk": 2.3256
+    },
+    {
+     "k": "wavefront2d",
+     "no": 1.0,
+     "sk": 1.0
+    },
+    {
+     "k": "wf_north_west",
+     "no": 1.0,
+     "sk": 1.0
+    }
+   ],
+   "win": 12,
+   "lose": 12,
+   "tie": 14,
+   "p": 1.0,
+   "medNo": 2.502,
+   "medSk": 3.018
+  },
+  {
+   "model": "oss120b",
+   "lang": "C",
+   "points": [
+    {
+     "k": "argmax_with_index",
+     "no": 5.8824,
+     "sk": 7.6923
+    },
+    {
+     "k": "ext_break_capture",
+     "no": 2.8571,
+     "sk": 2.8571
+    },
+    {
+     "k": "ext_break_find_first",
+     "no": 1.8519,
+     "sk": 1.8519
+    },
+    {
+     "k": "ext_break_post_body",
+     "no": 1.0309,
+     "sk": 1.1905
+    },
+    {
+     "k": "ext_war_unit",
+     "no": 1.5152,
+     "sk": 1.7241
+    },
+    {
+     "k": "fuse_diamond",
+     "no": 25.0,
+     "sk": 20.0
+    },
+    {
+     "k": "fuse_move_ifs",
+     "no": 3.4483,
+     "sk": 3.2258
+    },
+    {
+     "k": "fuse_stencil_through_transient",
+     "no": 11.1111,
+     "sk": 10.0
+    },
+    {
+     "k": "quasi_affine_reduce_odd",
+     "no": 5.2632,
+     "sk": 4.0
+    },
+    {
+     "k": "tsvc_2_s115",
+     "no": 2.1277,
+     "sk": 2.381
+    },
+    {
+     "k": "tsvc_2_s119",
+     "no": 1.8519,
+     "sk": 1.6129
+    },
+    {
+     "k": "tsvc_2_s1232",
+     "no": 9.0909,
+     "sk": 6.25
+    },
+    {
+     "k": "tsvc_2_s1244",
+     "no": 8.3333,
+     "sk": 14.2857
+    },
+    {
+     "k": "tsvc_2_s13110",
+     "no": 5.2632,
+     "sk": 5.5556
+    },
+    {
+     "k": "tsvc_2_s152",
+     "no": 2.3256,
+     "sk": 2.439
+    },
+    {
+     "k": "tsvc_2_s2233",
+     "no": 5.8824,
+     "sk": 8.3333
+    },
+    {
+     "k": "tsvc_2_s2275",
+     "no": 25.0,
+     "sk": 25.0
+    },
+    {
+     "k": "tsvc_2_s231",
+     "no": 16.6667,
+     "sk": 25.0
+    },
+    {
+     "k": "tsvc_2_s233",
+     "no": 11.1111,
+     "sk": 12.5
+    },
+    {
+     "k": "tsvc_2_s235",
+     "no": 20.0,
+     "sk": 20.0
+    },
+    {
+     "k": "tsvc_2_s252",
+     "no": 2.7778,
+     "sk": 2.9412
+    },
+    {
+     "k": "tsvc_2_s255",
+     "no": 3.2258,
+     "sk": 2.9412
+    },
+    {
+     "k": "tsvc_2_s2710",
+     "no": 12.5,
+     "sk": 12.5
+    },
+    {
+     "k": "tsvc_2_s275",
+     "no": 12.5,
+     "sk": 7.1429
+    },
+    {
+     "k": "tsvc_2_s311",
+     "no": 10.0,
+     "sk": 9.0909
+    },
+    {
+     "k": "tsvc_2_s3110",
+     "no": 4.7619,
+     "sk": 5.0
+    },
+    {
+     "k": "tsvc_2_s3111",
+     "no": 8.3333,
+     "sk": 5.8824
+    },
+    {
+     "k": "tsvc_2_s3112",
+     "no": 1.0,
+     "sk": 1.0
+    },
+    {
+     "k": "tsvc_2_s316",
+     "no": 7.1429,
+     "sk": 6.6667
+    },
+    {
+     "k": "tsvc_2_s318",
+     "no": 5.2632,
+     "sk": 4.5455
+    },
+    {
+     "k": "tsvc_2_s319",
+     "no": 3.125,
+     "sk": 16.6667
+    },
+    {
+     "k": "tsvc_2_s323",
+     "no": 1.0,
+     "sk": 7.1429
+    },
+    {
+     "k": "tsvc_2_s4112",
+     "no": 11.1111,
+     "sk": 11.1111
+    },
+    {
+     "k": "tsvc_2_vag",
+     "no": 6.25,
+     "sk": 6.25
+    },
+    {
+     "k": "tsvc_2_vpvts",
+     "no": 2.3256,
+     "sk": 2.5
+    },
+    {
+     "k": "tsvc_2_vtvtv",
+     "no": 2.1277,
+     "sk": 2.2727
+    },
+    {
+     "k": "wavefront2d",
+     "no": 5.0,
+     "sk": 4.3478
+    },
+    {
+     "k": "wf_north_west",
+     "no": 2.0408,
+     "sk": 1.9608
+    }
+   ],
+   "win": 16,
+   "lose": 14,
+   "tie": 8,
+   "p": 0.8555,
+   "medNo": 5.263,
+   "medSk": 5.719
+  },
+  {
+   "model": "qwen30b",
+   "lang": "Fortran",
+   "points": [
+    {
+     "k": "ext_break_capture",
+     "no": 1.0204,
+     "sk": 1.0309
+    },
+    {
+     "k": "ext_break_find_first",
+     "no": 1.0,
+     "sk": 1.4286
+    },
+    {
+     "k": "ext_break_post_body",
+     "no": 1.0,
+     "sk": 1.0
+    },
+    {
+     "k": "ext_war_unit",
+     "no": 1.087,
+     "sk": 1.0
+    },
+    {
+     "k": "fuse_diamond",
+     "no": 25.0,
+     "sk": 16.6667
+    },
+    {
+     "k": "fuse_stencil_through_transient",
+     "no": 11.1111,
+     "sk": 7.6923
+    },
+    {
+     "k": "quasi_affine_reduce_odd",
+     "no": 4.0,
+     "sk": 5.2632
+    },
+    {
+     "k": "tsvc_2_s119",
+     "no": 1.0989,
+     "sk": 1.0101
+    },
+    {
+     "k": "tsvc_2_s1244",
+     "no": 1.0,
+     "sk": 1.0
+    },
+    {
+     "k": "tsvc_2_s13110",
+     "no": 1.0,
+     "sk": 1.0
+    },
+    {
+     "k": "tsvc_2_s152",
+     "no": 1.6667,
+     "sk": 1.5625
+    },
+    {
+     "k": "tsvc_2_s2275",
+     "no": 33.3333,
+     "sk": 33.3333
+    },
+    {
+     "k": "tsvc_2_s252",
+     "no": 1.0989,
+     "sk": 1.087
+    },
+    {
+     "k": "tsvc_2_s255",
+     "no": 1.0101,
+     "sk": 1.0
+    },
+    {
+     "k": "tsvc_2_s2710",
+     "no": 5.5556,
+     "sk": 7.1429
+    },
+    {
+     "k": "tsvc_2_s311",
+     "no": 10.0,
+     "sk": 10.0
+    },
+    {
+     "k": "tsvc_2_s3111",
+     "no": 7.1429,
+     "sk": 10.0
+    },
+    {
+     "k": "tsvc_2_s3112",
+     "no": 1.0,
+     "sk": 1.0
+    },
+    {
+     "k": "tsvc_2_s316",
+     "no": 7.1429,
+     "sk": 5.0
+    },
+    {
+     "k": "tsvc_2_s318",
+     "no": 1.0,
+     "sk": 1.0
+    },
+    {
+     "k": "tsvc_2_s319",
+     "no": 16.6667,
+     "sk": 20.0
+    },
+    {
+     "k": "tsvc_2_s323",
+     "no": 1.0,
+     "sk": 1.0
+    },
+    {
+     "k": "tsvc_2_vpvts",
+     "no": 2.6316,
+     "sk": 2.2222
+    },
+    {
+     "k": "tsvc_2_vtvtv",
+     "no": 1.6667,
+     "sk": 1.6667
+    },
+    {
+     "k": "wavefront2d",
+     "no": 1.0,
+     "sk": 1.0
+    },
+    {
+     "k": "wf_north_west",
+     "no": 1.0,
+     "sk": 1.0
+    }
+   ],
+   "win": 6,
+   "lose": 9,
+   "tie": 11,
+   "p": 0.6072,
+   "medNo": 1.099,
+   "medSk": 1.258
+  }
+ ],
+ "pooled": {
+  "win": 34,
+  "lose": 35,
+  "tie": 33,
+  "p": 1.0
+ },
+ "arms": [
+  {
+   "job": 605700,
+   "model": "kimi27-sglang",
+   "lang": "c",
+   "skills": false,
+   "kernels": 22,
+   "subs": 211,
+   "median": 6.349,
+   "coarse": 13,
+   "status": {
+    "ok": 1257,
+    "incorrect": 24,
+    "build_error": 24,
+    "score_error": 26,
+    "timeout": 2,
+    "overfit": 0
+   },
+   "total": 1333
+  },
+  {
+   "job": 605460,
+   "model": "oss120b",
+   "lang": "c",
+   "skills": false,
+   "kernels": 38,
+   "subs": 150,
+   "median": 5.263,
+   "coarse": 21,
+   "status": {
+    "ok": 651,
+    "incorrect": 35,
+    "build_error": 3,
+    "score_error": 48,
+    "timeout": 0,
+    "overfit": 0
+   },
+   "total": 737
+  },
+  {
+   "job": 605461,
+   "model": "oss120b",
+   "lang": "c",
+   "skills": true,
+   "kernels": 38,
+   "subs": 127,
+   "median": 5.719,
+   "coarse": 21,
+   "status": {
+    "ok": 433,
+    "incorrect": 39,
+    "build_error": 3,
+    "score_error": 28,
+    "timeout": 1,
+    "overfit": 1
+   },
+   "total": 505
+  },
+  {
+   "job": 605458,
+   "model": "qwen30b",
+   "lang": "c",
+   "skills": false,
+   "kernels": 38,
+   "subs": 366,
+   "median": 2.502,
+   "coarse": 14,
+   "status": {
+    "ok": 1198,
+    "incorrect": 109,
+    "build_error": 10,
+    "score_error": 25,
+    "timeout": 2,
+    "overfit": 11
+   },
+   "total": 1355
+  },
+  {
+   "job": 605459,
+   "model": "qwen30b",
+   "lang": "c",
+   "skills": true,
+   "kernels": 38,
+   "subs": 349,
+   "median": 3.018,
+   "coarse": 17,
+   "status": {
+    "ok": 1125,
+    "incorrect": 149,
+    "build_error": 10,
+    "score_error": 16,
+    "timeout": 2,
+    "overfit": 16
+   },
+   "total": 1318
+  },
+  {
+   "job": 605696,
+   "model": "qwen30b",
+   "lang": "fortran",
+   "skills": false,
+   "kernels": 26,
+   "subs": 74,
+   "median": 1.099,
+   "coarse": 8,
+   "status": {
+    "ok": 208,
+    "incorrect": 134,
+    "build_error": 5,
+    "score_error": 2,
+    "timeout": 9,
+    "overfit": 0
+   },
+   "total": 358
+  },
+  {
+   "job": 605697,
+   "model": "qwen30b",
+   "lang": "fortran",
+   "skills": true,
+   "kernels": 28,
+   "subs": 80,
+   "median": 1.496,
+   "coarse": 11,
+   "status": {
+    "ok": 245,
+    "incorrect": 148,
+    "build_error": 7,
+    "score_error": 7,
+    "timeout": 0,
+    "overfit": 0
+   },
+   "total": 407
+  }
+ ]
+};
+const NS = "http://www.w3.org/2000/svg";
+const MODEL_VAR = {qwen30b:"--m1", oss120b:"--m2", "kimi27-sglang":"--m3"};
+const el = (n, a = {}) => { const e = document.createElementNS(NS, n);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+
+/* ---- tooltip ---- */
+const tip = document.getElementById("tip");
+function hook(node, text){
+  node.addEventListener("mouseenter", e => { tip.textContent = text; tip.style.opacity = 1; });
+  node.addEventListener("mousemove", e => {
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8) + "px";
+    tip.style.top  = (e.clientY - tip.offsetHeight - 10) + "px";
+  });
+  node.addEventListener("mouseleave", () => { tip.style.opacity = 0; });
+}
+
+/* ---- verdict tally ---- */
+(() => {
+  const p = D.pooled, tot = p.win + p.tie + p.lose;
+  const bar = document.getElementById("tally");
+  [["win","var(--pos)",p.win],["tie","var(--mid)",p.tie],["lose","var(--neg)",p.lose]]
+    .forEach(([k,c,v],i) => {
+      const d = document.createElement("div");
+      d.style.cssText = `background:${c};flex:${v} 0 0;${i===1?"color:var(--ink-2)":""}`;
+      if (v / tot > 0.12) d.textContent = v;
+      hook(d, `${k}: ${v} of ${tot} kernels (${(100*v/tot).toFixed(0)}%)`);
+      bar.appendChild(d);
+    });
+  document.getElementById("abrows").innerHTML = D.ab.map(a => `
+    <tr><td>${a.model} <span class="tag">${a.lang}</span></td>
+    <td>${a.points.length}</td><td>${a.win}</td><td>${a.lose}</td><td>${a.tie}</td>
+    <td>${a.p.toFixed(3)}</td></tr>`).join("");
+})();
+
+/* ---- paired scatters (log-log) ---- */
+(() => {
+  const LO = 0.9, HI = 40, W = 300, H = 236, M = {t:10, r:12, b:34, l:38};
+  const iw = W - M.l - M.r, ih = H - M.t - M.b;
+  const lg = v => Math.log(v), a0 = lg(LO), a1 = lg(HI);
+  const px = v => M.l + (lg(v) - a0) / (a1 - a0) * iw;
+  const py = v => M.t + ih - (lg(v) - a0) / (a1 - a0) * ih;
+  const TICKS = [1, 2, 5, 10, 20];
+
+  D.ab.forEach(ab => {
+    const wrap = document.createElement("div");
+    wrap.className = "panel";
+    const col = `var(${MODEL_VAR[ab.model]})`;
+    wrap.innerHTML = `<div class="ptitle"><h3>${ab.model} &middot; ${ab.lang}</h3></div>
+      <div class="pstat"><b>${ab.win}</b> better &nbsp;<b>${ab.lose}</b> worse &nbsp;<b>${ab.tie}</b> tied
+      &nbsp;&middot;&nbsp; p = <b>${ab.p.toFixed(3)}</b></div>`;
+    const s = el("svg", {viewBox:`0 0 ${W} ${H}`, role:"img",
+      "aria-label":`${ab.model} ${ab.lang}: best speedup per kernel, without skills versus with skills`});
+
+    // coarse-grid region: everything outside the [<=5x, <=5x] square
+    const f = px(5), g = py(5);
+    s.appendChild(el("path", {d:`M${M.l},${M.t} H${M.l+iw} V${M.t+ih} H${f} V${g} H${M.l} Z`,
+      fill:"var(--band)"}));
+    s.appendChild(el("line", {x1:f, y1:M.t, x2:f, y2:M.t+ih, class:"gridline"}));
+    s.appendChild(el("line", {x1:M.l, y1:g, x2:M.l+iw, y2:g, class:"gridline"}));
+
+    TICKS.forEach(t => {
+      s.appendChild(el("line", {x1:px(t), y1:M.t+ih, x2:px(t), y2:M.t+ih+4, class:"axis"}));
+      const tx = el("text", {x:px(t), y:M.t+ih+15, class:"tick", "text-anchor":"middle"});
+      tx.textContent = t + "x"; s.appendChild(tx);
+      s.appendChild(el("line", {x1:M.l-4, y1:py(t), x2:M.l, y2:py(t), class:"axis"}));
+      const ty = el("text", {x:M.l-7, y:py(t)+3, class:"tick", "text-anchor":"end"});
+      ty.textContent = t + "x"; s.appendChild(ty);
+    });
+    s.appendChild(el("line", {x1:M.l, y1:M.t+ih, x2:M.l+iw, y2:M.t+ih, class:"axis"}));
+    s.appendChild(el("line", {x1:M.l, y1:M.t, x2:M.l, y2:M.t+ih, class:"axis"}));
+    s.appendChild(el("line", {x1:px(LO), y1:py(LO), x2:px(HI), y2:py(HI), class:"diag"}));
+
+    const xl = el("text", {x:M.l+iw/2, y:H-3, class:"axlabel", "text-anchor":"middle"});
+    xl.textContent = "no skills"; s.appendChild(xl);
+    const yl = el("text", {x:-(M.t+ih/2), y:11, class:"axlabel", "text-anchor":"middle",
+      transform:"rotate(-90)"});
+    yl.textContent = "with skills"; s.appendChild(yl);
+
+    ab.points.forEach(p => {
+      const d = Math.abs(p.sk - p.no) < 1e-9;
+      const c = el("circle", {cx:px(p.no), cy:py(p.sk), r:d ? 3.2 : 4.2,
+        fill:d ? "var(--mid)" : col, "fill-opacity":d ? 1 : .82,
+        stroke:d ? "var(--rule-2)" : "var(--surface)", class:"dot"});
+      hook(c, `${p.k}  ${p.no.toFixed(2)}x -> ${p.sk.toFixed(2)}x`);
+      s.appendChild(c);
+    });
+    wrap.appendChild(s);
+    document.getElementById("scatters").appendChild(wrap);
+  });
+})();
+
+/* ---- outcome composition ---- */
+(() => {
+  const KEYS = [["ok","--good"],["incorrect","--critical"],["build_error","--serious"],
+                ["score_error","--warning"]];
+  const host = document.getElementById("outcomes");
+  const rows = D.arms.slice().sort((a,b) =>
+    (a.lang > b.lang ? 1 : a.lang < b.lang ? -1 : 0) || a.model.localeCompare(b.model) ||
+    (a.skills - b.skills));
+  const LW = 186, BH = 26, GAP = 12, W = 720;
+  const H = rows.length * (BH + GAP);
+  const s = el("svg", {viewBox:`0 0 ${W} ${H + 22}`, role:"img",
+    "aria-label":"share of judged calls by outcome for each arm"});
+  rows.forEach((r, i) => {
+    const y = i * (BH + GAP);
+    const label = `${r.model}/${r.lang}${r.skills ? " +skills" : ""}`;
+    const t = el("text", {x:LW - 10, y:y + BH/2 + 4, class:"axlabel", "text-anchor":"end"});
+    t.textContent = label; t.setAttribute("style","fill:var(--ink);font-size:11.5px");
+    s.appendChild(t);
+    let x = LW;
+    const iw = W - LW - 52;
+    KEYS.forEach(([k, v]) => {
+      const share = r.status[k] / r.total;
+      if (share <= 0) return;
+      const w = Math.max(share * iw, share > 0 ? 1.6 : 0);
+      const rect = el("rect", {x, y, width:Math.max(w - 2, 1), height:BH, rx:2,
+        fill:`var(${v})`, "fill-opacity":.9});
+      hook(rect, `${label} - ${k}: ${r.status[k]} calls (${(100*share).toFixed(1)}%)`);
+      s.appendChild(rect); x += w;
+    });
+    const other = (r.status.timeout + r.status.overfit) / r.total;
+    if (other > 0){
+      const w = Math.max(other * iw, 1.6);
+      const rect = el("rect", {x, y, width:Math.max(w - 2, 1), height:BH, rx:2,
+        fill:"var(--ink-3)", "fill-opacity":.7});
+      hook(rect, `${label} - timeout/overfit: ${r.status.timeout + r.status.overfit} calls`);
+      s.appendChild(rect);
+    }
+    const pct = el("text", {x:W - 46, y:y + BH/2 + 4, class:"tick", "text-anchor":"start"});
+    pct.textContent = (100 * r.status.ok / r.total).toFixed(0) + "% ok";
+    pct.setAttribute("style","fill:var(--ink-2);font-size:10.5px");
+    s.appendChild(pct);
+  });
+  host.appendChild(s);
+})();
+
+/* ---- arm table ---- */
+(() => {
+  document.getElementById("armrows").innerHTML = D.arms.map(a => {
+    const pc = k => (100 * a.status[k] / a.total).toFixed(1);
+    const coarse = a.median > 5;
+    return `<tr>
+      <td>${a.model}<span class="tag">${a.lang}</span>${a.skills ? '<span class="tag">skills</span>' : ""}</td>
+      <td>${a.job}</td><td>${a.kernels}</td><td>${a.subs}</td>
+      <td>${pc("ok")}</td><td>${pc("incorrect")}</td>
+      <td>${a.median.toFixed(3)}${coarse ? '<span class="tag" title="in the coarse-grid region">coarse</span>' : ""}</td>
+    </tr>`;
+  }).join("");
+})();
+</script>
