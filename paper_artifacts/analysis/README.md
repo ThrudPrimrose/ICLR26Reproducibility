@@ -6,6 +6,7 @@ the caveats that govern its numbers.
 
 | document | question it answers |
 |---|---|
+| `CAMPAIGN_READOUT.md` | Consolidated readout: skills vs false submissions, judge rank/memory/serialization design, the Fortran layout defect |
 | `SKILLS_ABLATION_LLR6V10.md` | Does the v10 skills packet change speedup? (no: pooled p = 1.000, n = 102) |
 | `FORTRAN_ABI_DEFECT.md` | Why does Fortran fail ~40% of judged calls? (one ABI defect, 10 of 11 dead kernels) |
 
