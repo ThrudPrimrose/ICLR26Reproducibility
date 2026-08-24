@@ -336,3 +336,66 @@ On reclaiming: for these array sizes glibc serves the request with `mmap` and re
 `VerifyResult` holding outputs), so an explicit `del` at the end of each leg plus a
 `gc.collect()` between grades is the cheap correct reclaim. `malloc_trim(0)` only helps the
 parent's many-small-allocation churn, not the big arrays.
+
+## Settled timed-cell design
+
+Cells are PAIRED, not crossed: `perf.n_large_shapes` (3) cells, each one config paired with one
+fuzzed size, configs dealt round-robin. Reduction stays GEOMEAN over cells, so the `gsd_z`
+dispersion gate keeps its meaning.
+
+| route | cells | reps | backend | seed |
+|---|---|---|---|---|
+| `score` | 3 | 5 | `min_of_k` | public (42) |
+| `submit` | 3 | 20 | `mannwhitney_delta` | held-out |
+
+Timed runs per grade become `3 x reps x 2 sides x (1 + warmup)`: **60** on score, **240** on
+submit, independent of how many configs a kernel declares. Today's cross product is
+`configs x 3`, so a 5-config kernel drops from 15 cells to 3 -- a 5x cut. A kernel with no
+config space (every focus40 kernel, verified) is UNCHANGED at 3 cells.
+
+The coverage trade is the one `hidden_cases` already makes deliberately: pairing tests each
+config at one size and each size at one config instead of the full cross. Its docstring makes
+the same argument -- five variants sharing one config "test the data axis five times and the
+branch axis never".
+
+Two implementation notes:
+
+- **5 reps requires switching the backend, not just lowering the number.**
+  `timing.validate_repeat` hard-fails below `measurement.mannwhitney.repeats` (20); that is
+  exactly what made 606482 report nothing. `timing.reduce` already accepts a per-call
+  `backend`, so the score route passes `min_of_k` and the plumbing stays thin.
+- **Shape i keeps its seed.** `_public_large_seeds(n)` is indexed by position, so pairing must
+  take the i-th shape of the i-th config's draw to keep sizes reproducible.
+
+Prepared as `scratchpad/timed_cells_pairing.patch` against `metric.py:_timed_cells`. NOT
+applied: 605700 grades off the live tree, and changing cell construction mid-run would make its
+rows incomparable with each other.
+
+## Memory reclaim policy
+
+Both layers, they solve different problems:
+
+1. **Byte-budget admission** PREVENTS the overshoot and is deterministic.
+2. **Bounded retry** RECOVERS from what the budget mis-sized. It must drop the exception's
+   traceback first -- the frames hold the arrays, so retrying inside `except` starts with less
+   memory than the first attempt had.
+
+Neither substitutes for sizing the child's cap to include the comparison temporaries; that
+failure is arithmetic and no amount of waiting changes it.
+
+Reclaim, placed precisely:
+
+- **`gc.collect()` after each grade.** This is the one that matters. At these sizes glibc
+  serves via `mmap` and returns via `munmap`, so RSS goes back to the OS as soon as the last
+  reference drops -- what DELAYS that is reference cycles (tracebacks, cached results holding
+  outputs), which only the collector breaks.
+- **`malloc_trim(0)` after each grade**, for the parent's many-small-allocation churn. It does
+  nothing for the big arrays, which were never in an arena.
+- **NEVER either one inside the timed window.** A collection pause during a timed rep is
+  measurement noise attributed to the submission. Reclaim belongs between grades, outside the
+  timed section -- the whole protocol exists to keep that window clean.
+- `gc.freeze()` once after service startup keeps long-lived objects out of every subsequent
+  scan, making the per-grade collect cheaper.
+
+Tie them to grade completion rather than a timer: that is exactly when the big references die,
+and it keeps the cost proportional to work done rather than to wall clock.
