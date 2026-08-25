@@ -72,11 +72,60 @@ ARMS: list[dict[str, object]] = [
         "language": "c",
         "skills": True
     },
+    # llr8: the same focus40 tag at --repeat 1. The llr6v10 arms drew each kernel three times,
+    # which is agent multiplicity rather than sampling -- it tripled inference, agent and judge
+    # load for coverage the grader already provides -- so an llr8 arm is 40 agents, one per kernel.
+    {
+        "campaign": "llr8",
+        "job": 608446,
+        "model": "qwen30b",
+        "language": "c",
+        "skills": False
+    },
+    {
+        "campaign": "llr8",
+        "job": 608447,
+        "model": "oss120b",
+        "language": "c",
+        "skills": False
+    },
+    {
+        "campaign": "llr8",
+        "job": 608448,
+        "model": "kimi27sglang",
+        "language": "c",
+        "skills": False,
+        "batch": "a",
+        "problems": 10
+    },
+    {
+        "campaign": "llr8",
+        "job": 608449,
+        "model": "kimi27sglang",
+        "language": "c",
+        "skills": False,
+        "batch": "b",
+        "problems": 10
+    },
+    {
+        "campaign": "llr8",
+        "job": 608987,
+        "model": "oss120b",
+        "language": "c",
+        "skills": True
+    },
+    {
+        "campaign": "llr8",
+        "job": 608988,
+        "model": "qwen30b",
+        "language": "c",
+        "skills": True
+    },
 ]
 
 # Success is reported against the kernel set the arm DREW FROM, not against however many it
 # managed to reach. llr6v10 draws from the llr-focus40 tag, 40 kernels sampled three times each.
-PROBLEM_COUNT = {"llr6v10": 40}
+PROBLEM_COUNT = {"llr6v10": 40, "llr8": 40}
 
 CALL_COLUMNS = [
     "arm", "model", "language", "skills", "job", "benchmark", "route", "status", "correct", "tokens", "speedup",
@@ -88,14 +137,40 @@ SUBMISSION_COLUMNS = [
 
 
 def arm_name(arm: dict[str, object]) -> str:
+    """``<campaign>-<model>-<language>[-skills][-<batch>]``.
+
+    The batch letter is not decoration: a kimi arm is one BATCH of the tag, and two batches of the
+    same model, language and leg would otherwise key to one name and have their rows merged into a
+    single arm scored against a denominator neither of them drew from.
+    """
     suffix = "-skills" if arm["skills"] else ""
-    return f"{arm.get('campaign', 'llr4')}-{arm['model']}-{arm['language']}{suffix}"
+    batch = f"-{arm['batch']}" if arm.get("batch") else ""
+    return f"{arm.get('campaign', 'llr4')}-{arm['model']}-{arm['language']}{suffix}{batch}"
+
+
+#: Arms that drew from a BATCH of their tag rather than the whole of it, and so carry their own
+#: success denominator: 10 solved of the 10 a kimi batch drew is not 10 of 40.
+BATCH_COUNT = {arm_name(a): int(a["problems"]) for a in ARMS if a.get("problems")}
+
+
+def problem_count(name: str) -> int:
+    """How many kernels the arm DREW FROM -- the denominator both success rates are taken over."""
+    return BATCH_COUNT.get(name) or PROBLEM_COUNT[name.split("-", 1)[0]]
 
 
 def shards(run_root: pathlib.Path, job: int) -> list[str]:
-    found = sorted(glob.glob(str(run_root / str(job) / "judge" / "rank-*" / "*.db")))
-    if not found:
-        raise SystemExit(f"no judge shards for job {job} under {run_root}; pass --run-root")
+    """The job's judge shards, or an empty list when the job has not run yet.
+
+    The two empty cases are NOT the same and must not be handled the same way. A run directory that
+    does not exist is an arm still queued -- the registry names every arm of a campaign, including
+    ones whose results are still coming -- and collecting the rest is the right answer. A run
+    directory that exists with no shards under it means the root is wrong or the run broke, and
+    silently reporting zero for it would put a fabricated row in every figure downstream.
+    """
+    run = run_root / str(job)
+    found = sorted(glob.glob(str(run / "judge" / "rank-*" / "*.db")))
+    if not found and run.is_dir():
+        raise SystemExit(f"no judge shards under {run}; the run is there but its judge wrote nothing")
     return found
 
 
@@ -104,7 +179,11 @@ def read_arm(run_root: pathlib.Path, arm: dict[str, object]) -> tuple[list[list]
     tag = [name, arm["model"], arm["language"], int(bool(arm["skills"])), arm["job"]]
     calls: list[list] = []
     submissions: list[list] = []
-    for shard in shards(run_root, int(arm["job"])):
+    found = shards(run_root, int(arm["job"]))
+    if not found:
+        print(f"{name}: job {arm['job']} has not run yet, skipped", file=sys.stderr)
+        return [], []
+    for shard in found:
         con = sqlite3.connect(f"file:{shard}?mode=ro", uri=True)
         calls += [
             tag + list(row)
@@ -169,10 +248,10 @@ def summarise(calls: list[list], submissions: list[list]) -> list[dict[str, obje
             "language": arm["language"],
             "skills": arm["skills"],
             "job": arm["job"],
-            "problems": PROBLEM_COUNT[name.split("-", 1)[0]],
+            "problems": problem_count(name),
             "attempted": reached,
             "solved": solved,
-            "success_rate": round(solved / PROBLEM_COUNT[name.split("-", 1)[0]], 4),
+            "success_rate": round(solved / problem_count(name), 4),
             # Two denominators, because they answer different questions and can disagree.
             # solved/242 is yield at a fixed budget; solved/attempted is per-problem capability.
             # For oss120b C they point opposite ways: the skills packet costs ~33% more tokens per

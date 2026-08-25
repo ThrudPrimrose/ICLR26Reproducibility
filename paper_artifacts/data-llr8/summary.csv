@@ -1,0 +1,6 @@
+arm,model,language,skills,job,problems,attempted,solved,success_rate,success_rate_attempted,calls,submits,submits_ok,tokens,tokens_per_kernel,tokens_per_solved,speedup_n,speedup_median,speedup_mean,speedup_max,frac_speedup_gt_1_1
+llr8-qwen30b-c,qwen30b,c,0,608446,40,40,25,0.625,0.625,336,100,60,39882914,997072,1595316,58,1.0101,1.828,16.6667,0.3793
+llr8-oss120b-c,oss120b,c,0,608447,40,39,14,0.35,0.359,500,14,14,208681141,5350798,14905795,13,3.3333,7.935,50.0,0.6923
+llr8-kimi27sglang-c-a,kimi27sglang,c,0,608448,10,10,10,1.0,1.0,296,28,27,28813267,2881326,2881326,27,11.1111,16.8472,50.0,1.0
+llr8-kimi27sglang-c-b,kimi27sglang,c,0,608449,10,10,8,0.8,0.8,210,36,33,39837532,3983753,4979691,33,12.5,27.1911,100.0,0.9091
+llr8-oss120b-c-skills,oss120b,c,1,608987,40,40,18,0.45,0.45,413,20,20,196538975,4913474,10918831,19,4.3478,9.1892,50.0,0.9474
