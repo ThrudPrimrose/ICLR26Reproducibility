@@ -21,7 +21,8 @@ import subprocess
 HERE = pathlib.Path(__file__).resolve().parent
 HEAD = re.compile(r"(?m)^## Skill: (\S+)$")
 #: The pages that can appear in a packet. A version that lacks one simply has no file for it.
-PACKET_PAGES = ("lang-c", "lang-cpp", "lang-fortran", "openmp", "openmp-c", "openmp-cpp", "openmp-fortran", "openacc",
+PACKET_PAGES = ("lang-c", "lang-cpp", "lang-fortran", "loop-transformations-c", "loop-transformations-cpp",
+                "loop-transformations-fortran", "openmp", "openmp-c", "openmp-cpp", "openmp-fortran", "openacc",
                 "doconcurrent-fortran", "stdpar-cpp")
 #: Which pages make up the packet for a language, per version, for the INDEX totals.
 LANGUAGES = ("c", "cpp", "fortran")
