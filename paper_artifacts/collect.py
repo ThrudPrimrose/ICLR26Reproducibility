@@ -121,11 +121,69 @@ ARMS: list[dict[str, object]] = [
         "language": "c",
         "skills": True
     },
+    # llr8w2: the C-vs-Fortran factorial. Wave 1's qwen arms were void (the qwen3_coder tool parser
+    # ate turn-1 tool calls) and its C references were TSVC-shaped; both were fixed before this wave,
+    # so these arms are not comparable to the llr8 rows above and carry their own campaign name.
+    # The kimi arm is a 10-kernel batch like its wave-1 siblings, and its unskilled twin failed, so
+    # it has no pair and cannot appear in the matched table.
+    {
+        "campaign": "llr8w2",
+        "job": 610669,
+        "model": "qwen38",
+        "language": "c",
+        "skills": False
+    },
+    {
+        "campaign": "llr8w2",
+        "job": 610671,
+        "model": "qwen38",
+        "language": "c",
+        "skills": True
+    },
+    {
+        "campaign": "llr8w2",
+        "job": 610670,
+        "model": "qwen38",
+        "language": "fortran",
+        "skills": False
+    },
+    {
+        "campaign": "llr8w2",
+        "job": 610672,
+        "model": "qwen38",
+        "language": "fortran",
+        "skills": True
+    },
+    {
+        "campaign": "llr8w2",
+        "job": 610668,
+        "model": "oss120b",
+        "language": "fortran",
+        "skills": False
+    },
+    {
+        "campaign": "llr8w2",
+        "job": 610653,
+        "model": "oss120b",
+        "language": "fortran",
+        "skills": True
+    },
+    {
+        "campaign": "llr8w2",
+        "job": 610662,
+        "model": "kimi27sglang",
+        "language": "c",
+        "skills": True,
+        "batch": "r1",
+        "problems": 10
+    },
 ]
 
 # Success is reported against the kernel set the arm DREW FROM, not against however many it
 # managed to reach. llr6v10 draws from the llr-focus40 tag, 40 kernels sampled three times each.
-PROBLEM_COUNT = {"llr6v10": 40, "llr8": 40}
+#: Kernels each campaign DREW FROM. llr8w2 reads problems-llr6-{c,fortran}.jsonl, which is 120
+#: entries per language -- not the 40 of the focus40 tag its predecessors used.
+PROBLEM_COUNT = {"llr6v10": 40, "llr8": 40, "llr8w2": 120}
 
 CALL_COLUMNS = [
     "arm", "model", "language", "skills", "job", "benchmark", "route", "status", "correct", "tokens", "speedup",
@@ -134,6 +192,19 @@ CALL_COLUMNS = [
 SUBMISSION_COLUMNS = [
     "arm", "model", "language", "skills", "job", "benchmark", "preset", "baseline_ns", "native_ns", "speedup", "suspect"
 ]
+
+
+def arm_run_pattern(arm: dict[str, object]) -> str:
+    """A SQL LIKE pattern matching the ``run_id`` values this arm wrote.
+
+    Anchored on the arm identity and the dot that ends it, not on the campaign token: the launcher
+    writes the campaign name it was given (``llr8-qwen38-c`` even for a wave-2 arm this file calls
+    ``llr8w2-qwen38-c``), so matching the wave-qualified name selects nothing and reports every arm
+    as empty. The trailing dot is what keeps ``...-c.`` from also matching ``...-c-skills.``.
+    """
+    suffix = "-skills" if arm["skills"] else ""
+    batch = f"-{arm['batch']}" if arm.get("batch") else ""
+    return f"%{arm['model']}-{arm['language']}{suffix}{batch}.%"
 
 
 def arm_name(arm: dict[str, object]) -> str:
@@ -183,15 +254,24 @@ def read_arm(run_root: pathlib.Path, arm: dict[str, object]) -> tuple[list[list]
     if not found:
         print(f"{name}: job {arm['job']} has not run yet, skipped", file=sys.stderr)
         return [], []
+    # A shard is read for the rows THIS ARM wrote, not for everything in the file. The launcher
+    # stamps every campaign row with `run_id = <arm>.n<node>.p<problem>.w<worker>`; a row carrying
+    # anything else (`adhoc`, or a null) came from a hand-run probe that happened to share the
+    # results directory, and attributing it here credits the arm with a measurement it never made.
+    # Measured: seven such rows sat in the llr8w2 shards, one of them a 24x outlier.
+    row_filter = "where run_id like ?"
+    prefix = arm_run_pattern(arm)
     for shard in found:
         con = sqlite3.connect(f"file:{shard}?mode=ro", uri=True)
         calls += [
-            tag + list(row)
-            for row in con.execute("select benchmark, route, status, correct, tokens, speedup, compiler from calls")
+            tag + list(row) for row in con.execute(
+                f"select benchmark, route, status, correct, tokens, speedup, compiler from calls {row_filter}", (
+                    prefix, ))
         ]
         submissions += [
             tag + list(row) for row in con.execute(
-                "select benchmark, preset, baseline_ns, native_ns, speedup, suspect from submissions")
+                "select benchmark, preset, baseline_ns, native_ns, speedup, suspect "
+                f"from submissions {row_filter}", (prefix, ))
         ]
         con.close()
     return calls, submissions
@@ -269,6 +349,12 @@ def summarise(calls: list[list], submissions: list[list]) -> list[dict[str, obje
             "tokens_per_kernel": int(tokens / reached) if reached else 0,
             "tokens_per_solved": int(tokens / solved) if solved else 0,
             "speedup_n": len(values),
+            # The HEADLINE. Speed-up is a ratio, so the arm-level figure is the geometric mean: it
+            # is the ratio whose product over the set matches, and it is symmetric in speed-up and
+            # slowdown (2x and 0.5x cancel to 1). The arithmetic mean is dragged by one 50x kernel
+            # past anything the arm does normally, and the median throws away the size of every win
+            # -- both are kept below as spread cues, neither is the number to quote.
+            "speedup_geomean": geomean(values),
             "speedup_median": round(values[len(values) // 2], 4) if values else 0.0,
             "speedup_mean": round(sum(values) / len(values), 4) if values else 0.0,
             "speedup_max": round(max(values), 4) if values else 0.0,
@@ -277,6 +363,19 @@ def summarise(calls: list[list], submissions: list[list]) -> list[dict[str, obje
             "frac_speedup_gt_1_1": round(sum(1 for v in values if v > 1.1) / len(values), 4) if values else 0.0,
         })
     return out
+
+
+def geomean(values: list[float]) -> float:
+    """Geometric mean of a speed-up set; ``0.0`` when it is empty.
+
+    Non-positive entries are dropped rather than clamped: a speed-up at or below zero is a missing
+    measurement, not a slow one, and an epsilon would drag the geomean toward zero and read as a
+    collapse that never happened.
+    """
+    usable = [v for v in values if v > 0]
+    if not usable:
+        return 0.0
+    return round(math.exp(sum(math.log(v) for v in usable) / len(usable)), 4)
 
 
 def matched_pairs(calls: list[list], submissions: list[list]) -> list[dict[str, object]]:
@@ -350,8 +449,40 @@ def matched_pairs(calls: list[list], submissions: list[list]) -> list[dict[str, 
                 for p in (1.0, 2.0, 4.0)
                 for side, arm in (("off", off), ("skills", on))
             },
+            **paired_speedup(common, best[off], best[on]),
         })
     return out
+
+
+def paired_speedup(common: set[str], off: dict[str, float], on: dict[str, float]) -> dict[str, object]:
+    """Geomean speed-up of each side, and their ratio, over the kernels BOTH sides actually timed.
+
+    The arm-level geomean in ``summary.csv`` is taken over whatever each arm reached, and the two
+    arms reached different kernels -- so a difference between those two numbers is partly a
+    difference in which problems were attempted. This is the paired form: only kernels with a
+    timed, non-suspect submission on BOTH sides, so the ratio is the skills effect and nothing else.
+
+    ``ratio`` is the geomean of the PER-KERNEL ratios, which is the same as the ratio of the two
+    geomeans; the sign test is on those per-kernel ratios, and it is what says whether the direction
+    is real rather than one kernel carrying the arm.
+    """
+    both = sorted(b for b in common if off.get(b, 0.0) > 0 and on.get(b, 0.0) > 0)
+    if not both:
+        return {"paired_n": 0, "paired_geo_off": 0.0, "paired_geo_skills": 0.0, "paired_ratio": 0.0, "sign_p": 1.0}
+    ratios = [on[b] / off[b] for b in both]
+    wins = sum(1 for r in ratios if r > 1.0)
+    losses = sum(1 for r in ratios if r < 1.0)
+    n = wins + losses
+    p_value = (min(1.0, 2.0 * sum(math.comb(n, k) for k in range(min(wins, losses) + 1)) / 2**n) if n else 1.0)
+    return {
+        "paired_n": len(both),
+        "paired_geo_off": round(math.exp(sum(math.log(off[b]) for b in both) / len(both)), 4),
+        "paired_geo_skills": round(math.exp(sum(math.log(on[b]) for b in both) / len(both)), 4),
+        "paired_ratio": round(math.exp(sum(math.log(r) for r in ratios) / len(ratios)), 4),
+        "sign_wins": wins,
+        "sign_losses": losses,
+        "sign_p": round(p_value, 4),
+    }
 
 
 def write_csv(path: pathlib.Path, columns: list[str], rows: list) -> None:
