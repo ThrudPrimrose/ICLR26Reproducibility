@@ -180,6 +180,71 @@ ARMS: list[dict[str, object]] = [
         "batch": "r1",
         "problems": 10
     },
+    # llr8w3: a COMPLETION wave. Four arms re-run only the kernels their wave-2 twin never
+    # submitted, so their denominator is the hand-written list, not 40 -- reporting them out of 40
+    # would charge them for kernels they were never given. Coverage is the UNION with wave 2; these
+    # rows are not an independent sample of the 40. The other four are full 40-kernel arms for the
+    # two models wave 2 never ran in C.
+    {
+        "campaign": "llr8w3",
+        "job": 611560,
+        "model": "qwen38",
+        "language": "c",
+        "skills": False,
+        "problems": 8
+    },
+    {
+        "campaign": "llr8w3",
+        "job": 611561,
+        "model": "qwen38",
+        "language": "c",
+        "skills": True,
+        "problems": 6
+    },
+    {
+        "campaign": "llr8w3",
+        "job": 611562,
+        "model": "qwen38",
+        "language": "fortran",
+        "skills": False,
+        "problems": 7
+    },
+    {
+        "campaign": "llr8w3",
+        "job": 611563,
+        "model": "qwen38",
+        "language": "fortran",
+        "skills": True,
+        "problems": 5
+    },
+    {
+        "campaign": "llr8w3",
+        "job": 611564,
+        "model": "oss120b",
+        "language": "c",
+        "skills": False
+    },
+    {
+        "campaign": "llr8w3",
+        "job": 611565,
+        "model": "oss120b",
+        "language": "c",
+        "skills": True
+    },
+    {
+        "campaign": "llr8w3",
+        "job": 611566,
+        "model": "kimi27sglang",
+        "language": "c",
+        "skills": False
+    },
+    {
+        "campaign": "llr8w3",
+        "job": 611567,
+        "model": "kimi27sglang",
+        "language": "c",
+        "skills": True
+    },
 ]
 
 # Success is reported against the kernel set the arm DREW FROM, not against however many it
@@ -188,7 +253,7 @@ ARMS: list[dict[str, object]] = [
 #: holds 120 entries, but the launcher dispatches 40 of them per arm -- the highest problem
 #: index in every wave-2 run_id is p39, and the two oss120b arms dispatched all 40. The POOL
 #: is not the denominator; taking it as one reported a 55% success rate as 18%.
-PROBLEM_COUNT = {"llr6v10": 40, "llr8": 40, "llr8w2": 40}
+PROBLEM_COUNT = {"llr6v10": 40, "llr8": 40, "llr8w2": 40, "llr8w3": 40}
 
 CALL_COLUMNS = [
     "arm", "model", "language", "skills", "job", "benchmark", "route", "status", "correct", "tokens", "speedup",

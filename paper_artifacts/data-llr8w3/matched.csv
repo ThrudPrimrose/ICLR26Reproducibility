@@ -1,0 +1,3 @@
+model,language,arm_off,arm_skills,reached_off,reached_skills,common,solved_off,solved_skills,rate_off,rate_skills,delta_pp,only_off,only_skills,discordant,mcnemar_p,fast1_off,fast1_skills,fast2_off,fast2_skills,fast4_off,fast4_skills,paired_n,paired_geo_off,paired_geo_skills,paired_ratio,sign_wins,sign_losses,sign_p
+oss120b,c,llr8w3-oss120b-c,llr8w3-oss120b-c-skills,40,39,39,33,33,0.8462,0.8462,0.0,2,2,4,1.0,0.7949,0.7692,0.5641,0.5897,0.3846,0.5385,27,4.7378,6.6598,1.4057,16,11,0.4421
+kimi27sglang,c,llr8w3-kimi27sglang-c,llr8w3-kimi27sglang-c-skills,21,17,16,12,11,0.75,0.6875,-6.25,3,2,5,1.0,0.75,0.6875,0.625,0.6875,0.375,0.4375,9,4.8867,7.4548,1.5255,5,3,0.7266
