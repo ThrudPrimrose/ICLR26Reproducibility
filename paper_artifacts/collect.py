@@ -330,9 +330,26 @@ ARMS: list[dict[str, object]] = [
         "skills": True,
         "problems": 25
     },
-    # llr8w6: the C completion wave. The two oss120b arms were cut short 13 minutes in, after each
-    # had scored 5 of its 7 kernels; their shards hold that work and the rest moved to a later wave
-    # that runs under the prompt fix (no -ffast-math in the agents' own local builds).
+    # llr8w6: the C completion wave, the first whose gap lists were computed from submissions.csv
+    # rather than read off a summary. The two oss120b arms were cut short 13 minutes in, after each
+    # had scored 5 of its 7 kernels; their shards hold that work and the remaining two kernels moved
+    # to w7, which runs under the prompt fix (no -ffast-math in the agents' own local builds).
+    {
+        "campaign": "llr8w6",
+        "job": 612291,
+        "model": "qwen38",
+        "language": "c",
+        "skills": False,
+        "problems": 4
+    },
+    {
+        "campaign": "llr8w6",
+        "job": 612292,
+        "model": "qwen38",
+        "language": "c",
+        "skills": True,
+        "problems": 3
+    },
     {
         "campaign": "llr8w6",
         "job": 612293,
@@ -349,6 +366,44 @@ ARMS: list[dict[str, object]] = [
         "skills": True,
         "problems": 7
     },
+    # The kimi arms of the same wave were held back until the wave-4 kimi pair released its nodes --
+    # a kimi arm is 6 nodes, and both of them on top of the rest of w6 is over beverin's budget -- so
+    # their gap was recomputed against the FINAL wave-4 shards and is smaller than the rest of w6's.
+    {
+        "campaign": "llr8w6",
+        "job": 612314,
+        "model": "kimi27sglang",
+        "language": "c",
+        "skills": False,
+        "problems": 14
+    },
+    {
+        "campaign": "llr8w6",
+        "job": 612315,
+        "model": "kimi27sglang",
+        "language": "c",
+        "skills": True,
+        "problems": 11
+    },
+    # llr8w7: the two kernels w6's oss120b arms were cut short before reaching, re-issued under the
+    # prompt fix. Its own wave rather than a resubmission of w6 because the prompt changed between
+    # them, and an arm graded under a different agent prompt is a different arm.
+    {
+        "campaign": "llr8w7",
+        "job": 612301,
+        "model": "oss120b",
+        "language": "c",
+        "skills": False,
+        "problems": 2
+    },
+    {
+        "campaign": "llr8w7",
+        "job": 612302,
+        "model": "oss120b",
+        "language": "c",
+        "skills": True,
+        "problems": 2
+    },
 ]
 
 # Success is reported against the kernel set the arm DREW FROM, not against however many it
@@ -357,7 +412,28 @@ ARMS: list[dict[str, object]] = [
 #: holds 120 entries, but the launcher dispatches 40 of them per arm -- the highest problem
 #: index in every wave-2 run_id is p39, and the two oss120b arms dispatched all 40. The POOL
 #: is not the denominator; taking it as one reported a 55% success rate as 18%.
-PROBLEM_COUNT = {"llr6v10": 40, "llr8": 40, "llr8w2": 40, "llr8w3": 40, "llr8w4": 40, "llr8w6": 40}
+PROBLEM_COUNT = {"llr6v10": 40, "llr8": 40}
+
+#: THE WAVE NAMING SCHEME, for every campaign added after this line.
+#:
+#: A wave is named ``llr8w<N>``: one SUBMISSION BATCH, N monotonically increasing, never reused and
+#: never renumbered -- the token is stamped into the ``data-llr8w<N>`` directory the figures read,
+#: so renaming a wave silently orphans a frozen result. A gap is fine (there is no w5). Two waves
+#: exist rather than one whenever the thing being measured changed between them: a new agent
+#: prompt, a new flag matrix, a new skills packet. A pure resubmission of the same arms under the
+#: same everything is the SAME wave under a new job id, and the registry keeps the job with the
+#: most calls.
+#:
+#: Every llr8 wave draws from the ``llr-focus40`` tag, so :data:`LLR8_WAVE_KERNELS` is its
+#: denominator and a new wave needs no entry in :data:`PROBLEM_COUNT`. What a COMPLETION wave does
+#: need is a ``problems`` on each of its arms, because those draw a computed subset of the tag and
+#: scoring them out of 40 charges them for kernels they were never given.
+#:
+#: The run root is a campaign-family directory, not a wave directory: waves 4, 6 and 7 all write
+#: under ``llr8w4-20260829/``, because a completion wave inherits its RUN_ROOT from the env file it
+#: was derived from. Job id, not directory name, is what maps a run to a wave -- which is the whole
+#: reason the registry above exists.
+LLR8_WAVE_KERNELS = 40
 
 CALL_COLUMNS = [
     "arm", "model", "language", "skills", "job", "benchmark", "route", "status", "correct", "tokens", "speedup",
@@ -402,8 +478,8 @@ def discover_arms(run_root: pathlib.Path, campaign: str) -> list[dict[str, objec
             if len(parts) < 3:
                 continue  # not an arm run_id (a hand-run probe writes e.g. `adhoc`)
             skills = "skills" in parts
-            batch = parts[-1] if parts[-1] not in ("skills", ) and parts[-1].startswith(("r", "a", "b")) and len(
-                parts[-1]) <= 2 else ""
+            batch = parts[-1] if parts[-1] not in ("skills", ) and parts[-1].startswith(
+                ("r", "a", "b")) and len(parts[-1]) <= 2 else ""
             core = [p for p in parts[1:] if p != "skills" and p != batch]
             if len(core) < 2:
                 continue
@@ -426,9 +502,10 @@ def discover_arms(run_root: pathlib.Path, campaign: str) -> list[dict[str, objec
             previous = found.get(name)
             if previous is None or weight > previous[0]:
                 if previous is not None:
-                    print(f"{name}: job {previous[1]['job']} superseded by {arm['job']} "
-                          f"({previous[0]} -> {weight} calls)",
-                          file=sys.stderr)
+                    print(
+                        f"{name}: job {previous[1]['job']} superseded by {arm['job']} "
+                        f"({previous[0]} -> {weight} calls)",
+                        file=sys.stderr)
                 found[name] = (weight, arm)
             else:
                 print(f"{name}: job {arm['job']} has fewer calls than {previous[1]['job']}, skipped", file=sys.stderr)
@@ -466,24 +543,38 @@ def arm_name(arm: dict[str, object]) -> str:
 BATCH_COUNT = {arm_name(a): int(a["problems"]) for a in ARMS if a.get("problems")}
 
 
+def llr8_wave(campaign: str) -> bool:
+    """Does this campaign name follow the wave scheme documented at :data:`LLR8_WAVE_KERNELS`?"""
+    return campaign.startswith("llr8w") and campaign[len("llr8w"):].isdigit()
+
+
 def problem_count(name: str) -> int:
     """How many kernels the arm DREW FROM -- the denominator both success rates are taken over."""
-    return BATCH_COUNT.get(name) or PROBLEM_COUNT[name.split("-", 1)[0]]
+    campaign = name.split("-", 1)[0]
+    size = BATCH_COUNT.get(name) or PROBLEM_COUNT.get(campaign)
+    if size:
+        return size
+    # A campaign off the scheme has no denominator anyone can guess, and defaulting one turns a
+    # missing registry entry into a wrong success rate in a figure. Say so instead.
+    if not llr8_wave(campaign):
+        raise SystemExit(f"campaign {campaign!r} has no kernel-set size; add it to PROBLEM_COUNT")
+    return LLR8_WAVE_KERNELS
 
 
 def shards(run_root: pathlib.Path, job: int) -> list[str]:
-    """The job's judge shards, or an empty list when the job has not run yet.
+    """The job's judge shards, or an empty list when the job has not graded anything yet.
 
-    The two empty cases are NOT the same and must not be handled the same way. A run directory that
-    does not exist is an arm still queued -- the registry names every arm of a campaign, including
-    ones whose results are still coming -- and collecting the rest is the right answer. A run
-    directory that exists with no shards under it means the root is wrong or the run broke, and
-    silently reporting zero for it would put a fabricated row in every figure downstream.
+    A run directory with no shards under it is NOT by itself a broken run: the judge creates its
+    rank directories at startup and only opens a database on the first grade, so an arm whose model
+    is still loading looks exactly like this for the first half hour. Warn and collect the rest.
+    What that state cannot distinguish is a wrong ``--run-root``, where every arm looks unstarted
+    and the pass would write a whole campaign of zeros; :func:`main` catches that case by checking
+    that the campaign as a whole found something.
     """
     run = run_root / str(job)
     found = sorted(glob.glob(str(run / "judge" / "rank-*" / "*.db")))
     if not found and run.is_dir():
-        raise SystemExit(f"no judge shards under {run}; the run is there but its judge wrote nothing")
+        print(f"{run}: judge has written no shards yet, skipped", file=sys.stderr)
     return found
 
 
@@ -494,7 +585,7 @@ def read_arm(run_root: pathlib.Path, arm: dict[str, object]) -> tuple[list[list]
     submissions: list[list] = []
     found = shards(run_root, int(arm["job"]))
     if not found:
-        print(f"{name}: job {arm['job']} has not run yet, skipped", file=sys.stderr)
+        print(f"{name}: job {arm['job']} has graded nothing yet, skipped", file=sys.stderr)
         return [], []
     # A shard is read for the rows THIS ARM wrote, not for everything in the file. The launcher
     # stamps every campaign row with `run_id = <arm>.n<node>.p<problem>.w<worker>`; a row carrying
@@ -771,11 +862,17 @@ def main() -> int:
         selected = [a for a in ARMS if not args.campaign or a.get("campaign", "llr4") == args.campaign]
     if not selected:
         raise SystemExit(f"no arms for campaign {args.campaign!r}")
+    graded = 0
     for arm in selected:
         calls, submissions = read_arm(args.run_root, arm)
         print(f"{arm_name(arm)}: calls={len(calls)} submissions={len(submissions)}")
+        graded += len(calls)
         all_calls += calls
         all_submissions += submissions
+    # Every arm empty is the signature of a wrong run root, not of a campaign that measured nothing.
+    # Writing the CSVs anyway would freeze a full set of zero rows into the figures downstream.
+    if not graded:
+        raise SystemExit(f"no arm of campaign {args.campaign or '(all)'} has any calls under {args.run_root}")
 
     write_csv(args.out / "calls.csv", CALL_COLUMNS, all_calls)
     write_csv(args.out / "submissions.csv", SUBMISSION_COLUMNS, all_submissions)

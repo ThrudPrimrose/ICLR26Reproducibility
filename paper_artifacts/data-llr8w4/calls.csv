@@ -1131,6 +1131,7 @@ llr8w4-kimi27sglang-c,kimi27sglang,c,0,612050,tsvc_2_s252,score,ok,1,2698735,0.9
 llr8w4-kimi27sglang-c,kimi27sglang,c,0,612050,tsvc_2_s252,score,ok,1,2861920,0.3392070484581498,gcc
 llr8w4-kimi27sglang-c,kimi27sglang,c,0,612050,tsvc_2_s252,score,ok,1,2861920,8.272955958057912,gcc
 llr8w4-kimi27sglang-c,kimi27sglang,c,0,612050,tsvc_2_s252,score,ok,1,3114575,1.0,gcc
+llr8w4-kimi27sglang-c,kimi27sglang,c,0,612050,tsvc_2_s4112,score,incorrect,0,243160,0.0,gcc
 llr8w4-kimi27sglang-c,kimi27sglang,c,0,612050,tsvc_2_s1244,score,incorrect,0,72630,0.0,gcc
 llr8w4-kimi27sglang-c,kimi27sglang,c,0,612050,tsvc_2_s1244,score,ok,1,106216,0.99941091662745,gcc
 llr8w4-kimi27sglang-c,kimi27sglang,c,0,612050,tsvc_2_s255,score,incorrect,0,71830,0.0,gcc
@@ -1452,3 +1453,4 @@ llr8w4-kimi27sglang-c-skills,kimi27sglang,c,1,612051,tsvc_2_s316,score,ok,1,3709
 llr8w4-kimi27sglang-c-skills,kimi27sglang,c,1,612051,tsvc_2_vag,submit,ok,1,184175,22.97379500448088,gcc
 llr8w4-kimi27sglang-c-skills,kimi27sglang,c,1,612051,tsvc_2_s316,score,ok,1,422968,12.606069337431995,gcc
 llr8w4-kimi27sglang-c-skills,kimi27sglang,c,1,612051,tsvc_2_s316,submit,ok,1,440925,12.032155768297464,gcc
+llr8w4-kimi27sglang-c-skills,kimi27sglang,c,1,612051,tsvc_2_vag,score,ok,1,249970,22.841912338192305,gcc
