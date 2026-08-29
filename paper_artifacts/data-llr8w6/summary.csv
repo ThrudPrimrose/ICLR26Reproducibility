@@ -1,0 +1,3 @@
+arm,model,language,skills,job,problems,attempted,solved,success_rate,success_rate_attempted,calls,submits,submits_ok,tokens,tokens_per_kernel,tokens_per_solved,speedup_n,speedup_geomean,speedup_median,speedup_mean,speedup_max,frac_speedup_gt_1_1
+llr8w6-oss120b-c,oss120b,c,0,612293,7,7,6,0.8571,0.8571,15,6,6,1726196,246599,287699,5,35.2413,32.8702,50.8996,127.2064,1.0
+llr8w6-oss120b-c-skills,oss120b,c,1,612294,7,7,6,0.8571,0.8571,15,7,7,1557271,222467,259545,5,21.7719,23.2035,34.5253,107.4102,1.0

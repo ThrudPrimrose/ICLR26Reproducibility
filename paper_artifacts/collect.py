@@ -245,6 +245,110 @@ ARMS: list[dict[str, object]] = [
         "language": "c",
         "skills": True
     },
+    # llr8w4: the second COMPLETION wave, and the first whose lists were COMPUTED rather than
+    # written by hand (make_gap_kernels.py). Each arm re-ran exactly the kernels its wave-2/3
+    # twin had never produced a scored submission for, so the denominator is that gap, not 40.
+    # Wave 5 re-ran the Fortran arms' residue into this same run directory under the same
+    # CAMPAIGN_ARM, which is why those jobs are absent here: they are the same arm continuing.
+    {
+        "campaign": "llr8w4",
+        "job": 612042,
+        "model": "qwen38",
+        "language": "c",
+        "skills": False,
+        "problems": 13
+    },
+    {
+        "campaign": "llr8w4",
+        "job": 612043,
+        "model": "qwen38",
+        "language": "c",
+        "skills": True,
+        "problems": 9
+    },
+    {
+        "campaign": "llr8w4",
+        "job": 612044,
+        "model": "qwen38",
+        "language": "fortran",
+        "skills": False,
+        "problems": 15
+    },
+    {
+        "campaign": "llr8w4",
+        "job": 612045,
+        "model": "qwen38",
+        "language": "fortran",
+        "skills": True,
+        "problems": 11
+    },
+    {
+        "campaign": "llr8w4",
+        "job": 612046,
+        "model": "oss120b",
+        "language": "c",
+        "skills": False,
+        "problems": 9
+    },
+    {
+        "campaign": "llr8w4",
+        "job": 612047,
+        "model": "oss120b",
+        "language": "c",
+        "skills": True,
+        "problems": 10
+    },
+    {
+        "campaign": "llr8w4",
+        "job": 612048,
+        "model": "oss120b",
+        "language": "fortran",
+        "skills": False,
+        "problems": 15
+    },
+    {
+        "campaign": "llr8w4",
+        "job": 612049,
+        "model": "oss120b",
+        "language": "fortran",
+        "skills": True,
+        "problems": 16
+    },
+    {
+        "campaign": "llr8w4",
+        "job": 612050,
+        "model": "kimi27sglang",
+        "language": "c",
+        "skills": False,
+        "problems": 25
+    },
+    {
+        "campaign": "llr8w4",
+        "job": 612051,
+        "model": "kimi27sglang",
+        "language": "c",
+        "skills": True,
+        "problems": 25
+    },
+    # llr8w6: the C completion wave. The two oss120b arms were cut short 13 minutes in, after each
+    # had scored 5 of its 7 kernels; their shards hold that work and the rest moved to a later wave
+    # that runs under the prompt fix (no -ffast-math in the agents' own local builds).
+    {
+        "campaign": "llr8w6",
+        "job": 612293,
+        "model": "oss120b",
+        "language": "c",
+        "skills": False,
+        "problems": 7
+    },
+    {
+        "campaign": "llr8w6",
+        "job": 612294,
+        "model": "oss120b",
+        "language": "c",
+        "skills": True,
+        "problems": 7
+    },
 ]
 
 # Success is reported against the kernel set the arm DREW FROM, not against however many it
@@ -253,7 +357,7 @@ ARMS: list[dict[str, object]] = [
 #: holds 120 entries, but the launcher dispatches 40 of them per arm -- the highest problem
 #: index in every wave-2 run_id is p39, and the two oss120b arms dispatched all 40. The POOL
 #: is not the denominator; taking it as one reported a 55% success rate as 18%.
-PROBLEM_COUNT = {"llr6v10": 40, "llr8": 40, "llr8w2": 40, "llr8w3": 40}
+PROBLEM_COUNT = {"llr6v10": 40, "llr8": 40, "llr8w2": 40, "llr8w3": 40, "llr8w4": 40, "llr8w6": 40}
 
 CALL_COLUMNS = [
     "arm", "model", "language", "skills", "job", "benchmark", "route", "status", "correct", "tokens", "speedup",
