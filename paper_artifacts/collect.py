@@ -22,6 +22,9 @@ import math
 import sqlite3
 import sys
 
+import plot_llr8w2
+from analysis import constructs
+
 # Job ids are the record of which Slurm run produced which arm; see experiments/<arm>/README.md.
 #
 # Every arm before llr6v10 was dropped from this list on purpose, and none of them is comparable
@@ -181,9 +184,11 @@ ARMS: list[dict[str, object]] = [
 
 # Success is reported against the kernel set the arm DREW FROM, not against however many it
 # managed to reach. llr6v10 draws from the llr-focus40 tag, 40 kernels sampled three times each.
-#: Kernels each campaign DREW FROM. llr8w2 reads problems-llr6-{c,fortran}.jsonl, which is 120
-#: entries per language -- not the 40 of the focus40 tag its predecessors used.
-PROBLEM_COUNT = {"llr6v10": 40, "llr8": 40, "llr8w2": 120}
+#: Kernels each campaign DREW FROM. llr8w2 points at problems-llr6-{c,fortran}.jsonl, which
+#: holds 120 entries, but the launcher dispatches 40 of them per arm -- the highest problem
+#: index in every wave-2 run_id is p39, and the two oss120b arms dispatched all 40. The POOL
+#: is not the denominator; taking it as one reported a 55% success rate as 18%.
+PROBLEM_COUNT = {"llr6v10": 40, "llr8": 40, "llr8w2": 40}
 
 CALL_COLUMNS = [
     "arm", "model", "language", "skills", "job", "benchmark", "route", "status", "correct", "tokens", "speedup",
@@ -192,6 +197,74 @@ CALL_COLUMNS = [
 SUBMISSION_COLUMNS = [
     "arm", "model", "language", "skills", "job", "benchmark", "preset", "baseline_ns", "native_ns", "speedup", "suspect"
 ]
+
+
+def discover_arms(run_root: pathlib.Path, campaign: str) -> list[dict[str, object]]:
+    """Build the arm table by READING the runs, instead of requiring one to be typed in.
+
+    The launcher already stamps every row with ``run_id = <arm>.n<node>.p<problem>.w<worker>``, and
+    the arm name carries the model, the language and the skills leg. So the registry above is a
+    second copy of something the data already says, and keeping the two in step by hand is the step
+    that gets skipped -- llr6 and llr8 were both collected late for exactly that reason.
+
+    Discovery covers a run whose shards exist; :data:`ARMS` stays as the record of which jobs BELONG
+    to a campaign, including ones that produced nothing, because "this arm ran and returned no rows"
+    and "this arm was never in the campaign" are different claims and only the registry can tell
+    them apart. Use ``--discover`` for a quick look at a directory, the registry for a paper number.
+    """
+    found: dict[str, tuple[int, dict[str, object]]] = {}
+    for run_dir in sorted(run_root.iterdir()):
+        if not run_dir.is_dir():
+            continue
+        shard_paths = sorted(run_dir.glob("judge/rank-*/hpcagent_bench*.db"))
+        if not shard_paths:
+            continue
+        names: set[str] = set()
+        for shard in shard_paths:
+            con = sqlite3.connect(f"file:{shard}?mode=ro", uri=True)
+            try:
+                names |= {str(r[0]).split(".", 1)[0] for r in con.execute("select distinct run_id from calls") if r[0]}
+            except sqlite3.DatabaseError:
+                continue
+            finally:
+                con.close()
+        for name in sorted(names):
+            parts = name.split("-")
+            if len(parts) < 3:
+                continue  # not an arm run_id (a hand-run probe writes e.g. `adhoc`)
+            skills = "skills" in parts
+            batch = parts[-1] if parts[-1] not in ("skills", ) and parts[-1].startswith(("r", "a", "b")) and len(
+                parts[-1]) <= 2 else ""
+            core = [p for p in parts[1:] if p != "skills" and p != batch]
+            if len(core) < 2:
+                continue
+            arm = {
+                "campaign": campaign or parts[0],
+                "job": int(run_dir.name),
+                "model": "-".join(core[:-1]),
+                "language": core[-1],
+                "skills": skills,
+            }
+            if batch:
+                arm["batch"] = batch
+            # An arm that was submitted, failed and resubmitted appears under SEVERAL job ids, and
+            # the dead attempts carry rows. Keep the job with the most calls and say which ones were
+            # dropped: silently merging them would pool two different runs into one arm, and
+            # silently keeping all of them would report the same arm several times.
+            weight = sum(
+                con.execute("select count(*) from calls where run_id like ?", (f"{name}.%", )).fetchone()[0]
+                for con in [sqlite3.connect(f"file:{sh}?mode=ro", uri=True) for sh in shard_paths])
+            previous = found.get(name)
+            if previous is None or weight > previous[0]:
+                if previous is not None:
+                    print(f"{name}: job {previous[1]['job']} superseded by {arm['job']} "
+                          f"({previous[0]} -> {weight} calls)",
+                          file=sys.stderr)
+                found[name] = (weight, arm)
+            else:
+                print(f"{name}: job {arm['job']} has fewer calls than {previous[1]['job']}, skipped", file=sys.stderr)
+    return sorted((a for _, a in found.values()),
+                  key=lambda a: (str(a["model"]), str(a["language"]), bool(a["skills"])))
 
 
 def arm_run_pattern(arm: dict[str, object]) -> str:
@@ -468,7 +541,17 @@ def paired_speedup(common: set[str], off: dict[str, float], on: dict[str, float]
     """
     both = sorted(b for b in common if off.get(b, 0.0) > 0 and on.get(b, 0.0) > 0)
     if not both:
-        return {"paired_n": 0, "paired_geo_off": 0.0, "paired_geo_skills": 0.0, "paired_ratio": 0.0, "sign_p": 1.0}
+        # Every key, always: a caller formatting this row must not have to know which branch ran,
+        # and a missing key here crashed the figure for a pair with no commonly-timed kernel.
+        return {
+            "paired_n": 0,
+            "paired_geo_off": 0.0,
+            "paired_geo_skills": 0.0,
+            "paired_ratio": 0.0,
+            "sign_wins": 0,
+            "sign_losses": 0,
+            "sign_p": 1.0,
+        }
     ratios = [on[b] / off[b] for b in both]
     wins = sum(1 for r in ratios if r > 1.0)
     losses = sum(1 for r in ratios if r < 1.0)
@@ -503,12 +586,20 @@ def main() -> int:
     # distribution nothing was measured on: llr4 ran the 242-kernel track, llr6 the 40-kernel
     # llr-focus40 tag. Collect them into separate data directories and plot each on its own.
     parser.add_argument("--campaign", default="", help="only arms of this campaign (llr4, llr6)")
+    parser.add_argument("--discover",
+                        action="store_true",
+                        help="read the arms out of the run directories instead of the ARMS registry")
+    parser.add_argument("--plot", action="store_true", help="also render the figures for this campaign")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
     all_calls: list[list] = []
     all_submissions: list[list] = []
-    selected = [a for a in ARMS if not args.campaign or a.get("campaign", "llr4") == args.campaign]
+    if args.discover:
+        selected = discover_arms(args.run_root, args.campaign)
+        print(f"discovered {len(selected)} arms under {args.run_root}")
+    else:
+        selected = [a for a in ARMS if not args.campaign or a.get("campaign", "llr4") == args.campaign]
     if not selected:
         raise SystemExit(f"no arms for campaign {args.campaign!r}")
     for arm in selected:
@@ -528,6 +619,13 @@ def main() -> int:
     summary = summarise(all_calls, all_submissions)
     columns = list(summary[0])
     write_csv(args.out / "summary.csv", columns, [[row[c] for c in columns] for row in summary])
+
+    # The construct census reads the SAME shards this pass just opened, so it belongs on the same
+    # command rather than as a second thing to remember; a campaign collected without it is how the
+    # "what did the agents actually write" table went missing for two waves.
+    constructs.write_census(args.run_root, selected, args.out)
+    if args.plot:
+        plot_llr8w2.render(args.out, args.out.parent / f"figures-{args.out.name.removeprefix('data-')}")
     return 0
 
 

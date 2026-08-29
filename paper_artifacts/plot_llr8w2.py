@@ -144,25 +144,31 @@ def adoption_panel(ax, constructs: list[dict[str, str]]) -> None:
     ax.grid(axis="y", alpha=0.25, linewidth=0.6)
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data", type=pathlib.Path, default=pathlib.Path("data-llr8w2"))
-    parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path("figures-llr8w2"))
-    args = parser.parse_args()
-    args.out.mkdir(parents=True, exist_ok=True)
-
-    summary = read(args.data / "summary.csv")
-    matched = read(args.data / "matched.csv")
-    constructs = read(args.data / "constructs.csv")
+def render(data: pathlib.Path, out: pathlib.Path) -> pathlib.Path:
+    """Render the overview figure from ``data/*.csv`` into ``out``; returns the file written."""
+    out.mkdir(parents=True, exist_ok=True)
+    summary = read(data / "summary.csv")
+    matched = read(data / "matched.csv")
+    constructs = read(data / "constructs.csv")
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 5.2))
     cost_panel(axes[0], summary)
     effect_panel(axes[1], matched)
     adoption_panel(axes[2], constructs)
     fig.tight_layout()
-    target = args.out / "llr8w2_overview.png"
+    target = out / "overview.png"
     fig.savefig(target, dpi=170)
+    plt.close(fig)
     print(f"  {target}")
+    return target
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--data", type=pathlib.Path, default=pathlib.Path("data-llr8w2"))
+    parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path("figures-llr8w2"))
+    args = parser.parse_args()
+    render(args.data, args.out)
     return 0
 
 

@@ -11,11 +11,11 @@ speed-up tables stay the place where effect is measured. Constructs are matched 
 compiler would act on (a pragma, an intrinsic, a directive clause), never on a comment mentioning
 one, which is why every pattern anchors on the directive form.
 
-Usage:  python3 analysis/optimizations_llr8w2.py --run-root <runs> --out data-llr8w2
+Imported by ``collect.py``, which already opens these shards and passes in the arm list, so the
+census cannot end up describing a different set of arms from the speed-up tables beside it.
 """
 from __future__ import annotations
 
-import argparse
 import collections
 import csv
 import glob
@@ -23,18 +23,6 @@ import pathlib
 import re
 import sqlite3
 import sys
-
-#: job id -> arm, for the wave-2 arms. Same table as collect.py's ARMS; kept here as a mapping
-#: because this script reads the blob store, which collect.py has no reason to touch.
-ARMS = {
-    610669: ("qwen38", "c", False),
-    610671: ("qwen38", "c", True),
-    610670: ("qwen38", "fortran", False),
-    610672: ("qwen38", "fortran", True),
-    610668: ("oss120b", "fortran", False),
-    610653: ("oss120b", "fortran", True),
-    610662: ("kimi27sglang", "c", True),
-}
 
 #: construct -> pattern. Ordered most specific first so a `simd` inside a `parallel for simd` is
 #: counted as both, which is what a reader wants: the two say different things about the answer.
@@ -81,22 +69,23 @@ def sources_of(db: str) -> list[tuple[str, str, str]]:
     return out
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run-root", type=pathlib.Path, required=True)
-    parser.add_argument("--out", type=pathlib.Path, required=True)
-    args = parser.parse_args()
+def write_census(run_root: pathlib.Path, arms: list[dict], out: pathlib.Path) -> pathlib.Path:
+    """``<out>/constructs.csv``: one row per arm, the fraction of its answers using each construct.
 
-    per_arm: dict[str, dict[str, object]] = collections.OrderedDict()
+    Arms come from the CALLER so this and the speed-up tables cannot describe different sets; the
+    module used to carry its own copy of the job list, which is one more thing to keep in step.
+    """
     rows: list[dict[str, object]] = []
-    for job, (model, language, skills) in ARMS.items():
-        arm = f"llr8w2-{model}-{language}{'-skills' if skills else ''}"
-        shards = sorted(glob.glob(str(args.run_root / str(job) / "judge" / "rank-*" / "hpcagent_bench*.db")))
+    for arm in arms:
+        model, language, skills = str(arm["model"]), str(arm["language"]), bool(arm["skills"])
+        batch = f"-{arm['batch']}" if arm.get("batch") else ""
+        name = f"{arm.get('campaign', 'llr')}-{model}-{language}{'-skills' if skills else ''}{batch}"
+        shards = sorted(glob.glob(str(run_root / str(arm["job"]) / "judge" / "rank-*" / "hpcagent_bench*.db")))
         if not shards:
-            print(f"{arm}: no shards under job {job}", file=sys.stderr)
+            print(f"{name}: no shards under job {arm['job']}", file=sys.stderr)
             continue
         # One source per (benchmark, text): a kernel re-submitted unchanged is one answer, not two,
-        # and counting it twice would inflate whichever construct that kernel happens to use.
+        # and counting it twice inflates whichever construct that kernel happens to use.
         seen: set[tuple[str, str]] = set()
         counts: collections.Counter = collections.Counter()
         for shard in shards:
@@ -105,25 +94,26 @@ def main() -> int:
                 if key in seen:
                     continue
                 seen.add(key)
-                for name, pattern in CONSTRUCTS.items():
+                for construct, pattern in CONSTRUCTS.items():
                     if pattern.search(text):
-                        counts[name] += 1
+                        counts[construct] += 1
         answers = len(seen)
-        per_arm[arm] = {"answers": answers, **{k: counts.get(k, 0) for k in CONSTRUCTS}}
-        row = {"arm": arm, "model": model, "language": language, "skills": int(skills), "answers": answers}
+        row: dict[str, object] = {
+            "arm": name,
+            "model": model,
+            "language": language,
+            "skills": int(skills),
+            "answers": answers
+        }
         row.update({k: round(counts.get(k, 0) / answers, 4) if answers else 0.0 for k in CONSTRUCTS})
         rows.append(row)
-        print(f"{arm}: {answers} distinct answers")
+        print(f"{name}: {answers} distinct answers")
 
-    args.out.mkdir(parents=True, exist_ok=True)
-    target = args.out / "constructs.csv"
+    out.mkdir(parents=True, exist_ok=True)
+    target = out / "constructs.csv"
     with target.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]) if rows else ["arm"])
         writer.writeheader()
         writer.writerows(rows)
     print(f"  {target}  rows={len(rows)}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    return target
