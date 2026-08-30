@@ -1,0 +1,7 @@
+# 120 columns, matching the yapf style every file here is formatted with. Without this ruff
+# defaults to 88 and reports the whole tree as too long, which trains the reader to ignore it.
+line-length = 120
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "W", "B", "C4", "UP", "SIM"]
