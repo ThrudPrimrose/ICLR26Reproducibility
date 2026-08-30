@@ -1,6 +1,7 @@
 """TSVC kernel speed-ups from the MPR framework sweep, on a SIGNED relative axis.
 
-Three arms against the numpy reference the sweep times per kernel: dace canon, dace main and llvm
+Three arms against the serial gcc -O3 reference the sweep times per kernel: dace canon, dace main
+and llvm
 autopar. The sweep writes one CSV per framework -- ``<framework>.rank<N>.csv`` when a job shards a
 node four ways, ``<framework>.csv`` when it does not -- and both shapes are read and concatenated.
 
@@ -41,10 +42,17 @@ import matplotlib.pyplot as plt  # noqa: E402  -- must follow the Agg backend se
 import scipy.stats  # noqa: E402  -- ditto, it pulls matplotlib in itself
 
 #: Framework -> the name a reader knows it by. Insertion order is the order on the axis.
-ARMS = {"dace_cpu_canonicalize": "dace canon", "dace_cpu": "dace main", "cc_llvm_autopar": "llvm autopar"}
+ARMS = {"dace_cpu_canonicalize": "dace canon", "dace_cpu": "dace main", "cc_llvm_autopar": "llvm + polly"}
 
-#: The speed-up DENOMINATOR: the interpreted reference every arm is trying to beat.
-BASELINE = "numpy"
+#: The speed-up DENOMINATOR: a SERIAL optimizing compile, not the interpreted reference.
+#:
+#: cc, not numpy, and not the llvm+polly arm either. numpy flatters an auto-parallelizer for reasons
+#: that have nothing to do with parallelization, and polly is not defined on every kernel -- a
+#: non-affine loop is outside a polyhedral tool, so using it as the divisor would drop exactly the
+#: kernels it cannot handle and measure the others on its home ground. cc exists for every kernel,
+#: so every arm keeps full n, and llvm+polly stays visible as an ARM instead of hiding in the
+#: denominator.
+BASELINE = "cc"
 
 #: Kernels this figure is about. tsvc_2_5* sources are already under this prefix.
 TSVC_PREFIX = "tsvc_2"
@@ -205,8 +213,8 @@ def render(root: pathlib.Path, out: pathlib.Path) -> pathlib.Path:
     ax.set_xticks(range(len(ARMS)))
     ax.set_xticklabels(list(ARMS.values()))
     ax.set_ylabel(
-        "signed relative speed-up vs numpy\n$+1$ = 2$\\times$ faster, 0 = no change, $-1$ = 2$\\times$ slower")
-    ax.set_title(f"TSVC kernels, signed speed-up against the {BASELINE} reference", loc="left", pad=30)
+        "signed relative speed-up vs serial gcc -O3\n$+1$ = 2$\\times$ faster, 0 = no change, $-1$ = 2$\\times$ slower")
+    ax.set_title("TSVC kernels, signed speed-up against serial gcc -O3", loc="left", pad=30)
     # The category axis spans the arms, not the arms that produced points: an arm whose CSV never
     # appeared was still part of the comparison, and letting the data set the limits dropped its
     # tick label off the end of the axis entirely.
@@ -227,6 +235,11 @@ def render(root: pathlib.Path, out: pathlib.Path) -> pathlib.Path:
               fontsize=7.5)
     # One line per arm: the three notes on one line ran off the page at every figure width that
     # still fits a paper column.
+    # The denominator is a SINGLE sample where the numerators are medians of three, so a ratio
+    # here inherits all of cc's run-to-run noise and none of the averaging. It biases no arm --
+    # every arm divides by the same number -- but it widens the spread, so say so on the figure.
+    notes.append("denominator is one cc sample; arms are medians of three -- the ratio carries "
+                 "cc's run-to-run noise unaveraged")
     fig.text(0.008, 0.008, "\n".join(notes + [f"source: {root.name}"]), fontsize=6.5, color=MUTED)
     fig.tight_layout(rect=(0.0, 0.12, 1.0, 1.0))
     out.parent.mkdir(parents=True, exist_ok=True)
