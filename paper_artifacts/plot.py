@@ -2,21 +2,24 @@
 
 Form follows the job each metric does:
 
-  success  magnitude compared WITHIN a skills pair -> grouped bars, delta annotated.
-  speedup  a distribution, not a level. The median is 1.00 for six of seven arms while the tail
-           reaches 12.5x, so a bar of medians would report "no effect" everywhere and hide the
-           entire result. An ECDF on a log axis shows the whole distribution and needs no binning.
-  tokens   cost. Totals are not comparable across models that solved different numbers of
-           problems, so this plots tokens per SOLVED problem.
-  cost     the mechanism behind the two disagreeing success denominators, in two bars each:
-           tokens per KERNEL is what the skills packet moves, coverage is what that buys. They are
-           plotted as a pair because neither is a finding on its own -- a dearer kernel is only a
-           problem because the budget is fixed, and fewer kernels reached is only explained by the
-           price going up.
+  success  a bounded fraction, so it is a row of bars over a FULL-SCALE track: the empty part of
+           the track is the rest of the problem set, which is the comparison the number invites.
+  speedup  a distribution, not a level. The median is 1.00 for six of seven arms in the first
+           campaign while the tail reaches 12.5x, so a bar of medians would report "no effect"
+           everywhere and hide the entire result. An ECDF on a log axis shows the whole
+           distribution and needs no binning. One SMALL PANEL PER ARM PAIR rather than one panel
+           per language: with four curves on an axis the two legs of a pair sit further apart than
+           two legs of neighbouring pairs, and the legend that then becomes necessary has to go
+           somewhere, which is how the old version ended up with a legend block in dead space.
+  tokens   cost, and unbounded, so it is a DUMBBELL: hollow marker for the base leg, filled for the
+           skills leg, one row per pair. Totals are not comparable across models that solved
+           different numbers of problems, so this plots tokens per SOLVED problem.
+  cost     the mechanism behind the two disagreeing success denominators, in two figures: tokens
+           per KERNEL is what the skills packet moves, coverage is what that buys.
 
-Colour identifies the model and nothing else; the skills condition is carried by fill and line
-style, so a reader who cannot separate the hues still reads the comparison. Palette validated with
-the dataviz validator: worst adjacent CVD dE 24.7 (protan), normal-vision 33.6, all checks pass.
+Colour identifies the model and nothing else; the skills condition is carried by fill (hatched for
+off, solid for on) and by marker (hollow for off, filled for on), so a reader who cannot separate
+the hues still reads the comparison. Palette, fonts and idioms all come from artifact_style.
 
 Usage:  python3 plot.py [--data data] [--out figures]
 """
@@ -28,31 +31,24 @@ import pathlib
 import sys
 
 import matplotlib
+import matplotlib.lines
+import matplotlib.ticker
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402  -- must follow the Agg backend selection
 
-MODEL_COLOR = {"qwen30b": "#2a78d6", "oss120b": "#eb6834"}
-INK, MUTED, GRID = "#1a1a1a", "#5c5c5c", "#d8d8d8"
-LABEL = {"qwen30b": "Qwen3-Coder-30B", "oss120b": "gpt-oss-120b"}
+import artifact_style  # noqa: E402  -- ditto, it imports pyplot itself
+
+MODEL_COLOR = artifact_style.MODEL_COLOR
+LABEL = artifact_style.MODEL_LABEL
+
+#: Row pitch of a paired row figure: the two legs sit 1.0 apart, the next pair starts here.
+PAIR_PITCH = 2.45
 
 
 def style() -> None:
-    plt.rcParams.update({
-        "font.size": 9,
-        "axes.labelsize": 9,
-        "axes.titlesize": 10,
-        "axes.edgecolor": MUTED,
-        "axes.labelcolor": INK,
-        "text.color": INK,
-        "xtick.color": MUTED,
-        "ytick.color": MUTED,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "grid.color": GRID,
-        "grid.linewidth": 0.6,
-        "figure.dpi": 300,
-    })
+    """Kept as the entry point every script already calls; the look itself lives in artifact_style."""
+    artifact_style.apply()
 
 
 def read_summary(path: pathlib.Path) -> list[dict[str, str]]:
@@ -70,177 +66,226 @@ def cells(rows: list[dict[str, str]]) -> list[tuple[str, str]]:
     return sorted(seen, key=lambda k: (list(MODEL_COLOR).index(k[0]), k[1]))
 
 
-def paired_bars(rows: list[dict[str, str]], field: str, scale: float, ylabel: str, title: str, fmt: str,
+def language_name(language: str) -> str:
+    return language.upper() if language == "c" else language.capitalize()
+
+
+def group_name(model: str, language: str) -> str:
+    return f"{LABEL[model]} / {language_name(language)}"
+
+
+def pair_rows(names: list[str]) -> tuple[list[str], list[float]]:
+    """Row labels and y positions: the two legs of a pair sit closer than two neighbouring pairs."""
+    labels: list[str] = []
+    positions: list[float] = []
+    for index, name in enumerate(names):
+        labels += [name, "+ skills"]
+        positions += [index * PAIR_PITCH, index * PAIR_PITCH + 1.0]
+    return labels, positions
+
+
+def leg(rows: list[dict[str, str]], model: str, language: str, skills: str) -> dict[str, str] | None:
+    match = [r for r in rows if r["model"] == model and r["language"] == language and r["skills"] == skills]
+    return match[0] if match else None
+
+
+def missing(ax, row: int) -> None:
+    """An arm that never finished is a gap with a word in it, never a zero bar."""
+    ax.annotate("arm incomplete",
+                xy=(0.0, row),
+                xycoords=("axes fraction", "data"),
+                xytext=(4, 0),
+                textcoords="offset points",
+                fontsize=6.5,
+                color=artifact_style.MUTED,
+                style="italic",
+                ha="left",
+                va="center")
+
+
+def row_figure(names: list[str], title: str, xlabel: str, left: float = 0.235, right: float = 0.855) -> tuple:
+    labels, positions = pair_rows(names)
+    tall = 0.92 + 0.235 * (max(positions) + 1.24)
+    fig, ax = plt.subplots(figsize=(6.6, tall))
+    fig.subplots_adjust(left=left, right=right, top=1.0 - 0.48 / tall, bottom=0.60 / tall)
+    artifact_style.axis_title(ax, title)
+    ax.set_xlabel(xlabel)
+    return fig, ax, labels, positions
+
+
+def paired_bars(rows: list[dict[str, str]], field: str, scale: float, top: float, xlabel: str, title: str, fmt: str,
                 out: pathlib.Path) -> None:
+    """A bounded fraction, one row per arm, each drawn over a full-scale track.
+
+    No series key: the rows name themselves, so the hatch is a second reading of the label rather
+    than the only one, and the corner a key would need stays empty.
+    """
     groups = cells(rows)
-    fig, ax = plt.subplots(figsize=(6.4, 3.2))
-    width, positions = 0.34, range(len(groups))
+    fig, ax, labels, positions = row_figure([group_name(m, lang) for m, lang in groups], title, xlabel)
+    ax.set_xlim(0.0, top)
+    artifact_style.row_axis(ax, labels, positions, gridaxis="none")
     for index, (model, language) in enumerate(groups):
-        colour = MODEL_COLOR[model]
-        for offset, skills in ((-width / 2, "0"), (width / 2, "1")):
-            match = [r for r in rows if r["model"] == model and r["language"] == language and r["skills"] == skills]
-            if not match:
-                # An arm that never finished is left as a gap, never as a zero bar.
-                ax.text(index + offset,
-                        0.01,
-                        "arm\nincomplete",
-                        ha="center",
-                        va="bottom",
-                        fontsize=7,
-                        color=MUTED,
-                        style="italic")
+        for offset, skills in ((0, "0"), (1, "1")):
+            row = positions[2 * index + offset]
+            arm = leg(rows, model, language, skills)
+            if arm is None:
+                missing(ax, row)
                 continue
-            value = float(match[0][field]) * scale
-            ax.bar(index + offset,
-                   value,
-                   width,
-                   color=colour if skills == "1" else "white",
-                   edgecolor=colour,
-                   linewidth=1.4,
-                   hatch=None if skills == "1" else "///",
-                   zorder=3)
-            ax.text(index + offset, value, fmt.format(value), ha="center", va="bottom", fontsize=8, color=INK)
-        pair = {r["skills"]: r for r in rows if r["model"] == model and r["language"] == language}
-        if "0" in pair and "1" in pair:
-            delta = (float(pair["1"][field]) - float(pair["0"][field])) * scale
-            top = max(float(pair[s][field]) * scale for s in ("0", "1"))
-            # Above the pair, never below the axis: at the axis it collides with the tick labels.
-            ax.annotate(f"{delta:+.1f}" if abs(delta) >= 1 else f"{delta:+.2f}",
-                        xy=(index, top),
-                        xytext=(0, 16),
-                        textcoords="offset points",
-                        ha="center",
-                        fontsize=8,
-                        color=MUTED,
-                        fontweight="bold")
-    ax.set_xticks(list(positions))
-    ax.set_xticklabels([f"{LABEL[m]}\n{lang.upper() if lang == 'c' else lang.capitalize()}" for m, lang in groups])
-    ax.set_ylabel(ylabel)
-    ax.set_title(title, loc="left", pad=18)
-    ax.margins(y=0.16)
-    ax.yaxis.grid(True, zorder=0)
+            value = float(arm[field]) * scale
+            artifact_style.bar_row(ax, row, value, MODEL_COLOR[model], on=skills == "1", height=0.72)
+            artifact_style.right_label(ax, row, fmt.format(value))
+    artifact_style.save(fig, out)
+
+
+def paired_dumbbell(rows: list[dict[str, str]], field: str, scale: float, xlabel: str, title: str, fmt: str,
+                    out: pathlib.Path) -> None:
+    """An unbounded magnitude: one row per pair, hollow base leg to filled skills leg."""
+    groups = cells(rows)
+    labels = [group_name(m, lang) for m, lang in groups]
+    tall = 1.15 + 0.36 * len(labels)
+    fig, ax = plt.subplots(figsize=(6.6, tall))
+    fig.subplots_adjust(left=0.235, right=0.845, top=1.0 - 0.72 / tall, bottom=0.66 / tall)
+    artifact_style.axis_title(ax, title, pad=18.0)
+    ax.set_xlabel(xlabel)
+    artifact_style.row_axis(ax, labels)
+    for row, (model, language) in enumerate(groups):
+        legs = {s: leg(rows, model, language, s) for s in ("0", "1")}
+        values = {s: float(a[field]) * scale if a is not None else None for s, a in legs.items()}
+        if values["0"] is None and values["1"] is None:
+            missing(ax, row)
+            continue
+        artifact_style.dumbbell(ax, row, values["0"], values["1"], MODEL_COLOR[model])
+        if values["0"] is None or values["1"] is None:
+            artifact_style.right_label(ax, row, "one leg only", artifact_style.MUTED)
+            continue
+        artifact_style.right_label(ax, row, fmt.format(values["1"] - values["0"]))
+    ax.margins(x=0.12)
+    artifact_style.key(ax, [("base", artifact_style.marker(artifact_style.INK2, on=False)),
+                            ("+ skills", artifact_style.marker(artifact_style.INK2, on=True))],
+                       anchor=(1.0, 1.005))
+    artifact_style.save(fig, out)
+
+
+def curve_panels(groups: list[tuple[str, str]], title: str, xlabel: str, ylabel: str) -> tuple:
+    """One small panel per arm pair: two curves each, so no figure ever needs a series legend.
+
+    The x label is set once under the row and the condition key sits on the figure's top rule, so
+    nothing competes with the panels for the space the curves leave.
+    """
+    wide = 1.66 * len(groups) + 0.9
+    fig, axes = plt.subplots(1, len(groups), figsize=(wide, 2.6), sharey=True, squeeze=False)
+    fig.subplots_adjust(left=0.66 / wide, right=0.99, top=0.80, bottom=0.215, wspace=0.16)
+    for ax, (model, language) in zip(axes[0], groups, strict=True):
+        ax.set_title(group_name(model, language), fontsize=8.0, weight="bold", pad=6.0)
+    axes[0][0].set_ylabel(ylabel)
+    fig.text(0.5, 0.015, xlabel, ha="center", va="bottom", fontsize=8.0, color=artifact_style.INK2)
+    artifact_style.eyebrow(fig, 0.008, 0.935, title)
+    return fig, axes[0]
+
+
+def log_speedup_axis(ax, ticks: list[float], limits: tuple[float, float]) -> None:
+    ax.set_xscale("log")
+    ax.set_xlim(*limits)
+    ax.set_xticks(ticks)
+    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    ax.get_xaxis().set_minor_formatter(matplotlib.ticker.NullFormatter())
+    ax.grid(True, axis="x")
     ax.set_axisbelow(True)
-    handles = [
-        plt.Rectangle((0, 0), 1, 1, facecolor="white", edgecolor=INK, hatch="///", linewidth=1.4),
-        plt.Rectangle((0, 0), 1, 1, facecolor=INK, edgecolor=INK, linewidth=1.4)
-    ]
-    # On the TITLE row, not inside the axes: these bars ascend left-to-right in most figures,
-    # so an in-axes legend lands on the tallest pair and its delta label.
-    ax.legend(handles, ["skills off", "skills on"],
-              frameon=False,
-              loc="lower right",
-              bbox_to_anchor=(1.0, 1.0),
-              ncol=2,
-              fontsize=8)
-    fig.text(0.012,
-             0.015,
-             "bold value above each pair is the skills-on minus skills-off delta",
-             fontsize=7,
-             color=MUTED)
-    fig.tight_layout()
-    for suffix in ("png", "svg"):
-        fig.savefig(out.with_suffix(f".{suffix}"), bbox_inches="tight")
-    plt.close(fig)
-    print(f"  {out}.png / .svg")
+
+
+def curve(ax, xs: list[float], ys: list[float], colour: str, on: bool) -> None:
+    ax.plot(xs,
+            ys,
+            drawstyle="steps-post",
+            linewidth=1.9 if on else 1.5,
+            color=colour,
+            linestyle="-" if on else (0, (3.0, 2.0)),
+            zorder=3)
+
+
+def leg_key(fig) -> None:
+    entries = [("skills off", matplotlib.lines.Line2D([], [], color=artifact_style.MUTED, linestyle=(0, (3.0, 2.0)))),
+               ("skills on", matplotlib.lines.Line2D([], [], color=artifact_style.MUTED))]
+    fig.legend([artist for _, artist in entries], [name for name, _ in entries],
+               loc="upper right",
+               bbox_to_anchor=(0.99, 1.0),
+               ncol=2,
+               frameon=False)
 
 
 def speedup_ecdf(data_dir: pathlib.Path, out: pathlib.Path) -> None:
-    """Faceted by language. Colour is the model and dash is the skills condition; language gets a
-    panel rather than a third visual channel, because with both models and both languages on one
-    axis the two solid blue lines (and the two solid orange) are indistinguishable."""
+    """The speed-up distribution of every correct, non-suspect submission, one panel per arm pair.
+
+    The old form put every arm of a language on one axis. Four curves then need a legend, the legend
+    needs a corner, and the corner it lands in is the one the curves left empty -- which is how a
+    figure ends up mostly white. Small panels label themselves.
+    """
     with (data_dir / "submissions.csv").open() as handle:
         rows = [r for r in csv.DictReader(handle) if r["speedup"] and r["suspect"] == "0"]
-    languages = ["c", "fortran"]
-    fig, axes = plt.subplots(1, len(languages), figsize=(7.6, 3.3), sharey=True)
-    for ax, language in zip(axes, languages, strict=True):
-        subset = [r for r in rows if r["language"] == language]
-        for model in MODEL_COLOR:
-            for skills in ("0", "1"):
-                values = sorted(float(r["speedup"]) for r in subset if r["model"] == model and r["skills"] == skills)
-                if not values:
-                    continue
-                fraction = [(i + 1) / len(values) for i in range(len(values))]
-                ax.step(values,
-                        fraction,
-                        where="post",
-                        linewidth=2.0,
-                        color=MODEL_COLOR[model],
-                        linestyle="-" if skills == "0" else "--",
-                        alpha=0.95,
-                        label=f"{LABEL[model]} - skills {'on' if skills == '1' else 'off'} (n={len(values)})")
-        ax.axvline(1.0, color=MUTED, linewidth=1.0, linestyle=":", zorder=1)
-        ax.set_xscale("log")
-        ax.set_xticks([1, 2, 4, 8, 16])
-        ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-        ax.set_xlabel("speedup over serial baseline")
-        ax.set_title(language.upper() if language == "c" else language.capitalize(), loc="left", pad=6)
-        ax.grid(True, zorder=0)
-        ax.set_axisbelow(True)
-        ax.legend(frameon=False, fontsize=7, loc="lower right")
-    axes[0].set_ylabel("fraction of correct submissions")
-    axes[0].set_ylim(0, 1.02)
-    fig.suptitle("Speedup distribution of correct submissions", x=0.012, ha="left", fontsize=10)
-    fig.text(0.012, -0.02, "a step at x=1 is a correct answer that did not go faster", fontsize=7, color=MUTED)
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
-    for suffix in ("png", "svg"):
-        fig.savefig(out.with_suffix(f".{suffix}"), bbox_inches="tight")
-    plt.close(fig)
-    print(f"  {out}.png / .svg")
+    groups = cells(rows)
+    top = max(float(r["speedup"]) for r in rows)
+    fig, axes = curve_panels(groups, "speed-up distribution of correct submissions", "speed-up over serial baseline",
+                             "fraction of correct submissions")
+    for ax, (model, language) in zip(axes, groups, strict=True):
+        notes: list[tuple[str, str]] = []
+        for skills in ("0", "1"):
+            values = sorted(
+                float(r["speedup"]) for r in rows
+                if r["model"] == model and r["language"] == language and r["skills"] == skills)
+            if not values:
+                continue
+            curve(ax, values, [(i + 1) / len(values) for i in range(len(values))], MODEL_COLOR[model], skills == "1")
+            notes.append((f"{'skills' if skills == '1' else 'base'} n={len(values)}", MODEL_COLOR[model]))
+        for index, (note, colour) in enumerate(notes):
+            ax.text(0.96,
+                    0.06 + 0.11 * (len(notes) - 1 - index),
+                    note,
+                    transform=ax.transAxes,
+                    family="monospace",
+                    fontsize=6.5,
+                    color=colour,
+                    ha="right",
+                    va="bottom")
+        log_speedup_axis(ax, [1, 2, 5, 10, 25, 50, 100], (0.93, top * 1.25))
+        ax.set_ylim(0.0, 1.02)
+    leg_key(fig)
+    artifact_style.save(fig, out)
 
 
 def matched(data_dir: pathlib.Path, out: pathlib.Path) -> None:
     """The fair comparison: each pair scored only on kernels BOTH arms reached.
 
-    Carries n and the McNemar exact p on the plot, because at these sample sizes every delta is
-    inside the noise and a bare bar pair would invite the reader to believe otherwise.
+    Carries n and the McNemar exact p, because at these sample sizes every delta is inside the
+    noise and a bare pair of bars would invite the reader to believe otherwise.
     """
     with (data_dir / "matched.csv").open() as handle:
         rows = list(csv.DictReader(handle))
-    fig, ax = plt.subplots(figsize=(6.4, 3.4))
-    width = 0.34
+    names = [f"{group_name(r['model'], r['language'])}\nn={r['common']}" for r in rows]
+    fig, ax, labels, positions = row_figure(names,
+                                            "Skills effect on matched problems (both arms reached)",
+                                            "solved on the common subset (%)",
+                                            right=0.80)
+    ax.set_xlim(0.0, 100.0)
+    artifact_style.row_axis(ax, labels, positions, gridaxis="none")
     for index, row in enumerate(rows):
-        colour = MODEL_COLOR[row["model"]]
-        for offset, key, skills in ((-width / 2, "rate_off", False), (width / 2, "rate_skills", True)):
-            value = float(row[key]) * 100
-            ax.bar(index + offset,
-                   value,
-                   width,
-                   color=colour if skills else "white",
-                   edgecolor=colour,
-                   linewidth=1.4,
-                   hatch=None if skills else "///",
-                   zorder=3)
-            ax.text(index + offset, value, f"{value:.1f}", ha="center", va="bottom", fontsize=8, color=INK)
-        top = max(float(row["rate_off"]), float(row["rate_skills"])) * 100
-        ax.annotate(f"{float(row['delta_pp']):+.1f} pp\np={float(row['mcnemar_p']):.2f}",
-                    xy=(index, top),
-                    xytext=(0, 14),
-                    textcoords="offset points",
-                    ha="center",
-                    fontsize=8,
-                    color=MUTED,
-                    fontweight="bold")
-    ax.set_xticks(range(len(rows)))
-    ax.set_xticklabels([
-        f"{LABEL[r['model']]}\n{r['language'].upper() if r['language'] == 'c' else r['language'].capitalize()}"
-        f"\nn={r['common']}" for r in rows
-    ])
-    ax.set_ylabel("solved on the common subset (%)")
-    ax.set_title("Skills effect on matched problems (both arms reached)", loc="left", pad=22)
-    ax.margins(y=0.26)
-    ax.yaxis.grid(True, zorder=0)
-    ax.set_axisbelow(True)
-    handles = [
-        plt.Rectangle((0, 0), 1, 1, facecolor="white", edgecolor=INK, hatch="///", linewidth=1.4),
-        plt.Rectangle((0, 0), 1, 1, facecolor=INK, edgecolor=INK, linewidth=1.4)
-    ]
-    ax.legend(handles, ["skills off", "skills on"], frameon=False, loc="upper right", fontsize=8)
-    fig.text(0.012, 0.015, "McNemar exact test on paired outcomes; no pair reaches p<0.05", fontsize=7, color=MUTED)
-    fig.tight_layout()
-    for suffix in ("png", "svg"):
-        fig.savefig(out.with_suffix(f".{suffix}"), bbox_inches="tight")
-    plt.close(fig)
-    print(f"  {out}.png / .svg")
+        for offset, field in ((0, "rate_off"), (1, "rate_skills")):
+            value = float(row[field]) * 100.0
+            artifact_style.bar_row(ax,
+                                   positions[2 * index + offset],
+                                   value,
+                                   MODEL_COLOR[row["model"]],
+                                   on=offset == 1,
+                                   height=0.72)
+            artifact_style.right_label(ax, positions[2 * index + offset], f"{value:5.1f}")
+        artifact_style.right_label(ax,
+                                   positions[2 * index] + 0.5,
+                                   f"{float(row['delta_pp']):+.1f}pp  p={float(row['mcnemar_p']):.2f}",
+                                   artifact_style.MUTED,
+                                   size=6.5,
+                                   offset=44.0)
+    artifact_style.save(fig, out)
+    reached = sum(float(r["mcnemar_p"]) < 0.05 for r in rows)
+    print(f"  matched: McNemar exact test on paired outcomes; {reached} of {len(rows)} pairs reach p<0.05")
 
 
 def fastp(data_dir: pathlib.Path, out: pathlib.Path) -> None:
@@ -258,51 +303,33 @@ def fastp(data_dir: pathlib.Path, out: pathlib.Path) -> None:
             reached.setdefault(row["arm"], set()).add(row["benchmark"])
     best: dict[str, dict[str, float]] = {}
     for r in subs:
-        d = best.setdefault(r["arm"], {})
-        d[r["benchmark"]] = max(d.get(r["benchmark"], 0.0), float(r["speedup"]))
+        table = best.setdefault(r["arm"], {})
+        table[r["benchmark"]] = max(table.get(r["benchmark"], 0.0), float(r["speedup"]))
 
     with (data_dir / "matched.csv").open() as handle:
         pairs = list(csv.DictReader(handle))
-    languages = sorted({r["language"] for r in pairs})
-    fig, axes = plt.subplots(1, len(languages), figsize=(7.6, 3.4), sharey=True, squeeze=False)
+    groups = [(r["model"], r["language"]) for r in pairs]
     grid = [1.0 + 0.02 * i for i in range(0, 350)]
-    for ax, language in zip(axes[0], languages, strict=True):
-        for row in [r for r in pairs if r["language"] == language]:
-            common = reached[row["arm_off"]] & reached[row["arm_skills"]]
-            for side, arm in (("off", row["arm_off"]), ("skills", row["arm_skills"])):
-                curve = [sum(1 for b in common if best.get(arm, {}).get(b, 0.0) >= p) / len(common) for p in grid]
-                ax.plot(grid,
-                        curve,
-                        linewidth=2.0,
-                        color=MODEL_COLOR[row["model"]],
-                        linestyle="-" if side == "off" else "--",
-                        label=f"{LABEL[row['model']]} - skills {'on' if side == 'skills' else 'off'}"
-                        f" (n={len(common)})")
-        ax.axvline(2.0, color=MUTED, linewidth=1.0, linestyle=":", zorder=1)
-        ax.text(2.06, 0.02, "p=2", fontsize=7, color=MUTED)
-        ax.set_xscale("log")
-        ax.set_xticks([1, 2, 4, 8])
-        ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-        # Log minor ticks otherwise render as 3x10^0, which reads as a different unit.
-        ax.get_xaxis().set_minor_formatter(matplotlib.ticker.NullFormatter())
-        ax.set_xlabel("speedup threshold p")
-        ax.set_title(language.upper() if language == "c" else language.capitalize(), loc="left", pad=6)
-        ax.grid(True, zorder=0)
-        ax.set_axisbelow(True)
-        ax.legend(frameon=False, fontsize=7, loc="upper right", bbox_to_anchor=(1.0, 1.0))
-    axes[0][0].set_ylabel("fast_p  (solved and >= p times faster)")
-    axes[0][0].set_ylim(0, 1.0)
-    fig.suptitle("fast_p on matched problems", x=0.012, ha="left", fontsize=10)
-    fig.text(0.012,
-             -0.02, "fast_1 is the success rate; the gap between the curves is how much of "
-             "that success is actually fast",
-             fontsize=7,
-             color=MUTED)
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
-    for suffix in ("png", "svg"):
-        fig.savefig(out.with_suffix(f".{suffix}"), bbox_inches="tight")
-    plt.close(fig)
-    print(f"  {out}.png / .svg")
+    fig, axes = curve_panels(groups, "fast_p on matched problems", "speed-up threshold p",
+                             "solved and >= p times faster")
+    for ax, row in zip(axes, pairs, strict=True):
+        common = reached[row["arm_off"]] & reached[row["arm_skills"]]
+        for side, arm in (("off", row["arm_off"]), ("skills", row["arm_skills"])):
+            values = [sum(1 for b in common if best.get(arm, {}).get(b, 0.0) >= p) / len(common) for p in grid]
+            curve(ax, grid, values, MODEL_COLOR[row["model"]], side == "skills")
+        ax.text(0.96,
+                0.06,
+                f"n={len(common)}",
+                transform=ax.transAxes,
+                family="monospace",
+                fontsize=6.5,
+                color=MODEL_COLOR[row["model"]],
+                ha="right",
+                va="bottom")
+        log_speedup_axis(ax, [1, 2, 4, 8], (1.0, 8.0))
+        ax.set_ylim(0.0, 1.0)
+    leg_key(fig)
+    artifact_style.save(fig, out)
 
 
 def main() -> int:
@@ -316,16 +343,17 @@ def main() -> int:
     matched(args.data, args.out / "matched")
     fastp(args.data, args.out / "fastp")
     rows = read_summary(args.data / "summary.csv")
-    paired_bars(rows, "success_rate", 100.0, "solved / 242 problems (%)", "Success rate at a fixed budget (yield)",
-                "{:.1f}", args.out / "success")
-    paired_bars(rows, "success_rate_attempted", 100.0, "solved / attempted (%)",
-                "Success rate on problems actually reached (capability)", "{:.1f}", args.out / "success_attempted")
-    paired_bars(rows, "attempted", 1.0, "problems reached (of 242)",
-                "Coverage: how much of the set each arm got through", "{:.0f}", args.out / "coverage")
-    paired_bars(rows, "tokens_per_solved", 1e-6, "million tokens per solved problem", "Token cost per solved problem",
-                "{:.1f}", args.out / "tokens")
-    paired_bars(rows, "tokens_per_kernel", 1e-6, "million tokens per kernel reached",
-                "What one kernel costs: the price the skills packet moves", "{:.2f}", args.out / "cost_per_kernel")
+    total = max(int(r["problems"]) for r in rows)
+    paired_bars(rows, "success_rate", 100.0, 100.0, f"solved / {total} problems (%)",
+                "Success rate at a fixed budget (yield)", "{:5.1f}", args.out / "success")
+    paired_bars(rows, "success_rate_attempted", 100.0, 100.0, "solved / attempted (%)",
+                "Success rate on problems actually reached (capability)", "{:5.1f}", args.out / "success_attempted")
+    paired_bars(rows, "attempted", 1.0, float(total), f"problems reached (of {total})",
+                "Coverage: how much of the set each arm got through", "{:4.0f}", args.out / "coverage")
+    paired_dumbbell(rows, "tokens_per_solved", 1e-6, "million tokens per solved problem",
+                    "Token cost per solved problem", "{:+.2f}", args.out / "tokens")
+    paired_dumbbell(rows, "tokens_per_kernel", 1e-6, "million tokens per kernel reached",
+                    "What one kernel costs: the price the skills packet moves", "{:+.2f}", args.out / "cost_per_kernel")
     speedup_ecdf(args.data, args.out / "speedup_ecdf")
     return 0
 

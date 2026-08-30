@@ -6,8 +6,8 @@ unskilled qwen38 C arm has 15 rows over 3 kernels, 11 of them one kernel at 1.00
 per row against 6.89x per kernel. Everything here takes each kernel's BEST timed submission and the
 geometric mean of those, and quotes the geomean as the headline -- speed-up is a ratio, so the mean
 that matches the product over the set is the geometric one, and the median of a mostly-flat
-distribution reports "no effect" everywhere. The per-kernel MEDIAN variant is drawn as a tick on
-each bar, so a bar carried by one lucky resubmission shows as a wide gap between the two.
+distribution reports "no effect" everywhere. The per-kernel MEDIAN variant is drawn as a tick beside
+each marker, so an arm carried by one lucky resubmission shows as a wide gap between the two.
 
 The ARM is the row, never a pool across waves. Waves 3, 4, 6 and 7 are COMPLETION waves that re-ran
 only the kernels an earlier arm never submitted, so an arm's kernels are a subset computed from what
@@ -17,12 +17,15 @@ ever drew from.
 Only PAIRED comparisons say anything about skills. The two legs of a completion wave drew subsets
 computed from DIFFERENT predecessors and can share almost nothing -- llr8w6's qwen38 pair shares one
 reached kernel and none with a timed submission on both sides. Where a pair shares timed kernels,
-both bars are restricted to those. Where it shares none, both bars are drawn over each arm's own
-kernels and the group is marked UNPAIRED, which is a statement that the two bars are not comparable
+both bars are restricted to those. Where it shares none, both are drawn over each arm's own kernels
+and the group is marked UNPAIRED, which is a statement that the two markers are not comparable
 rather than a comparison.
 
-Colour identifies the model and nothing else; the skills condition is carried by fill and hatch, so
-the comparison survives a reader who cannot separate the hues.
+THE FORM. Nineteen groups is too many for grouped vertical bars: the labels have to rotate, the two
+legs of a pair end up further apart than two legs of neighbouring pairs, and the value labels have
+to stand on end to fit. Every figure here is therefore a DUMBBELL row per group -- hollow marker for
+the base leg, filled for the skills leg, joined in the model's colour -- which puts the pair's two
+legs on one line and leaves the left column free for a label that reads horizontally.
 
 Usage:  python3 plot_llr40.py
 """
@@ -30,24 +33,24 @@ from __future__ import annotations
 
 import csv
 import dataclasses
+import math
 import pathlib
 import sys
 from collections.abc import Callable
 
 import matplotlib
+import matplotlib.ticker
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402  -- must follow the Agg backend selection
 
-import collect  # noqa: E402  -- ditto: these pull matplotlib in themselves
+import artifact_style  # noqa: E402  -- ditto: these pull matplotlib in themselves
+import collect  # noqa: E402
 import collect_llr40  # noqa: E402
 
-#: Model -> hue, from plot_llr8w2. Blue/orange/green separate under all three common colour vision
-#: deficiencies, which a red/green pair does not.
-MODEL_COLOR = {"qwen38": "#2a78d6", "oss120b": "#eb6834", "kimi27sglang": "#1b8a5a"}
-INK, MUTED, GRID, WARN = "#1a1a1a", "#5c5c5c", "#d8d8d8", "#a01818"
+MODEL_COLOR = artifact_style.MODEL_COLOR
 
-#: The two skills legs, in the order they are drawn: off on the left of each group, on to the right.
+#: The two skills legs: base first, so the hollow marker is always the one the pair started from.
 LEGS = ("0", "1")
 
 
@@ -75,25 +78,12 @@ class Group:
 
     def label(self) -> str:
         language = "C" if self.language == "c" else "Fortran"
-        return f"{self.model}\n{language}  w{self.wave[len('llr8w'):]}"
+        return f"{artifact_style.MODEL_LABEL[self.model]} / {language}  w{self.wave[len('llr8w'):]}"
 
 
 def style() -> None:
-    plt.rcParams.update({
-        "font.size": 9,
-        "axes.labelsize": 9,
-        "axes.titlesize": 10,
-        "axes.edgecolor": MUTED,
-        "axes.labelcolor": INK,
-        "text.color": INK,
-        "xtick.color": MUTED,
-        "ytick.color": MUTED,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "grid.color": GRID,
-        "grid.linewidth": 0.6,
-        "figure.dpi": 300,
-    })
+    """Kept as the entry point this script already called; the look itself lives in artifact_style."""
+    artifact_style.apply()
 
 
 def read(path: pathlib.Path) -> list[dict[str, str]]:
@@ -135,169 +125,128 @@ def groups() -> list[Group]:
     return [found[k] for k in order]
 
 
-def bar_pair(ax,
-             index: int,
-             cell: Group,
-             value: Callable[[Group, str], float],
-             note: Callable[[Group, str], str],
-             base: float = 0.0) -> None:
-    """The group's two bars: hollow and hatched for skills off, solid for skills on.
+def usable(value: float, floor: float) -> float | None:
+    """A leg is drawn only where it has a number to draw; NaN and a value at the floor are not."""
+    return None if math.isnan(value) or value <= floor else value
 
-    ``value`` and ``note`` are passed in so the three figures share this geometry and differ only in
-    what they measure, which is the only way the groups stay in one order across them. ``base`` is
-    where a bar starts: 0 for a count, 1.0 for a RATIO, where the interesting quantity is the
-    distance from "unchanged" and a bar rising from zero makes 1.05x look like most of a result.
-    """
-    width = 0.36
-    colour = MODEL_COLOR.get(cell.model, MUTED)
-    for offset, skills in ((-width / 2, LEGS[0]), (width / 2, LEGS[1])):
-        if skills not in cell.arms:
-            # A missing leg is a gap with a word in it, never a zero bar: zero is a measurement.
-            ax.text(index + offset, base, "no arm", ha="center", va="bottom", fontsize=6.5, color=MUTED, style="italic")
+
+def row_figure(cells: list[Group], title: str, xlabel: str) -> tuple:
+    tall = 1.15 + 0.29 * len(cells)
+    fig, ax = plt.subplots(figsize=(7.0, tall))
+    fig.subplots_adjust(left=0.315, right=0.845, top=1.0 - 0.72 / tall, bottom=0.62 / tall)
+    artifact_style.axis_title(ax, title, pad=18.0)
+    ax.set_xlabel(xlabel)
+    return fig, ax
+
+
+def draw_rows(ax, cells: list[Group], value: Callable[[Group, str], float | None], note: Callable[[Group], str],
+              floor: float) -> None:
+    for row, cell in enumerate(cells):
+        legs = {skills: value(cell, skills) if skills in cell.arms else None for skills in LEGS}
+        if legs["0"] is None and legs["1"] is None:
+            artifact_style.right_label(ax, row, "no timed arm", artifact_style.MUTED, size=6.5)
             continue
-        height = value(cell, skills)
-        if height <= base:
-            ax.text(index + offset, base, note(cell, skills), ha="center", va="bottom", fontsize=6.5, color=MUTED)
-            continue
-        ax.bar(index + offset,
-               height - base,
-               width,
-               bottom=base,
-               color=colour if skills == "1" else "white",
-               edgecolor=colour,
-               linewidth=1.3,
-               hatch=None if skills == "1" else "///",
-               zorder=3)
-        # Upright: 19 groups on one axis put two of these within a few points of each other, and
-        # horizontal labels overlap into an unreadable smear at exactly the pairs a reader compares.
-        ax.text(index + offset,
-                height,
-                note(cell, skills),
-                ha="center",
-                va="bottom",
-                fontsize=6.5,
-                color=INK,
-                rotation=90)
+        artifact_style.dumbbell(ax, row, legs["0"], legs["1"], MODEL_COLOR[cell.model])
+        artifact_style.right_label(ax, row, note(cell))
+    ax.set_xlim(left=floor)
 
 
-def frame(ax, labels: list[str], ylabel: str, title: str) -> None:
-    ax.set_xticks(range(len(labels)))
-    ax.set_xticklabels(labels, fontsize=7, rotation=30, ha="right")
-    ax.set_ylabel(ylabel)
-    ax.set_title(title, loc="left", pad=22)
-    ax.margins(y=0.30)
-    ax.yaxis.grid(True, zorder=0)
-    ax.set_axisbelow(True)
-    fill = [
-        plt.Rectangle((0, 0), 1, 1, facecolor="white", edgecolor=INK, hatch="///", linewidth=1.3),
-        plt.Rectangle((0, 0), 1, 1, facecolor=INK, edgecolor=INK, linewidth=1.3),
-    ]
-    hues = [plt.Rectangle((0, 0), 1, 1, facecolor=c, edgecolor=c) for c in MODEL_COLOR.values()]
-    # On the title row rather than inside the axes: these bars are tall and irregular, and an
-    # in-axes legend lands on whichever group happens to be the tallest.
-    ax.add_artist(
-        ax.legend(fill, ["skills off", "skills on"],
-                  frameon=False,
-                  loc="lower left",
-                  bbox_to_anchor=(0.0, 1.0),
-                  ncol=2,
-                  fontsize=8))
-    ax.legend(hues, list(MODEL_COLOR), frameon=False, loc="lower right", bbox_to_anchor=(1.0, 1.0), ncol=3, fontsize=8)
-
-
-def save(fig, out: pathlib.Path, footer: str) -> None:
-    fig.text(0.006, 0.006, footer, fontsize=6.5, color=MUTED, wrap=True)
-    fig.tight_layout(rect=(0.0, 0.05, 1.0, 1.0))
-    out.parent.mkdir(parents=True, exist_ok=True)
-    for suffix in ("pdf", "png"):
-        fig.savefig(out.with_suffix(f".{suffix}"), dpi=300)
-    plt.close(fig)
-    print(f"  {out}.pdf / .png")
+def finish(fig, ax, cells: list[Group], out: pathlib.Path, unpaired: bool = False) -> None:
+    if unpaired:
+        for tick, cell in zip(ax.get_yticklabels(), cells, strict=True):
+            if not cell.shared():
+                tick.set_color(artifact_style.WARN)
+    artifact_style.key(ax, [("base", artifact_style.marker(artifact_style.INK2, on=False)),
+                            ("+ skills", artifact_style.marker(artifact_style.INK2, on=True))],
+                       anchor=(1.0, 1.005))
+    artifact_style.save(fig, out)
 
 
 def speedup_figure(cells: list[Group], out: pathlib.Path) -> None:
-    """Per-kernel geomean speed-up, skills off against on, one group per arm PAIR."""
+    """Per-kernel geomean speed-up, base leg against skills leg, one row per arm PAIR."""
     pairs = [c for c in cells if len(c.arms) == 2]
     lonely = [c for c in cells if len(c.arms) == 1]
 
-    def value(cell: Group, skills: str) -> float:
-        return collect.geomean([max(v) for v in cell.timed(skills)])
+    def value(cell: Group, skills: str) -> float | None:
+        timed = cell.timed(skills)
+        return usable(collect.geomean([max(v) for v in timed]) if timed else math.nan, 1.0)
 
-    def middle(cell: Group, skills: str) -> float:
-        return collect.geomean([v[len(v) // 2] for v in cell.timed(skills)])
+    def middle(cell: Group, skills: str) -> float | None:
+        timed = cell.timed(skills)
+        return usable(collect.geomean([v[len(v) // 2] for v in timed]) if timed else math.nan, 1.0)
 
-    def note(cell: Group, skills: str) -> str:
-        return f"n={len(cell.timed(skills))}"
+    def note(cell: Group) -> str:
+        return "n=" + "/".join(str(len(cell.timed(s))) for s in LEGS)
 
-    fig, ax = plt.subplots(figsize=(14.0, 5.0))
-    # Log, and bars rising from 1.0: a speed-up is a ratio, and one n=2 group at 71x flattens every
-    # 3x-to-8x group into the axis floor on a linear scale.
-    ax.set_yscale("log")
-    for index, cell in enumerate(pairs):
-        bar_pair(ax, index, cell, value, note, base=1.0)
-        # The per-kernel MEDIAN geomean as a tick inside its own bar. A bar far above its tick is an
-        # arm whose speed-up rests on a best-of-many resubmission rather than a repeatable win.
-        for offset, skills in ((-0.18, LEGS[0]), (0.18, LEGS[1])):
-            if middle(cell, skills) > 1.0:
-                ax.plot([index + offset - 0.16, index + offset + 0.16], [middle(cell, skills)] * 2,
-                        color=INK,
-                        linewidth=1.0,
-                        zorder=4)
-    frame(ax, [c.label() + ("\nUNPAIRED" if not c.shared() else "") for c in pairs],
-          "geomean of per-kernel best speed-up ($\\times$, log scale)",
-          "Speed-up with and without the skills packet, aggregated per kernel")
-    ax.set_ylim(bottom=1.0)
-    for tick, cell in zip(ax.get_xticklabels(), pairs, strict=True):
-        if not cell.shared():
-            tick.set_color(WARN)
-    save(
-        fig, out, "Bars: geomean over kernels of each kernel's BEST timed speed-up. Tick: the same geomean over "
-        "each kernel's MEDIAN. n = kernels behind the bar. Paired groups are restricted to the kernels BOTH "
-        "arms timed; an UNPAIRED group shares none, so its two bars measure different kernel sets and are not "
-        f"a comparison, and a paired group at n<3 shared kernels is annotated but is not one either. "
-        f"{len(lonely)} arms have no skills counterpart and are omitted: "
-        f"{', '.join(c.label().replace(chr(10), ' ') for c in lonely)}.")
+    labels = [c.label() + ("  UNPAIRED" if not c.shared() else "") for c in pairs]
+    fig, ax = row_figure(pairs, "Speed-up with and without the skills packet, aggregated per kernel",
+                         "geomean of per-kernel best speed-up (x, log scale)")
+    # Log: a speed-up is a ratio, and one n=2 group at 71x flattens every 3x-to-8x group into the
+    # axis floor on a linear scale.
+    ax.set_xscale("log")
+    artifact_style.row_axis(ax, labels, gridaxis="none")
+    draw_rows(ax, pairs, value, note, 1.0)
+    for row, cell in enumerate(pairs):
+        # The per-kernel MEDIAN geomean as a tick. A marker far from its tick is an arm whose
+        # speed-up rests on a best-of-many resubmission rather than a repeatable win.
+        for skills in LEGS:
+            centre = middle(cell, skills)
+            if centre is not None:
+                ax.plot([centre, centre], [row - 0.26, row + 0.26], color=artifact_style.INK, linewidth=0.9, zorder=4)
+    ax.set_xlim(1.0, ax.get_xlim()[1] * 1.3)
+    ax.set_xticks([1, 2, 5, 10, 25, 50, 100])
+    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    ax.get_xaxis().set_minor_formatter(matplotlib.ticker.NullFormatter())
+    ax.grid(True, axis="x")
+    finish(fig, ax, pairs, out, unpaired=True)
+    print(f"  speedup: tick is the geomean over each kernel's MEDIAN timing, marker the geomean over its BEST; "
+          f"{sum(1 for c in pairs if not c.shared())} of {len(pairs)} pairs share no timed kernel and are "
+          f"marked UNPAIRED")
+    print(f"  speedup: {len(lonely)} arms have no skills counterpart and are omitted: "
+          f"{', '.join(c.label() for c in lonely)}")
 
 
 def success_figure(cells: list[Group], out: pathlib.Path) -> None:
     """Solved kernels over the set the arm DREW FROM, which is not 40 for a completion-wave arm."""
 
-    def value(cell: Group, skills: str) -> float:
+    def value(cell: Group, skills: str) -> float | None:
         arm = cell.arms[skills]
         return 100.0 * int(arm["solved"]) / int(arm["problems"])
 
-    def note(cell: Group, skills: str) -> str:
-        arm = cell.arms[skills]
-        return f"{arm['solved']}/{arm['problems']}"
+    def note(cell: Group) -> str:
+        return " ".join(f"{cell.arms[s]['solved']}/{cell.arms[s]['problems']}" for s in LEGS if s in cell.arms)
 
-    fig, ax = plt.subplots(figsize=(14.0, 5.0))
-    for index, cell in enumerate(cells):
-        bar_pair(ax, index, cell, value, note)
-    frame(ax, [c.label() for c in cells], "successful completion rate (% of kernels drawn)",
-          "Successful completion, against the kernel set each arm drew from")
-    save(
-        fig, out, "Denominator is collect.problem_count(): 40 for a full arm, the computed gap list for a "
-        "completion-wave arm, 20 for a kimi Fortran batch, never a hard-coded 40. The label above each bar "
-        "is solved / drawn.")
+    fig, ax = row_figure(cells, "Successful completion, against the kernel set each arm drew from",
+                         "successful completion rate (% of kernels drawn)")
+    ax.set_xlim(0.0, 100.0)
+    artifact_style.row_axis(ax, [c.label() for c in cells], gridaxis="none")
+    for row in range(len(cells)):
+        artifact_style.rounded_bar(ax, 0.0, 100.0, row, 0.62, artifact_style.RAISE, zorder=1.0)
+    draw_rows(ax, cells, value, note, 0.0)
+    ax.set_xlim(0.0, 100.0)
+    finish(fig, ax, cells, out)
+    print("  success: denominator is collect.problem_count(): 40 for a full arm, the computed gap list for a "
+          "completion-wave arm, 20 for a kimi Fortran batch, never a hard-coded 40; the right column is "
+          "solved / drawn for each leg")
 
 
 def tokens_figure(cells: list[Group], out: pathlib.Path) -> None:
     """Token cost of one kernel, first agent turn to last grade -- the term the packet moves."""
 
-    def value(cell: Group, skills: str) -> float:
+    def value(cell: Group, skills: str) -> float | None:
         return int(cell.arms[skills]["tokens_per_kernel"]) / 1e6
 
-    def note(cell: Group, skills: str) -> str:
-        return f"n={cell.arms[skills]['attempted']}"
+    def note(cell: Group) -> str:
+        return "n=" + "/".join(cell.arms[s]["attempted"] for s in LEGS if s in cell.arms)
 
-    fig, ax = plt.subplots(figsize=(14.0, 5.0))
-    for index, cell in enumerate(cells):
-        bar_pair(ax, index, cell, value, note)
-    frame(ax, [c.label() for c in cells], "million tokens per kernel reached",
-          "Token cost per kernel, with and without the skills packet")
-    save(
-        fig, out, "Tokens are the agent's cumulative usage at its last judge call on a kernel, summed over the "
-        "kernels the arm reached and divided by that count. n = kernels reached.")
+    fig, ax = row_figure(cells, "Token cost per kernel, with and without the skills packet",
+                         "million tokens per kernel reached")
+    artifact_style.row_axis(ax, [c.label() for c in cells])
+    draw_rows(ax, cells, value, note, 0.0)
+    ax.margins(x=0.1)
+    finish(fig, ax, cells, out)
+    print("  tokens: the agent's cumulative usage at its last judge call on a kernel, summed over the kernels the "
+          "arm reached and divided by that count; n = kernels reached")
 
 
 def main() -> int:

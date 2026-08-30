@@ -18,7 +18,7 @@ is correct and is why it is drawn from explicit ends rather than a half-width. T
 a secondary tick; the geomean is the headline.
 
 A row that crashed, that the harness did not validate, or that carries no timing is NOT a data point.
-Those rows are counted and reported on the figure, never plotted as 1.0 -- a miscompile scored as
+Those rows are counted and reported on stdout, never plotted as 1.0 -- a miscompile scored as
 "no change" is the one failure mode that would flatter every arm equally.
 
 Usage:  python3 plot_tsvc_speedup.py <sweep-directory>
@@ -36,10 +36,13 @@ import statistics
 import sys
 
 import matplotlib
+import matplotlib.lines
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402  -- must follow the Agg backend selection
 import scipy.stats  # noqa: E402  -- ditto, it pulls matplotlib in itself
+
+import artifact_style  # noqa: E402  -- ditto
 
 #: Framework -> the name a reader knows it by. Insertion order is the order on the axis.
 ARMS = {"dace_cpu_canonicalize": "dace canon", "dace_cpu": "dace main", "cc_llvm_autopar": "llvm + polly"}
@@ -57,10 +60,13 @@ BASELINE = "cc"
 #: Kernels this figure is about. tsvc_2_5* sources are already under this prefix.
 TSVC_PREFIX = "tsvc_2"
 
-#: Arm -> hue, the same blue/orange/green as plot.py and plot_llr8w2.py: separable under all three
-#: common colour vision deficiencies, which a red/green pair is not.
-ARM_COLOR = {"dace_cpu_canonicalize": "#2a78d6", "dace_cpu": "#eb6834", "cc_llvm_autopar": "#1b8a5a"}
-INK, MUTED, GRID = "#1a1a1a", "#5c5c5c", "#d8d8d8"
+#: Arm -> hue, from the shared palette: separable under all three common colour vision
+#: deficiencies, which a red/green pair is not.
+ARM_COLOR = {
+    "dace_cpu_canonicalize": artifact_style.SERIES["qwen"],
+    "dace_cpu": artifact_style.SERIES["oss"],
+    "cc_llvm_autopar": artifact_style.SERIES["kimi"],
+}
 
 CONFIDENCE = 0.95
 
@@ -75,21 +81,8 @@ class Arm:
 
 
 def style() -> None:
-    plt.rcParams.update({
-        "font.size": 9,
-        "axes.labelsize": 9,
-        "axes.titlesize": 10,
-        "axes.edgecolor": MUTED,
-        "axes.labelcolor": INK,
-        "text.color": INK,
-        "xtick.color": MUTED,
-        "ytick.color": MUTED,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "grid.color": GRID,
-        "grid.linewidth": 0.6,
-        "figure.dpi": 300,
-    })
+    """Kept as the entry point this script and its tests already call; the look lives in artifact_style."""
+    artifact_style.apply()
 
 
 def signed(speedup: float) -> float:
@@ -163,11 +156,17 @@ def render(root: pathlib.Path, out: pathlib.Path) -> pathlib.Path:
         raise SystemExit(f"no {BASELINE} baseline in {root}: looked for {BASELINE}.csv and {BASELINE}.rank*.csv. "
                          f"Every speed-up here is a ratio against it, so there is nothing to plot without it.")
 
-    fig, ax = plt.subplots(figsize=(7.6, 4.6))
+    tall = 1.35 + 0.62 * len(ARMS)
+    fig, ax = plt.subplots(figsize=(6.8, tall))
+    fig.subplots_adjust(left=0.20, right=0.885, top=1.0 - 0.86 / tall, bottom=0.86 / tall)
     # Seeded, so the same CSVs draw the same cloud: an unseeded jitter makes two renders of one
     # dataset look like two measurements.
     jitter = random.Random(0)
     notes: list[str] = []
+    artifact_style.axis_title(ax, "TSVC kernels, signed speed-up against serial gcc -O3", pad=18.0)
+    ax.set_xlabel("signed relative speed-up vs serial gcc -O3\n"
+                  "$+1$ = 2$\\times$ faster, 0 = no change, $-1$ = 2$\\times$ slower")
+    artifact_style.row_axis(ax, list(ARMS.values()))
     for index, (framework, name) in enumerate(ARMS.items()):
         arm = read_arm(root, framework)
         values = speedups(arm, reference.times)
@@ -175,80 +174,54 @@ def render(root: pathlib.Path, out: pathlib.Path) -> pathlib.Path:
         missing = len(arm.times) - len(values)
         tally = ", ".join(f"{n} {why}" for why, n in sorted(arm.rejected.items()))
         if not values:
-            ax.text(index, 0.0, "no data", ha="center", va="bottom", fontsize=8, color=MUTED, style="italic")
+            artifact_style.right_label(ax, index, "no data", artifact_style.MUTED)
             notes.append(f"{name}: no usable rows" + (f" ({tally})" if tally else ""))
             continue
-        ax.scatter([index - 0.16 + jitter.uniform(-0.11, 0.11) for _ in values], [signed(v) for v in values.values()],
-                   s=13,
+        ax.scatter([signed(v) for v in values.values()], [index - 0.22 + jitter.uniform(-0.10, 0.10) for _ in values],
+                   s=11,
                    color=colour,
                    alpha=0.45,
                    linewidth=0,
                    zorder=2)
         centre, low, high = geomean_interval(list(values.values()))
-        ax.errorbar(index + 0.22,
-                    signed(centre),
-                    yerr=[[signed(centre) - signed(low)], [signed(high) - signed(centre)]],
+        ax.errorbar(signed(centre),
+                    index + 0.24,
+                    xerr=[[signed(centre) - signed(low)], [signed(high) - signed(centre)]],
                     fmt="o",
-                    markersize=6,
+                    markersize=5.5,
                     color=colour,
-                    ecolor=INK,
-                    elinewidth=1.2,
-                    capsize=5,
+                    ecolor=artifact_style.INK2,
+                    elinewidth=1.1,
+                    capsize=3.5,
                     zorder=4)
         middle = statistics.median(list(values.values()))
-        ax.plot([index + 0.14, index + 0.30], [signed(middle)] * 2, color=INK, linewidth=1.0, zorder=3)
-        ax.annotate(f"n={len(values)}", (index + 0.22, signed(high)),
-                    textcoords="offset points",
-                    xytext=(0, 7),
-                    ha="center",
-                    fontsize=7.5,
-                    color=INK)
+        ax.plot([signed(middle)] * 2, [index + 0.10, index + 0.38], color=artifact_style.INK, linewidth=1.0, zorder=3)
+        artifact_style.right_label(ax, index, f"n={len(values)}")
         excluded = [tally] if tally else []
         if missing:
             excluded.append(f"{missing} not timed by {BASELINE}")
         notes.append(f"{name}: geomean {centre:.2f}x, median {middle:.2f}x, "
                      f"excluded {'; '.join(excluded) if excluded else 'none'}")
 
-    ax.axhline(0.0, color=INK, linewidth=1.0, zorder=1)
-    ax.set_xticks(range(len(ARMS)))
-    ax.set_xticklabels(list(ARMS.values()))
-    ax.set_ylabel(
-        "signed relative speed-up vs serial gcc -O3\n$+1$ = 2$\\times$ faster, 0 = no change, $-1$ = 2$\\times$ slower")
-    ax.set_title("TSVC kernels, signed speed-up against serial gcc -O3", loc="left", pad=30)
-    # The category axis spans the arms, not the arms that produced points: an arm whose CSV never
-    # appeared was still part of the comparison, and letting the data set the limits dropped its
-    # tick label off the end of the axis entirely.
-    ax.set_xlim(-0.5, len(ARMS) - 0.5)
-    ax.margins(y=0.10)
-    ax.yaxis.grid(True, zorder=0)
-    ax.set_axisbelow(True)
+    ax.axvline(0.0, color=artifact_style.INK2, linewidth=1.0, zorder=1)
+    ax.margins(x=0.08)
     handles = [
-        plt.Line2D([], [], marker="o", linestyle="none", color=MUTED, markersize=4, alpha=0.5),
-        plt.Line2D([], [], marker="o", linestyle="none", color=MUTED, markersize=6),
-        plt.Line2D([], [], color=INK, linewidth=1.0),
+        matplotlib.lines.Line2D([], [],
+                                marker="o",
+                                linestyle="none",
+                                color=artifact_style.MUTED,
+                                markersize=3.5,
+                                alpha=0.5),
+        matplotlib.lines.Line2D([], [], marker="o", linestyle="none", color=artifact_style.MUTED, markersize=5.5),
+        matplotlib.lines.Line2D([], [], color=artifact_style.INK, linewidth=1.0),
     ]
-    ax.legend(handles, ["one kernel", f"geomean, {CONFIDENCE:.0%} t-interval in log space", "median"],
-              frameon=False,
-              loc="lower left",
-              bbox_to_anchor=(0.0, 1.0),
-              ncol=3,
-              fontsize=7.5)
-    # One line per arm: the three notes on one line ran off the page at every figure width that
-    # still fits a paper column.
-    # The denominator is a SINGLE sample where the numerators are medians of three, so a ratio
-    # here inherits all of cc's run-to-run noise and none of the averaging. It biases no arm --
-    # every arm divides by the same number -- but it widens the spread, so say so on the figure.
-    notes.append("denominator is one cc sample; arms are medians of three -- the ratio carries "
-                 "cc's run-to-run noise unaveraged")
-    fig.text(0.008, 0.008, "\n".join(notes + [f"source: {root.name}"]), fontsize=6.5, color=MUTED)
-    fig.tight_layout(rect=(0.0, 0.12, 1.0, 1.0))
-    out.parent.mkdir(parents=True, exist_ok=True)
-    for suffix in ("pdf", "png"):
-        fig.savefig(out.with_suffix(f".{suffix}"), dpi=300)
-    plt.close(fig)
+    artifact_style.key(ax,
+                       list(zip(["one kernel", f"geomean, {CONFIDENCE:.0%} t-interval", "median"], handles,
+                                strict=True)),
+                       anchor=(1.0, 1.005))
+    artifact_style.save(fig, out)
     for note in notes:
         print(f"  {note}")
-    print(f"  {out}.pdf / .png")
     return out
 
 

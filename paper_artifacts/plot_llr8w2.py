@@ -14,8 +14,9 @@ Three questions, three panels, each in the form its answer needs:
             pair, and the constructs that stayed at zero are kept in the axis rather than dropped:
             "no arm ever emitted collapse" is the finding, and a chart that omits the row hides it.
 
-Colour identifies the MODEL; the skills condition is carried by fill (hollow vs solid) and line
-style, so the comparison survives a reader who cannot separate the hues.
+Colour identifies the MODEL; the skills condition is carried by fill (hatched vs solid) and by
+marker (hollow vs filled), so the comparison survives a reader who cannot separate the hues.
+Palette, fonts and idioms come from artifact_style.
 
 Usage:  python3 plot_llr8w2.py [--data data-llr8w2] [--out figures-llr8w2]
 """
@@ -30,10 +31,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402  -- must follow the backend selection
 
-#: Model -> hue. Same two-hue scheme as plot.py, extended for the wave-2 models. Chosen for CVD
-#: separation rather than prettiness: blue/orange/green are distinguishable under all three common
-#: deficiencies, which a red/green pair is not.
-MODEL_COLOR = {"qwen38": "#2a78d6", "oss120b": "#eb6834", "kimi27sglang": "#1b8a5a"}
+import artifact_style  # noqa: E402  -- ditto, it imports pyplot itself
+
+MODEL_COLOR = artifact_style.MODEL_COLOR
 
 #: Constructs worth plotting, in the order a reader would ask about them: parallelism first, then
 #: vectorisation, then the loop restructuring that turns out to be absent everywhere.
@@ -64,22 +64,22 @@ def cost_panel(ax, summary: list[dict[str, str]]) -> None:
             on = skills == "1"
             ax.scatter(x,
                        y,
-                       s=110,
-                       color=colour if on else "none",
+                       s=95,
+                       color=colour if on else artifact_style.SURFACE,
                        edgecolor=colour,
-                       linewidth=1.8,
+                       linewidth=2.0,
                        marker="o" if language == "c" else "s",
                        zorder=3)
             # Two unskilled arms land within 0.05x of each other at the bottom of this axis, so a
             # fixed offset overlaps them into an unreadable smear. Skilled arms label above;
             # unskilled ones label below and are staggered by model, which separates every pair
             # without hand-placing any single label.
-            stagger = -12 - 10 * list(MODEL_COLOR).index(model)
+            stagger = -11 - 8 * list(MODEL_COLOR).index(model)
             ax.annotate(f"{model} {language}{' +sk' if on else ''}", (x, y),
                         textcoords="offset points",
                         xytext=(8, 6) if on else (8, stagger),
-                        fontsize=7.5,
-                        color="#333333")
+                        fontsize=6.5,
+                        color=artifact_style.INK2)
         if "0" in sides and "1" in sides:
             a, b = sides["0"], sides["1"]
             ax.annotate("",
@@ -88,34 +88,42 @@ def cost_panel(ax, summary: list[dict[str, str]]) -> None:
                         arrowprops={
                             "arrowstyle": "->",
                             "color": colour,
-                            "alpha": 0.55,
-                            "linewidth": 1.4
+                            "alpha": 0.6,
+                            "linewidth": 1.6
                         })
-    ax.margins(x=0.22)
+    ax.margins(x=0.22, y=0.22)
     ax.set_xlabel("million tokens per solved kernel")
     ax.set_ylabel("geomean speed-up (arm level)")
-    ax.set_title("Cost against return\narrow: skills off $\\rightarrow$ on", fontsize=10)
-    ax.grid(alpha=0.25, linewidth=0.6)
+    artifact_style.axis_title(ax, "Cost against return")
+    ax.grid(True)
+    ax.set_axisbelow(True)
 
 
 def effect_panel(ax, matched: list[dict[str, str]]) -> None:
     labels, ratios, colours, notes = [], [], [], []
     for row in matched:
-        labels.append(f"{row['model']}\n{row['language']}")
+        labels.append(f"{artifact_style.MODEL_LABEL[row['model']]} / {row['language']}")
         ratios.append(float(row["paired_ratio"]))
         colours.append(MODEL_COLOR.get(row["model"], "#666666"))
         notes.append(f"n={row['paired_n']}  {row['sign_wins']}W/{row['sign_losses']}L  p={row['sign_p']}")
-    pos = range(len(labels))
-    ax.bar(pos, ratios, color=colours, alpha=0.85, width=0.55)
-    ax.axhline(1.0, color="#333333", linewidth=1.0)
-    for i, (r, note) in enumerate(zip(ratios, notes)):
-        ax.annotate(note, (i, max(r, 1.0)), textcoords="offset points", xytext=(0, 6), ha="center", fontsize=7)
-    ax.set_xticks(list(pos))
-    ax.set_xticklabels(labels, fontsize=8)
-    ax.set_ylabel("paired speed-up ratio (skills / no skills)")
-    ax.set_title("Skills effect, paired on kernels\nboth arms timed", fontsize=10)
-    ax.set_ylim(0, max(ratios + [1.0]) * 1.35)
-    ax.grid(axis="y", alpha=0.25, linewidth=0.6)
+    ax.set_xlim(0.0, max(ratios + [1.0]) * 1.25)
+    artifact_style.row_axis(ax, labels, gridaxis="none")
+    # Three rows in a panel this tall would otherwise draw bars an inch thick.
+    ax.set_ylim(len(labels) + 0.8, -1.0)
+    for row, (ratio, colour) in enumerate(zip(ratios, colours, strict=True)):
+        artifact_style.bar_row(ax, row, ratio, colour, height=0.62)
+        artifact_style.right_label(ax, row, f"{ratio:.2f}x")
+    ax.axvline(1.0, color=artifact_style.INK2, linewidth=1.0, zorder=3)
+    for row, note in enumerate(notes):
+        ax.annotate(note, (0.012, row + 0.38),
+                    xycoords=("axes fraction", "data"),
+                    fontsize=6.0,
+                    color=artifact_style.MUTED,
+                    family="monospace",
+                    ha="left",
+                    va="center")
+    ax.set_xlabel("paired speed-up ratio (skills / no skills)")
+    artifact_style.axis_title(ax, "Skills effect, paired on kernels both arms timed")
 
 
 def adoption_panel(ax, constructs: list[dict[str, str]]) -> None:
@@ -130,18 +138,21 @@ def adoption_panel(ax, constructs: list[dict[str, str]]) -> None:
         for j, skills in enumerate(("0", "1")):
             row = pairs[key][skills]
             offset = (slot * 2 + j) * width - 0.4 + width / 2
-            ax.bar([i + offset for i in range(len(CONSTRUCTS))], [float(row[c]) for c in CONSTRUCTS],
-                   width=width,
-                   color=colour if skills == "1" else "none",
-                   edgecolor=colour,
-                   linewidth=1.0,
-                   label=f"{model} {language}{' +skills' if skills == '1' else ''}")
+            bars = ax.bar([i + offset for i in range(len(CONSTRUCTS))], [float(row[c]) for c in CONSTRUCTS],
+                          width=width,
+                          label=f"{artifact_style.MODEL_LABEL[model]} {language}"
+                          f"{' + skills' if skills == '1' else ''}",
+                          linewidth=0.0)
+            for bar in bars:
+                artifact_style.paint(bar, colour, skills == "1")
     ax.set_xticks(range(len(CONSTRUCTS)))
     ax.set_xticklabels([c.replace("omp_", "") for c in CONSTRUCTS], rotation=40, ha="right", fontsize=8)
     ax.set_ylabel("fraction of accepted answers using it")
-    ax.set_title("What the agents actually wrote\nhollow: skills off, solid: skills on", fontsize=10)
-    ax.legend(fontsize=6.5, ncol=1, frameon=False, loc="upper right")
-    ax.grid(axis="y", alpha=0.25, linewidth=0.6)
+    ax.set_ylim(0.0, 1.38)
+    artifact_style.axis_title(ax, "What the agents actually wrote")
+    ax.legend(fontsize=6.0, ncol=1, frameon=False, loc="upper right")
+    ax.grid(True, axis="y")
+    ax.set_axisbelow(True)
 
 
 def render(data: pathlib.Path, out: pathlib.Path) -> pathlib.Path:
@@ -151,16 +162,13 @@ def render(data: pathlib.Path, out: pathlib.Path) -> pathlib.Path:
     matched = read(data / "matched.csv")
     constructs = read(data / "constructs.csv")
 
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5.2))
+    artifact_style.apply()
+    fig, axes = plt.subplots(1, 3, figsize=(13.0, 4.0))
     cost_panel(axes[0], summary)
     effect_panel(axes[1], matched)
     adoption_panel(axes[2], constructs)
-    fig.tight_layout()
-    target = out / "overview.png"
-    fig.savefig(target, dpi=170)
-    plt.close(fig)
-    print(f"  {target}")
-    return target
+    fig.tight_layout(pad=1.6, w_pad=3.0)
+    return artifact_style.save(fig, out / "overview")
 
 
 def main() -> int:
