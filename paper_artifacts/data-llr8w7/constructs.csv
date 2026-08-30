@@ -1,0 +1,3 @@
+arm,model,language,skills,answers,omp_parallel,omp_simd,omp_collapse,omp_reduction,omp_schedule,do_concurrent,restrict,aligned,unroll,ivdep,blocking,intrinsics,math_reassoc,array_syntax,matmul_intrinsic
+llr8w7-oss120b-c,oss120b,c,0,5,1.0,0.6,0.0,0.2,0.6,0.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+llr8w7-oss120b-c-skills,oss120b,c,1,6,0.8333,0.8333,0.0,0.1667,0.8333,0.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0

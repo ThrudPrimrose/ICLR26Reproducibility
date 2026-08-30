@@ -20,6 +20,7 @@ import glob
 import pathlib
 import math
 import sqlite3
+import statistics
 import sys
 
 import plot_llr8w2
@@ -404,6 +405,29 @@ ARMS: list[dict[str, object]] = [
         "skills": True,
         "problems": 2
     },
+    # llr8w8 and llr8w9: kimi's first Fortran arms, and the tag's first appearance as two DISJOINT
+    # 20-kernel halves whose union is exactly the 40 (verified against the two shared/tasks lists).
+    # A kimi arm costs six nodes, so the tag was halved to fit two of them inside the node budget at
+    # once. Each half carries its own denominator: a batch of 20 scored out of 40 halves its success
+    # rate. Two waves rather than two batches of one wave because they were submitted separately and
+    # the wave number is what maps a job to a data directory; the run root is w8's for both, which
+    # is the usual inheritance and not a sign that they are the same wave.
+    {
+        "campaign": "llr8w8",
+        "job": 612477,
+        "model": "kimi27sglang",
+        "language": "fortran",
+        "skills": False,
+        "problems": 20
+    },
+    {
+        "campaign": "llr8w9",
+        "job": 612478,
+        "model": "kimi27sglang",
+        "language": "fortran",
+        "skills": False,
+        "problems": 20
+    },
 ]
 
 # Success is reported against the kernel set the arm DREW FROM, not against however many it
@@ -434,6 +458,10 @@ PROBLEM_COUNT = {"llr6v10": 40, "llr8": 40}
 #: was derived from. Job id, not directory name, is what maps a run to a wave -- which is the whole
 #: reason the registry above exists.
 LLR8_WAVE_KERNELS = 40
+
+#: Where the launcher puts a run: ``<RUN_ROOT>/[<campaign-family>/]<jobid>/``. One constant, so
+#: the driver script and this file cannot drift onto two different scratch trees.
+RUN_ROOT = pathlib.Path("/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs")
 
 CALL_COLUMNS = [
     "arm", "model", "language", "skills", "job", "benchmark", "route", "status", "correct", "tokens", "speedup",
@@ -644,14 +672,17 @@ def summarise(calls: list[list], submissions: list[list]) -> list[dict[str, obje
                 arm["solved"].add(rec["benchmark"])  # type: ignore[union-attr]
 
     speedups: dict[str, list[float]] = collections.defaultdict(list)
+    per_kernel: dict[str, dict[str, list[float]]] = collections.defaultdict(lambda: collections.defaultdict(list))
     for row in submissions:
         rec = dict(zip(SUBMISSION_COLUMNS, row, strict=True))
         if not rec["suspect"] and rec["speedup"]:
             speedups[str(rec["arm"])].append(float(rec["speedup"]))
+            per_kernel[str(rec["arm"])][str(rec["benchmark"])].append(float(rec["speedup"]))
 
     out: list[dict[str, object]] = []
     for name, arm in by_arm.items():
         values = sorted(speedups[name])
+        kernels = [sorted(v) for _, v in sorted(per_kernel[name].items())]
         solved = len(arm["solved"])  # type: ignore[arg-type]
         reached = len(arm["attempted"])  # type: ignore[arg-type]
         tokens = sum(arm["spend"].values())  # type: ignore[union-attr]
@@ -688,6 +719,15 @@ def summarise(calls: list[list], submissions: list[list]) -> list[dict[str, obje
             # past anything the arm does normally, and the median throws away the size of every win
             # -- both are kept below as spread cues, neither is the number to quote.
             "speedup_geomean": geomean(values),
+            # The row above is weighted by how often somebody pressed SUBMIT, not by kernel: an arm
+            # that resubmits one flat kernel eleven times has that kernel eleven times in it.
+            # Measured on llr8w6-qwen38-c -- 15 rows over 3 kernels, 11 of them one kernel at 1.00x
+            # -- 2.076 per row against 6.892 per kernel, a 3.3x swing from resubmission count alone.
+            # The kernel is the unit that was sampled, so these are the columns a figure quotes; the
+            # per-row ones stay because plot_llr8w2 and the frozen wave figures already read them.
+            "speedup_kernels": len(kernels),
+            "speedup_geomean_kernel_best": geomean([v[-1] for v in kernels]),
+            "speedup_geomean_kernel_median": geomean([statistics.median(v) for v in kernels]),
             "speedup_median": round(values[len(values) // 2], 4) if values else 0.0,
             "speedup_mean": round(sum(values) / len(values), 4) if values else 0.0,
             "speedup_max": round(max(values), 4) if values else 0.0,
@@ -836,11 +876,52 @@ def write_csv(path: pathlib.Path, columns: list[str], rows: list) -> None:
     print(f"  {path}  rows={len(rows)}")
 
 
+def collect_campaign(run_root: pathlib.Path, out: pathlib.Path, selected: list[dict[str, object]]) -> list[str]:
+    """Write the five CSVs for ``selected`` into ``out``; returns the arms that produced NO calls.
+
+    An empty arm is returned rather than raised on, because whether it is fatal depends on the
+    caller: a hand-run collection of a wave still grading wants the rest of the rows, a scripted
+    one for the paper wants to stop. Neither can tell from the CSVs afterwards -- an arm with no
+    calls simply has no row -- so the list is the only place that distinction survives.
+    """
+    out.mkdir(parents=True, exist_ok=True)
+    all_calls: list[list] = []
+    all_submissions: list[list] = []
+    empty: list[str] = []
+    for arm in selected:
+        calls, submissions = read_arm(run_root, arm)
+        print(f"{arm_name(arm)}: calls={len(calls)} submissions={len(submissions)}")
+        if not calls:
+            empty.append(arm_name(arm))
+        all_calls += calls
+        all_submissions += submissions
+    # Every arm empty is the signature of a wrong run root, not of a campaign that measured nothing.
+    # Writing the CSVs anyway would freeze a full set of zero rows into the figures downstream.
+    if not all_calls:
+        raise SystemExit(f"no selected arm has any calls under {run_root}")
+
+    write_csv(out / "calls.csv", CALL_COLUMNS, all_calls)
+    write_csv(out / "submissions.csv", SUBMISSION_COLUMNS, all_submissions)
+
+    matched = matched_pairs(all_calls, all_submissions)
+    if matched:
+        columns = list(matched[0])
+        write_csv(out / "matched.csv", columns, [[r[c] for c in columns] for r in matched])
+
+    summary = summarise(all_calls, all_submissions)
+    columns = list(summary[0])
+    write_csv(out / "summary.csv", columns, [[row[c] for c in columns] for row in summary])
+
+    # The construct census reads the SAME shards this pass just opened, so it belongs on the same
+    # command rather than as a second thing to remember; a campaign collected without it is how the
+    # "what did the agents actually write" table went missing for two waves.
+    constructs.write_census(run_root, selected, out)
+    return empty
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run-root",
-                        type=pathlib.Path,
-                        default=pathlib.Path("/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs"))
+    parser.add_argument("--run-root", type=pathlib.Path, default=RUN_ROOT)
     parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path("data"))
     # Campaigns draw from DIFFERENT kernel sets, so pooling them into one figure invents a
     # distribution nothing was measured on: llr4 ran the 242-kernel track, llr6 the 40-kernel
@@ -851,10 +932,7 @@ def main() -> int:
                         help="read the arms out of the run directories instead of the ARMS registry")
     parser.add_argument("--plot", action="store_true", help="also render the figures for this campaign")
     args = parser.parse_args()
-    args.out.mkdir(parents=True, exist_ok=True)
 
-    all_calls: list[list] = []
-    all_submissions: list[list] = []
     if args.discover:
         selected = discover_arms(args.run_root, args.campaign)
         print(f"discovered {len(selected)} arms under {args.run_root}")
@@ -862,34 +940,7 @@ def main() -> int:
         selected = [a for a in ARMS if not args.campaign or a.get("campaign", "llr4") == args.campaign]
     if not selected:
         raise SystemExit(f"no arms for campaign {args.campaign!r}")
-    graded = 0
-    for arm in selected:
-        calls, submissions = read_arm(args.run_root, arm)
-        print(f"{arm_name(arm)}: calls={len(calls)} submissions={len(submissions)}")
-        graded += len(calls)
-        all_calls += calls
-        all_submissions += submissions
-    # Every arm empty is the signature of a wrong run root, not of a campaign that measured nothing.
-    # Writing the CSVs anyway would freeze a full set of zero rows into the figures downstream.
-    if not graded:
-        raise SystemExit(f"no arm of campaign {args.campaign or '(all)'} has any calls under {args.run_root}")
-
-    write_csv(args.out / "calls.csv", CALL_COLUMNS, all_calls)
-    write_csv(args.out / "submissions.csv", SUBMISSION_COLUMNS, all_submissions)
-
-    matched = matched_pairs(all_calls, all_submissions)
-    if matched:
-        columns = list(matched[0])
-        write_csv(args.out / "matched.csv", columns, [[r[c] for c in columns] for r in matched])
-
-    summary = summarise(all_calls, all_submissions)
-    columns = list(summary[0])
-    write_csv(args.out / "summary.csv", columns, [[row[c] for c in columns] for row in summary])
-
-    # The construct census reads the SAME shards this pass just opened, so it belongs on the same
-    # command rather than as a second thing to remember; a campaign collected without it is how the
-    # "what did the agents actually write" table went missing for two waves.
-    constructs.write_census(args.run_root, selected, args.out)
+    collect_campaign(args.run_root, args.out, selected)
     if args.plot:
         plot_llr8w2.render(args.out, args.out.parent / f"figures-{args.out.name.removeprefix('data-')}")
     return 0
