@@ -9,17 +9,26 @@ that matches the product over the set is the geometric one, and the median of a 
 distribution reports "no effect" everywhere. The per-kernel MEDIAN variant is drawn as a tick beside
 each marker, so an arm carried by one lucky resubmission shows as a wide gap between the two.
 
-The ARM is the row, never a pool across waves. Waves 3, 4, 6 and 7 are COMPLETION waves that re-ran
-only the kernels an earlier arm never submitted, so an arm's kernels are a subset computed from what
-its predecessor failed at; summing them into a per-model total would report a denominator no arm
-ever drew from.
+THE ROW IS THE EXPERIMENT, POOLED OVER ITS WAVES. A wave is not an experiment: waves 3, 4, 6, 7 and
+12 are COMPLETION waves that re-run only the kernels an earlier arm never submitted, and w8/w9 (and
+w10/w11) are two HALVES of one 40-kernel draw that were split to fit the node budget. Plotted one
+row per wave, those halves read as four independent 20-kernel experiments and a one-kernel gap fill
+reads as a whole arm at 100%. What the campaign actually measures is: of the llr-focus40 kernels,
+which ones did this model / language / skills configuration ever solve, given every attempt it got.
 
-Only PAIRED comparisons say anything about skills. The two legs of a completion wave drew subsets
-computed from DIFFERENT predecessors and can share almost nothing -- llr8w6's qwen38 pair shares one
-reached kernel and none with a timed submission on both sides. Where a pair shares timed kernels,
-both bars are restricted to those. Where it shares none, both are drawn over each arm's own kernels
-and the group is marked UNPAIRED, which is a statement that the two markers are not comparable
-rather than a comparison.
+So a row pools every wave of one cell and the numerator is the UNION of distinct kernels solved --
+not a sum of per-wave rates, which would be meaningless over different subsets, and not a sum of
+counts, which would double-count a kernel two waves both drew. The denominator is the tag, 40.
+
+ONE WRINKLE IN THE DENOMINATOR. The tag's membership changed once: tsvc_2_s2233 was swapped out for
+tsvc_2_s232 on 2026-08-30 because no arm could ever score it. A cell whose waves straddle that swap
+drew from both memberships and so attempted 41 distinct kernels. The denominator stays 40 -- the set
+size any single draw saw -- and no cell exceeds it, but a pooled row is over a set that shifted by
+one member partway through, which is worth knowing before quoting it to four significant figures.
+
+Skills legs are paired ON THE POOLED SETS. Two legs of a single completion wave often share almost
+no kernels, which is why the per-wave figure had to mark pairs UNPAIRED; pooled, both legs cover
+essentially the whole tag and the pairing is real.
 
 THE FORM. Nineteen groups is too many for grouped vertical bars: the labels have to rotate, the two
 legs of a pair end up further apart than two legs of neighbouring pairs, and the value labels have
@@ -56,7 +65,7 @@ LEGS = ("0", "1")
 
 @dataclasses.dataclass(frozen=True)
 class Group:
-    """One (wave, model, language) cell: the skills legs that exist, and their timed kernels."""
+    """One (model, language) cell POOLED over every wave: the skills legs, and their timed kernels."""
 
     wave: str
     model: str
@@ -78,7 +87,7 @@ class Group:
 
     def label(self) -> str:
         language = "C" if self.language == "c" else "Fortran"
-        return f"{artifact_style.MODEL_LABEL[self.model]} / {language}  w{self.wave[len('llr8w'):]}"
+        return f"{artifact_style.MODEL_LABEL[self.model]} / {language}"
 
 
 def style() -> None:
@@ -105,23 +114,76 @@ def timed_kernels(rows: list[dict[str, str]]) -> dict[str, dict[str, list[float]
     return {arm: {k: sorted(v) for k, v in sorted(kernels.items())} for arm, kernels in out.items()}
 
 
+#: The llr-focus40 tag: the kernel set every wave of this campaign draws from. Not read off any one
+#: arm, because a completion arm draws a SUBSET of it and would report its own gap list as the
+#: experiment's denominator.
+TAG_SIZE = 40
+
+#: Dropped from every figure. `tsvc_2_s2233` took 296 judge calls across the campaign and graded ok
+#: ZERO times, in every arm of every wave -- a kernel no arm can score measures the harness, not the
+#: model (the pass/fail is size- and thread-dependent; see the open harness bug). It was swapped out
+#: of the tag for tsvc_2_s232 partway through, which is the only reason a pooled cell could show 41
+#: distinct kernels over a 40-kernel tag. Excluding it makes the pooled set exactly the tag, costs
+#: no numerator anywhere (it was never solved), and stops its 296 unscoreable calls from inflating
+#: the token cost of the kernels that ARE scoreable.
+EXCLUDED = frozenset({"tsvc_2_s2233"})
+
+
 def groups() -> list[Group]:
-    """Every collected wave's cells, ordered by model, then language, then wave.
+    """One pooled cell per (model, language), ordered by model then language.
 
     The order is fixed rather than by value so a hue never tracks rank and a group sits in the same
     place in all three figures, which is what makes them readable side by side.
+
+    Pooling is over DISTINCT KERNELS, never over per-wave counts: a kernel that two completion waves
+    both drew is one kernel, and adding their counts would report it twice. `solved` and `attempted`
+    are therefore set unions taken from calls.csv, which is also where collect.py defines a solve
+    (a `submit` route that graded `ok`), so the pooled numerator means the same thing as the
+    per-wave one it replaces.
     """
     root = pathlib.Path(__file__).resolve().parent
-    found: dict[tuple[str, str, str], Group] = {}
+    solved: dict[tuple[str, str, str], set[str]] = {}
+    attempted: dict[tuple[str, str, str], set[str]] = {}
+    tokens: dict[tuple[str, str, str], int] = {}
+    kernels: dict[tuple[str, str, str], dict[str, list[float]]] = {}
+    waves: dict[tuple[str, str], set[str]] = {}
+
     for wave in collect_llr40.waves():
         data = root / f"data-{wave}"
-        kernels = timed_kernels(read(data / "submissions.csv"))
+        if not (data / "calls.csv").is_file():
+            continue
+        for row in read(data / "calls.csv"):
+            if row["benchmark"] in EXCLUDED:
+                continue
+            leg = (row["model"], row["language"], row["skills"])
+            attempted.setdefault(leg, set()).add(row["benchmark"])
+            if row["route"] == "submit" and row["status"] == "ok":
+                solved.setdefault(leg, set()).add(row["benchmark"])
+        per_arm = timed_kernels(read(data / "submissions.csv"))
         for row in read(data / "summary.csv"):
-            key = (row["model"], row["language"], wave)
-            cell = found.setdefault(key, Group(wave, row["model"], row["language"], {}, {}))
-            cell.arms[row["skills"]] = row
-            cell.kernels[row["skills"]] = kernels.get(row["arm"], {})
-    order = sorted(found, key=lambda k: (list(MODEL_COLOR).index(k[0]), k[1], int(k[2][len("llr8w"):])))
+            leg = (row["model"], row["language"], row["skills"])
+            waves.setdefault((row["model"], row["language"]), set()).add(wave)
+            tokens[leg] = tokens.get(leg, 0) + int(row["tokens"])
+            for kernel, speedups in per_arm.get(row["arm"], {}).items():
+                if kernel in EXCLUDED:
+                    continue
+                kernels.setdefault(leg, {}).setdefault(kernel, []).extend(speedups)
+
+    found: dict[tuple[str, str], Group] = {}
+    for model, language, skills in sorted(attempted):
+        leg = (model, language, skills)
+        reached = len(attempted[leg])
+        hit = len(solved.get(leg, ()))
+        cell = found.setdefault((model, language), Group("pooled", model, language, {}, {}))
+        cell.arms[skills] = {
+            "solved": str(hit),
+            "problems": str(TAG_SIZE),
+            "attempted": str(reached),
+            "tokens_per_kernel": str(tokens.get(leg, 0) // reached if reached else 0),
+            "waves": str(len(waves.get((model, language), ()))),
+        }
+        cell.kernels[skills] = {k: sorted(v) for k, v in sorted(kernels.get(leg, {}).items())}
+    order = sorted(found, key=lambda k: (list(MODEL_COLOR).index(k[0]), k[1]))
     return [found[k] for k in order]
 
 
@@ -216,8 +278,8 @@ def success_figure(cells: list[Group], out: pathlib.Path) -> None:
     def note(cell: Group) -> str:
         return " ".join(f"{cell.arms[s]['solved']}/{cell.arms[s]['problems']}" for s in LEGS if s in cell.arms)
 
-    fig, ax = row_figure(cells, "Successful completion, against the kernel set each arm drew from",
-                         "successful completion rate (% of kernels drawn)")
+    fig, ax = row_figure(cells, "Successful completion over the llr-focus40 tag, all waves pooled",
+                         "kernels ever solved (% of the 40-kernel tag)")
     ax.set_xlim(0.0, 100.0)
     artifact_style.row_axis(ax, [c.label() for c in cells], gridaxis="none")
     for row in range(len(cells)):
@@ -225,9 +287,9 @@ def success_figure(cells: list[Group], out: pathlib.Path) -> None:
     draw_rows(ax, cells, value, note, 0.0)
     ax.set_xlim(0.0, 100.0)
     finish(fig, ax, cells, out)
-    print("  success: denominator is collect.problem_count(): 40 for a full arm, the computed gap list for a "
-          "completion-wave arm, 20 for a kimi Fortran batch, never a hard-coded 40; the right column is "
-          "solved / drawn for each leg")
+    print(f"  success: pooled over every wave of each cell -- the numerator is the UNION of distinct kernels "
+          f"solved, never a sum of per-wave counts (which double-counts a kernel two completion waves both "
+          f"drew), over the llr-focus40 tag of {TAG_SIZE}; the right column is solved/{TAG_SIZE} per leg")
 
 
 def tokens_figure(cells: list[Group], out: pathlib.Path) -> None:
