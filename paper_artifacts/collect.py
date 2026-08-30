@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import collections
 import csv
-import glob
 import pathlib
 import math
 import sqlite3
@@ -713,7 +712,7 @@ def shards(run_root: pathlib.Path, job: int) -> list[str]:
     that the campaign as a whole found something.
     """
     run = run_root / str(job)
-    found = sorted(glob.glob(str(run / "judge" / "rank-*" / "*.db")))
+    found = constructs.find_shards(run_root, job)
     if not found and run.is_dir():
         print(f"{run}: judge has written no shards yet, skipped", file=sys.stderr)
     return found

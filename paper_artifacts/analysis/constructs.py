@@ -69,6 +69,23 @@ def sources_of(db: str) -> list[tuple[str, str, str]]:
     return out
 
 
+def find_shards(run_root: pathlib.Path, job: int | str) -> list[str]:
+    """The judge shards of one job, under either run-directory layout.
+
+    A completion wave inherits its run root from whichever env file it was derived from, so one
+    wave's jobs can sit under two different campaign-family directories -- llr8w12 put ten arms
+    under ``llr8w4-20260829/`` and its kimi fortran arm under ``llr8w8-20260830/``. Job ids are
+    unique, so widening the search by one level cannot attribute a run to the wrong arm; it only
+    stops one from vanishing. Lives here because ``collect.py`` and the census both need it and two
+    copies of a path rule drift: the census kept the narrow form and reported zero rows for a
+    campaign whose speed-up table beside it was complete.
+    """
+    direct = sorted(glob.glob(str(run_root / str(job) / "judge" / "rank-*" / "hpcagent_bench*.db")))
+    if direct:
+        return direct
+    return sorted(glob.glob(str(run_root / "*" / str(job) / "judge" / "rank-*" / "hpcagent_bench*.db")))
+
+
 def write_census(run_root: pathlib.Path, arms: list[dict], out: pathlib.Path) -> pathlib.Path:
     """``<out>/constructs.csv``: one row per arm, the fraction of its answers using each construct.
 
@@ -80,7 +97,7 @@ def write_census(run_root: pathlib.Path, arms: list[dict], out: pathlib.Path) ->
         model, language, skills = str(arm["model"]), str(arm["language"]), bool(arm["skills"])
         batch = f"-{arm['batch']}" if arm.get("batch") else ""
         name = f"{arm.get('campaign', 'llr')}-{model}-{language}{'-skills' if skills else ''}{batch}"
-        shards = sorted(glob.glob(str(run_root / str(arm["job"]) / "judge" / "rank-*" / "hpcagent_bench*.db")))
+        shards = find_shards(run_root, arm["job"])
         if not shards:
             print(f"{name}: no shards under job {arm['job']}", file=sys.stderr)
             continue

@@ -1,2 +1,2 @@
 arm,model,language,skills,answers,omp_parallel,omp_simd,omp_collapse,omp_reduction,omp_schedule,do_concurrent,restrict,aligned,unroll,ivdep,blocking,intrinsics,math_reassoc,array_syntax,matmul_intrinsic
-llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,27,1.0,0.6667,0.0,0.5556,0.4444,0.0,0.0,0.0,0.0,0.0,0.037,0.0,0.0,0.0,0.0
+llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,32,0.9688,0.6875,0.0,0.5625,0.4375,0.0,0.0,0.0,0.0,0.0,0.0312,0.0,0.0,0.0,0.0
