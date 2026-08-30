@@ -40,6 +40,7 @@ Usage:  python3 plot_llr40.py
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import dataclasses
 import math
@@ -274,13 +275,6 @@ def speedup_figure(cells: list[Group], out: pathlib.Path) -> None:
     ax.set_xscale("log")
     artifact_style.row_axis(ax, labels, gridaxis="none")
     draw_rows(ax, pairs, value, note, 1.0)
-    for row, cell in enumerate(pairs):
-        # The per-kernel MEDIAN geomean as a tick. A marker far from its tick is an arm whose
-        # speed-up rests on a best-of-many resubmission rather than a repeatable win.
-        for skills in LEGS:
-            centre = middle(cell, skills)
-            if centre is not None:
-                ax.plot([centre, centre], [row - 0.26, row + 0.26], color=artifact_style.INK, linewidth=0.9, zorder=4)
     drawn = [v for cell in pairs for s in LEGS for v in (value(cell, s), middle(cell, s)) if v is not None]
     low, high, ticks = speedup_axis(drawn)
     ax.set_xlim(low, high)
@@ -289,9 +283,19 @@ def speedup_figure(cells: list[Group], out: pathlib.Path) -> None:
     ax.get_xaxis().set_minor_formatter(matplotlib.ticker.NullFormatter())
     ax.grid(True, axis="x")
     finish(fig, ax, pairs, out, unpaired=True)
-    print(f"  speedup: tick is the geomean over each kernel's MEDIAN timing, marker the geomean over its BEST; "
-          f"{sum(1 for c in pairs if not c.shared())} of {len(pairs)} pairs share no timed kernel and are "
-          f"marked UNPAIRED")
+    # The per-kernel MEDIAN geomean is REPORTED rather than drawn. As a tick beside the marker it was
+    # two identical black marks per row with nothing tying either to its leg, so a reader could not
+    # tell which median belonged to which arm -- and an undecodable mark is worse than a number.
+    # What it is for: a cell whose best and median diverge is carried by lucky resubmissions rather
+    # than by a repeatable win, so the ratio is the thing to look at.
+    for cell in pairs:
+        for skills, leg in zip(LEGS, ("base", "skills"), strict=True):
+            best, median = value(cell, skills), middle(cell, skills)
+            if best is not None and median is not None:
+                print(f"  speedup: {cell.label()} {leg}: best {best:.2f}x, median {median:.2f}x "
+                      f"(ratio {best / median:.2f})")
+    print(f"  speedup: {sum(1 for c in pairs if not c.shared())} of {len(pairs)} pairs share no timed kernel "
+          f"and are marked UNPAIRED")
     print(f"  speedup: {len(lonely)} arms have no skills counterpart and are omitted: "
           f"{', '.join(c.label() for c in lonely)}")
 
@@ -340,8 +344,20 @@ def tokens_figure(cells: list[Group], out: pathlib.Path) -> None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    # A model whose arms are still in flight has a numerator that will move; plotting it beside
+    # finished ones invites reading a partial cell as a result. A flag rather than a constant so
+    # the exclusion cannot silently outlive the run that motivated it.
+    parser.add_argument("--exclude-model",
+                        action="append",
+                        default=[],
+                        metavar="MODEL",
+                        help="drop a model from every figure (repeatable), e.g. an arm still running")
+    args = parser.parse_args()
     style()
-    cells = groups()
+    cells = [c for c in groups() if c.model not in args.exclude_model]
+    if args.exclude_model:
+        print(f"  excluded models: {', '.join(sorted(args.exclude_model))}")
     out = pathlib.Path(__file__).resolve().parent / "figures"
     speedup_figure(cells, out / "llr40_speedup_per_kernel")
     success_figure(cells, out / "llr40_success_rate")
