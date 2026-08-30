@@ -224,6 +224,32 @@ def finish(fig, ax, cells: list[Group], out: pathlib.Path, unpaired: bool = Fals
     artifact_style.save(fig, out)
 
 
+#: Tick candidates for the speed-up axis, in the order a reader expects to see them on a log scale.
+#: The set is filtered to whatever range the data occupies rather than fixed, because a fixed
+#: 1..100 ladder sized for one 71x per-wave outlier squeezes a pooled 5x-to-12x campaign into a
+#: third of the axis and makes six rows look identical.
+SPEEDUP_TICKS = (1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30, 40, 50, 75, 100)
+
+
+def speedup_axis(values: list[float]) -> tuple[float, float, list[float]]:
+    """``(low, high, ticks)`` framing ``values`` on a log axis, with a margin and readable ticks.
+
+    1.0 is NOT pinned to the left edge. It is the meaningful reference -- no change -- but every
+    value here is a multiple of it, so anchoring there spends most of the width on empty decades.
+    The axis is labelled as a speed-up, which is what tells the reader where no-change sits.
+    """
+    low, high = min(values), max(values)
+    span = (low / 1.35, high * 1.35)
+    ticks = [t for t in SPEEDUP_TICKS if span[0] <= t <= span[1]]
+    # A range narrow enough to contain fewer than three candidates gets the nearest ones either
+    # side instead, so the axis never ships with one lonely tick.
+    if len(ticks) < 3:
+        ticks = sorted(
+            {min(SPEEDUP_TICKS, key=lambda t: abs(t - low)), *ticks,
+             min(SPEEDUP_TICKS, key=lambda t: abs(t - high))})
+    return span[0], span[1], ticks
+
+
 def speedup_figure(cells: list[Group], out: pathlib.Path) -> None:
     """Per-kernel geomean speed-up, base leg against skills leg, one row per arm PAIR."""
     pairs = [c for c in cells if len(c.arms) == 2]
@@ -255,8 +281,10 @@ def speedup_figure(cells: list[Group], out: pathlib.Path) -> None:
             centre = middle(cell, skills)
             if centre is not None:
                 ax.plot([centre, centre], [row - 0.26, row + 0.26], color=artifact_style.INK, linewidth=0.9, zorder=4)
-    ax.set_xlim(1.0, ax.get_xlim()[1] * 1.3)
-    ax.set_xticks([1, 2, 5, 10, 25, 50, 100])
+    drawn = [v for cell in pairs for s in LEGS for v in (value(cell, s), middle(cell, s)) if v is not None]
+    low, high, ticks = speedup_axis(drawn)
+    ax.set_xlim(low, high)
+    ax.set_xticks(ticks)
     ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     ax.get_xaxis().set_minor_formatter(matplotlib.ticker.NullFormatter())
     ax.grid(True, axis="x")
