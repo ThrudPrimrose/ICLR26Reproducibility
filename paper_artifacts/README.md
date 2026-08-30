@@ -128,6 +128,33 @@ hardware image and no longer ships. `doconcurrent-fortran` was merged into `lang
 - Speedups are wall-clock against a serial baseline on the same node type; submissions the judge
   flagged `suspect` are excluded from the speedup figures.
 
+## How a submission's numbers are graded
+
+A speedup only counts if the answer is right, so the correctness rule is part of the result. The
+harness grades every output against a NumPy reference with a tolerance derived from the run
+precision -- a kernel cannot declare its own `rtol`/`atol`, the manifest loader rejects both -- and
+accepts an answer that is close ELEMENTWISE **or** within the backward-error bound for the
+arithmetic that produced it:
+
+```
+per-element   |a-e| <= atol + rtol*|e|                      (numpy allclose; fp64 band 1e-9 / 1e-11)
+normwise      max|a-e| / (eps * log2(n) * ||e||_inf) <= 30  (LAPACK's test ratio and its own THRESH)
+```
+
+The second path is not a loosening for its own sake. An optimizer that lifts a serial recurrence to
+a parallel scan REASSOCIATES the sum, which is a legitimate implementation of an associative
+operator but not a bit-identical one; where a signed accumulation passes near zero, the per-element
+relative error there is meaningless because cancellation destroyed the digits. Measured on
+`fission_dep_then_indep`: a 3.6x-faster scanned variant disagreed with the sequential reference by
+4.4e-9 on an array reaching 4.9e6 -- about 4 ULP of the data's own scale -- and was scored a wrong
+answer on 40 of 47,000,000 elements, all of them near-zero crossings. Its LAPACK ratio is 0.16
+against a threshold of 30. Grading on the per-element rule alone therefore penalised precisely the
+transformation under study and rewarded the slower arm for not attempting it.
+
+Both numbers are reported on every failure, so a reassociation (large relative error, ratio << 30)
+is distinguishable from a real defect (ratio 1e8 and up) without rerunning anything. Full contract:
+[`hpcagent_bench/docs/numerical_validation.md`](../../optarena/hpcagent_bench/docs/numerical_validation.md).
+
 ## Layout
 
 ```
