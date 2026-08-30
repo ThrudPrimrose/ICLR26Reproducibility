@@ -428,6 +428,119 @@ ARMS: list[dict[str, object]] = [
         "skills": False,
         "problems": 20
     },
+
+    # Waves 10-12 are GAP FILLS, not fresh draws: each arm re-runs only the kernels that arm never
+    # scored, so its denominator is its OWN list length and not 40. Pooling one of these with a full
+    # arm on a common denominator would read a 1-kernel arm as a 2.5% success rate.
+    #
+    # w10/w11 halve the kimi fortran-with-skills tag the same way w8/w9 halved it without skills.
+    # w12 is the final sweep, submitted with a 3h wall and a 2h agent budget so that an agent which
+    # runs out of time is killed by its OWN clock and reads as an agent failure rather than a slurm
+    # kill wearing the costume of a harness fault.
+    {
+        "campaign": "llr8w10",
+        "job": 612995,
+        "model": "kimi27sglang",
+        "language": "fortran",
+        "skills": True,
+        "problems": 20
+    },
+    {
+        "campaign": "llr8w11",
+        "job": 612996,
+        "model": "kimi27sglang",
+        "language": "fortran",
+        "skills": True,
+        "problems": 20
+    },
+    {
+        "campaign": "llr8w12",
+        "job": 613035,
+        "model": "kimi27sglang",
+        "language": "c",
+        "skills": True,
+        "problems": 4
+    },
+    {
+        "campaign": "llr8w12",
+        "job": 613036,
+        "model": "kimi27sglang",
+        "language": "c",
+        "skills": False,
+        "problems": 3
+    },
+    {
+        "campaign": "llr8w12",
+        "job": 613037,
+        "model": "kimi27sglang",
+        "language": "fortran",
+        "skills": False,
+        "problems": 11
+    },
+    {
+        "campaign": "llr8w12",
+        "job": 613038,
+        "model": "oss120b",
+        "language": "c",
+        "skills": True,
+        "problems": 2
+    },
+    {
+        "campaign": "llr8w12",
+        "job": 613039,
+        "model": "oss120b",
+        "language": "c",
+        "skills": False,
+        "problems": 1
+    },
+    {
+        "campaign": "llr8w12",
+        "job": 613040,
+        "model": "oss120b",
+        "language": "fortran",
+        "skills": True,
+        "problems": 8
+    },
+    {
+        "campaign": "llr8w12",
+        "job": 613041,
+        "model": "oss120b",
+        "language": "fortran",
+        "skills": False,
+        "problems": 10
+    },
+    {
+        "campaign": "llr8w12",
+        "job": 613042,
+        "model": "qwen38",
+        "language": "c",
+        "skills": True,
+        "problems": 1
+    },
+    {
+        "campaign": "llr8w12",
+        "job": 613043,
+        "model": "qwen38",
+        "language": "c",
+        "skills": False,
+        "problems": 1
+    },
+    {
+        "campaign": "llr8w12",
+        "job": 613044,
+        "model": "qwen38",
+        "language": "fortran",
+        "skills": True,
+        "problems": 3
+    },
+    {
+        "campaign": "llr8w12",
+        "job": 613045,
+        "model": "qwen38",
+        "language": "fortran",
+        "skills": False,
+        "problems": 7
+    },
 ]
 
 # Success is reported against the kernel set the arm DREW FROM, not against however many it
