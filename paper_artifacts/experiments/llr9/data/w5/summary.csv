@@ -1,0 +1,5 @@
+arm,model,language,skills,job,problems,attempted,solved,success_rate,success_rate_attempted,calls,submits,submits_ok,tokens,tokens_per_kernel,tokens_per_solved,speedup_n,speedup_geomean,speedup_kernels,speedup_geomean_kernel_best,speedup_geomean_kernel_median,speedup_median,speedup_mean,speedup_max,frac_speedup_gt_1_1
+llr8w5-qwen38-fortran,qwen38,fortran,0,612240,7,6,5,0.7143,0.8333,51,19,18,46199832,7699972,9239966,18,8.9764,5,10.2817,10.0045,6.4926,13.8466,37.4093,0.8889
+llr8w5-qwen38-fortran-skills,qwen38,fortran,1,612241,3,3,2,0.6667,0.6667,32,9,7,14014124,4671374,7007062,3,27.3891,1,51.4356,34.8924,34.8924,32.5921,51.4356,1.0
+llr8w5-oss120b-fortran,oss120b,fortran,0,612242,10,10,8,0.8,0.8,63,15,8,12875869,1287586,1609483,6,10.7312,6,10.7312,10.7312,20.7979,16.7262,32.5447,0.8333
+llr8w5-oss120b-fortran-skills,oss120b,fortran,1,612243,8,8,7,0.875,0.875,40,14,7,21015580,2626947,3002225,6,9.3357,6,9.3357,9.3357,23.2035,31.1418,122.2429,0.6667

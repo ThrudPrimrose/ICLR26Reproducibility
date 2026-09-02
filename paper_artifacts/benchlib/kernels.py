@@ -13,11 +13,27 @@ the luckiest attempt it ever made, which a resubmitting agent gets more of than 
 "best" rewards volume. ``best_speedup`` stays in the table beside ``last_speedup`` as a diagnostic:
 a cell whose two differ widely was carried by cherry-picking rather than by a repeatable win.
 
-ORDER IS READ, NEVER GUESSED. "Last" is the maximum ``ts_ms``, the judge's own stamp on the graded
-row, carried through by collect.py. Row order in a CSV is not an ordering. A kernel whose
-trustworthy submissions carry no stamp, or whose latest stamp is a tie between two rows, has NO
-defensible last submission: it is written with an empty ``last_speedup`` and an ``ordering`` of
-``unstamped`` or ``tied``, counted, and reported. It is never filled in from row order.
+"LAST" MEANS THE HIGHEST WAVE, NOT THE LATEST CLOCK. Waves are submission batches and a later wave
+is a later decision about the same kernel, so the winner is the submission from the highest-numbered
+wave that has one; the judge's ``ts_ms`` stamp then breaks ties WITHIN that wave, which is where an
+agent submitting several times for one kernel is resolved.
+
+It is not last-by-timestamp, and the difference is not academic here. The two agree only while wave
+numbering and wall-clock order agree, and THIS LAUNCHER HAS BROKEN THAT CORRESPONDENCE THREE TIMES
+(see the note above :data:`RUN_ROOT` in ``benchlib.shards``): a wave's number lives in the campaign
+token, the token does not reliably follow the job name, and a wave whose jobs carry the previous
+wave's token can finish at any wall-clock time. Under last-by-timestamp a wave that lands out of
+numerical order silently takes the winner away from the wave that supersedes it. Measured on both
+experiments at the point the rule was introduced, the two agree on every cell -- 477 of 477 in llr8
+and 430 of 430 in llr9, 31 and 27 of which span more than one wave -- so this changes no published
+number today. It is here for the fourth instance.
+
+ORDER IS READ, NEVER GUESSED. The wave rank is the position in :func:`wave_dirs`, and ``ts_ms`` is
+the judge's own stamp on the graded row, carried through by the collector. Row order in a CSV is not
+an ordering. A kernel whose winning wave carries no stamp, or whose latest stamp inside that wave is
+a tie between two rows, has NO defensible last submission: it is written with an empty
+``last_speedup`` and an ``ordering`` of ``unstamped`` or ``tied``, counted, and reported. It is never
+filled in from row order.
 
 THE ROW POOLS EVERY WAVE. A wave is not an experiment: waves 3, 4, 6, 7 and 12 to 15 are COMPLETION
 waves that re-run only the kernels an earlier arm never submitted, and w8/w9 (and w10/w11) are two
@@ -56,7 +72,9 @@ class Kernel:
     """One (model, language, skills, kernel) cell, accumulated across waves."""
 
     waves: list[str] = dataclasses.field(default_factory=list)
-    timed: list[tuple[int, float]] = dataclasses.field(default_factory=list)
+    #: ``(wave rank, ts_ms, speed-up)`` per trustworthy submission. The rank comes first because
+    #: the winner is the highest wave, not the latest clock; see the module docstring.
+    timed: list[tuple[int, int, float]] = dataclasses.field(default_factory=list)
     unstamped: int = 0
     solved: bool = False
     tokens: int = 0
@@ -98,18 +116,23 @@ def stamp(row: dict[str, str]) -> int:
     return int(value) if value.isdigit() else 0
 
 
-def last_of(timed: list[tuple[int, float]]) -> tuple[float | None, str]:
-    """The speed-up of the latest submission, and what the ordering allowed.
+def last_of(timed: list[tuple[int, int, float]]) -> tuple[float | None, str]:
+    """The speed-up of the last submission, and what the ordering allowed.
 
-    Two rows sharing the latest stamp are not one submission: which of them the agent stood behind
-    is unrecoverable, so the kernel reports no last value rather than an arbitrary one.
+    THE HIGHEST WAVE WINS, and the judge's stamp only breaks ties inside it. A later wave is a later
+    decision about the same kernel; the wall clock is a proxy for that which this launcher has
+    already broken three times by letting a wave carry the previous wave's campaign token.
+
+    Two rows sharing the winning wave's latest stamp are not one submission: which of them the agent
+    stood behind is unrecoverable, so the kernel reports no last value rather than an arbitrary one.
     """
     if not timed:
         return None, UNTIMED
-    latest = max(ts for ts, _ in timed)
+    top = max(rank for rank, _, _ in timed)
+    latest = max(ts for rank, ts, _ in timed if rank == top)
     if latest == 0:
         return None, UNSTAMPED
-    tail = [value for ts, value in timed if ts == latest]
+    tail = [value for rank, ts, value in timed if rank == top and ts == latest]
     if len(tail) > 1:
         return None, TIED
     return tail[0], STAMPED
@@ -118,7 +141,10 @@ def last_of(timed: list[tuple[int, float]]) -> tuple[float | None, str]:
 def collect(data: pathlib.Path, excluded: frozenset[str]) -> dict[tuple[str, str, str, str], Kernel]:
     """``(model, language, skills, kernel) -> Kernel`` over every wave under ``data``, less ``excluded``."""
     cells: dict[tuple[str, str, str, str], Kernel] = {}
-    for wave in wave_dirs(data):
+    # The rank is the wave's POSITION in wave_dirs, which is the documented wave order: the
+    # numbered w<N> waves ascending, then any named one. Using the position rather than parsing
+    # the name keeps one definition of wave order in the codebase instead of two.
+    for rank, wave in enumerate(wave_dirs(data)):
         per_arm_tokens: dict[tuple[str, str, str, str], int] = {}
         for row in read(wave / "calls.csv"):
             if row["benchmark"] in excluded:
@@ -141,7 +167,7 @@ def collect(data: pathlib.Path, excluded: frozenset[str]) -> dict[tuple[str, str
                 cell.waves.append(wave.name)
             ts = stamp(row)
             cell.unstamped += int(ts == 0)
-            cell.timed.append((ts, float(row["speedup"])))
+            cell.timed.append((rank, ts, float(row["speedup"])))
     return cells
 
 
@@ -149,7 +175,7 @@ def rows(cells: dict[tuple[str, str, str, str], Kernel]) -> list[dict[str, objec
     """The tidy table, sorted so the CSV is byte-stable across runs."""
     out: list[dict[str, object]] = []
     for (model, language, skills, benchmark), cell in sorted(cells.items()):
-        values = sorted(value for _, value in cell.timed)
+        values = sorted(value for _, _, value in cell.timed)
         last, ordering = last_of(cell.timed)
         out.append({
             "model": model,

@@ -9,7 +9,7 @@ what was submitted.
 ## `sources/` -- the final submitted source of every cell
 
 One file per `(model, language, skills, kernel)` cell, holding the submission with the latest judge
-stamp -- the one `../data/kernels.csv` quotes as `last_speedup`. 426 files.
+stamp -- the one `../data/kernels.csv` quotes as `last_speedup`. 430 files.
 
 ```
 sources/<model>-<language>[-skills]/<kernel>__submitted.<ext>
@@ -21,10 +21,11 @@ sources/index.csv
 
 ## The waves
 
-Fifteen batches: llr8's fourteen with the refreshed six, the duplicate and the five replaced
-kernels filtered out, and `v9` for the refreshed six. w16 arrives here as it does in llr8 -- llr9
-inherits every REGISTERED llr8 wave, and all five kernels w16 touched are still in the re-cut tag,
-so none of them is filtered. Compare the `calls` column with llr8's to see
+Sixteen batches: llr8's fifteen with the refreshed six, the duplicate and the five replaced
+kernels filtered out, and `v9` for the refreshed six. w5 and w16 arrive here as they do in llr8 -- llr9
+inherits every REGISTERED llr8 wave -- and the kernels they touched are still in the re-cut tag, so
+almost none is filtered. Like in llr8, w5 moved no speed-up here either: it corrected `tokens` on
+the two Fortran base/skills legs it ran and nothing else. Compare the `calls` column with llr8's to see
 exactly what the filter removed.
 
 | wave | jobs | arms | kernels drawn | calls | submissions | cells first solved here |
@@ -32,18 +33,19 @@ exactly what the filter removed.
 | w2 | 610653-610672 | 7 | 34 | 1546 | 281 | 131 |
 | w3 | 611560-611567 | 8 | 34 | 913 | 154 | 87 |
 | w4 | 612042-612051 | 10 | 30 | 1372 | 130 | 69 |
+| w5 | 612240-612243 | 4 | 15 | 186 | 33 | 15 |
 | w6 | 612291-612315 | 6 | 20 | 478 | 71 | 24 |
 | w7 | 612301-612302 | 2 | 3 | 26 | 1 | 0 |
 | w8 | 612477 | 1 | 13 | 181 | 28 | 12 |
 | w9 | 612478 | 1 | 17 | 287 | 39 | 14 |
 | w10 | 612995 | 1 | 14 | 311 | 40 | 13 |
 | w11 | 612996 | 1 | 18 | 317 | 48 | 16 |
-| w12 | 613035-613045 | 8 | 18 | 347 | 40 | 17 |
-| w13 | 613252-613254 | 3 | 6 | 108 | 13 | 5 |
-| w14 | 613359-613362 | 4 | 3 | 88 | 9 | 3 |
+| w12 | 613035-613045 | 8 | 18 | 347 | 40 | 6 |
+| w13 | 613252-613254 | 3 | 6 | 108 | 13 | 2 |
+| w14 | 613359-613362 | 4 | 3 | 88 | 9 | 2 |
 | w15 | 613533 | 1 | 11 | 321 | 49 | 3 |
 | w16 | 617916-618083 | 5 | 5 | 70 | 5 | 1 |
-| v9 | 618217-618234 | 12 | 6 | 633 | 86 | 33 |
+| v9 | 618217-618234 | 12 | 6 | 762 | 108 | 37 |
 
 w12 shows 8 arms against llr8's 11: three of its arms drew nothing but replaced kernels, so they
 contribute no rows. The collector names them rather than failing -- an arm the filter emptied is not
@@ -63,13 +65,13 @@ was collected.
 | GPT-OSS-120B / Fortran / base | 618222 | final | 6 |
 | GPT-OSS-120B / C / skills | 618229 | final | 6 |
 | GPT-OSS-120B / Fortran / skills | 618231 | final | 6 |
-| Qwen3.8 / C / base | 618217 -> 619183 | snapshot, resubmitted | 3 |
-| Qwen3.8 / Fortran / base | 618219 -> 619184 | snapshot, resubmitted | 3 |
-| Kimi K2.7 / C / base | 618223 -> 619185 | snapshot, resubmitted | 4 |
-| Kimi K2.7 / Fortran / base | 618225 -> 619186 | snapshot, resubmitted | 4 |
-| Qwen3.8 / C / skills | 618226 | snapshot, running | 1 |
-| Qwen3.8 / Fortran / skills | 618228 | snapshot, running | 1 |
-| Kimi K2.7 / C / skills | 618232 | snapshot, running | 1 |
+| Qwen3.8 / C / base | 618217 -> 619183 | snapshot, TIMEOUT, rerunning | 3 |
+| Qwen3.8 / Fortran / base | 618219 -> 619184 | snapshot, TIMEOUT, queued | 3 |
+| Kimi K2.7 / C / base | 618223 -> 619185 | snapshot, TIMEOUT, rerunning | 4 |
+| Kimi K2.7 / Fortran / base | 618225 -> 619186 | snapshot, TIMEOUT, queued | 4 |
+| Qwen3.8 / C / skills | 618226 | snapshot, running | 2 |
+| Qwen3.8 / Fortran / skills | 618228 | snapshot, running | 2 |
+| Kimi K2.7 / C / skills | 618232 | snapshot, running | 3 |
 | Kimi K2.7 / Fortran / skills | 618234 | snapshot, running | 2 |
 
 To finalise: when 619183-619186 land, swap those four `job` values into the matching `llr40v9`

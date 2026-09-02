@@ -186,3 +186,42 @@ def test_the_table_is_byte_stable_across_runs(data: pathlib.Path, tmp_path: path
     kernels.write(first, kernels.rows(kernels.collect(data, aggregate_llr8.EXCLUDED)))
     kernels.write(second, kernels.rows(kernels.collect(data, aggregate_llr8.EXCLUDED)))
     assert first.read_bytes() == second.read_bytes()
+
+
+def test_the_higher_wave_wins_even_when_it_finished_first(data: pathlib.Path) -> None:
+    """A wave that ran EARLIER on the clock but carries a HIGHER number still owns the last word.
+
+    This is the case last-by-timestamp gets wrong, and it is not hypothetical: a wave's number lives
+    in the launcher's campaign token, the token has three times failed to follow the job name, and a
+    wave carrying the previous wave's token can finish at any wall-clock time. w7 here is the higher
+    wave with the OLDER stamp; it supersedes w6 anyway.
+    """
+    wave(data, "w6", [call("outoforder", 10)], [submission("outoforder", 2.0, 90000)])
+    wave(data, "w7", [call("outoforder", 10)], [submission("outoforder", 3.0, 100)])
+    table = {str(r["benchmark"]): r for r in kernels.rows(kernels.collect(data, aggregate_llr8.EXCLUDED))}
+    assert table["outoforder"]["last_speedup"] == "3.000000"
+    assert table["outoforder"]["ordering"] == kernels.STAMPED
+    # best still spans every wave: the rule picks the LAST submission, it does not hide the others.
+    assert table["outoforder"]["best_speedup"] == "3.000000"
+    assert table["outoforder"]["waves"] == "w6;w7"
+
+
+def test_the_stamp_still_breaks_ties_inside_the_winning_wave(data: pathlib.Path) -> None:
+    """Several submissions for one kernel in ONE wave resolve by stamp, as they always did."""
+    wave(data, "w6", [call("inwave", 10)], [submission("inwave", 9.0, 500)])
+    wave(data, "w7", [call("inwave", 10)],
+         [submission("inwave", 4.0, 300),
+          submission("inwave", 5.0, 800),
+          submission("inwave", 1.0, 200)])
+    table = {str(r["benchmark"]): r for r in kernels.rows(kernels.collect(data, aggregate_llr8.EXCLUDED))}
+    assert table["inwave"]["last_speedup"] == "5.000000"
+    assert table["inwave"]["best_speedup"] == "9.000000"
+
+
+def test_a_tie_inside_the_winning_wave_has_no_last_submission(data: pathlib.Path) -> None:
+    """Two rows sharing the winning wave's latest stamp: which one the agent stood behind is lost."""
+    wave(data, "w6", [call("tiedhigh", 10)], [submission("tiedhigh", 9.0, 500)])
+    wave(data, "w7", [call("tiedhigh", 10)], [submission("tiedhigh", 4.0, 800), submission("tiedhigh", 5.0, 800)])
+    table = {str(r["benchmark"]): r for r in kernels.rows(kernels.collect(data, aggregate_llr8.EXCLUDED))}
+    assert table["tiedhigh"]["last_speedup"] == ""
+    assert table["tiedhigh"]["ordering"] == kernels.TIED

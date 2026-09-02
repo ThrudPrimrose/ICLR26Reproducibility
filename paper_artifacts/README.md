@@ -37,8 +37,8 @@ exclusion set are NOT in it: those are per-experiment decisions and each experim
 
 | experiment | what it varies | models | data |
 |---|---|---|---|
-| `llr8` | the skills packet, in the prompt or absent | Qwen3.8, GPT-OSS-120B, Kimi K2.7 | 14 waves, 480 kernel rows over 12 legs |
-| `llr9` | the same, over the `llr-focus40` tag as re-cut on 2026-09-01 | the same three | 15 waves, 439 kernel rows over 12 legs |
+| `llr8` | the skills packet, in the prompt or absent | Qwen3.8, GPT-OSS-120B, Kimi K2.7 | 15 waves, 480 kernel rows over 12 legs |
+| `llr9` | the same, over the `llr-focus40` tag as re-cut on 2026-09-01 | the same three | 16 waves, 443 kernel rows over 12 legs |
 | `git` | kernel framing against repository framing | Qwen3.8, GPT-OSS-120B | 4 arms, 120 cells |
 | `canon` | dace canonicalization, on or off | none (a compiler ablation) | takes a sweep directory |
 | `evasion` | nothing; it audits the submitted sources | all of the above | one candidate table |
@@ -52,8 +52,8 @@ reports "no effect" everywhere.
 
 ## An experiment is the union of its waves
 
-The campaign does not fit in one job, so it is deliberately submitted in batches. `llr8` is fourteen
-of them and `llr9` fifteen. This is a size constraint, not an accident, and it has consequences the
+The campaign does not fit in one job, so it is deliberately submitted in batches. `llr8` is fifteen
+of them and `llr9` sixteen. This is a size constraint, not an accident, and it has consequences the
 layout keeps visible rather than flattening away:
 
 - **The dataset is the union.** One wave directory is never the experiment. Most waves are
@@ -61,15 +61,34 @@ layout keeps visible rather than flattening away:
   `w10`/`w11`) are two HALVES of one 40-kernel draw, split to fit the node budget. `w16` is the last
   of them and completes SPEED-UPS rather than solves: five arms over the six cells that had been
   drawn, sometimes solved, but had never left a trustworthy timing.
-- **A kernel can appear in several waves.** It is de-duplicated by the judge's own millisecond
-  stamp -- the LAST submission is the one the agent stood behind -- never by picking a directory. A
-  kernel whose latest stamp is missing or tied reports no last value and says so in `ordering`.
+- **A kernel can appear in several waves, and the HIGHEST WAVE WINS.** A later wave is a later
+  decision about the same kernel, so its submission is the one reported; the judge's millisecond
+  stamp then breaks ties WITHIN that wave, which is where an agent that submitted several times for
+  one kernel is resolved. A kernel whose winning wave carries no stamp, or whose latest stamp inside
+  it is tied between two rows, reports no last value and says so in `ordering`. It is never resolved
+  from directory order or row order.
+- **It is deliberately NOT last-by-timestamp.** The two rules agree only while wave numbering and
+  wall-clock order agree, and this launcher has broken that correspondence three times (see the
+  table below). A wave carrying the previous wave's campaign token can finish at any wall-clock
+  time, and under last-by-timestamp it would silently take the winner away from the wave that
+  supersedes it. Measured when the rule was introduced, the two agree on **every** cell -- 477 of
+  477 in llr8, 430 of 430 in llr9, of which 31 and 27 span more than one wave -- so no published
+  number moved. It is there for the fourth instance.
 - **The per-wave directories stay.** `data/w<N>/` is the provenance; `data/kernels.csv` is derived
   and sits beside them, not instead of them.
-- **A directory name is not attribution.** Several waves' `.env` files mis-inherited `RUN_ROOT`, so
-  one wave's jobs can sit under another wave's directory: `llr8w12` put ten arms under
-  `llr8w4-20260829/` and its Kimi Fortran arm under `llr8w8-20260830/`. Job ids are unique and every
-  row carries a `run_id` prefix, so both are read and the directory name is ignored.
+- **ATTRIBUTE BY `run_id` PREFIX *AND* JOB ID. Never by either alone, and never by directory name.**
+  The launcher's campaign token has now mis-set the wave identity THREE times, so this is a standing
+  defect and not a one-off:
+
+  | # | what happened | what it cost |
+  |---|---|---|
+  | 1 | `w12` and `w13` inherited `RUN_ROOT` from the env file they came from, so one wave's jobs sit under two campaign-family DIRECTORIES | picking the family holding the wave's first job lost `w12`'s Kimi Fortran arm and two of `w13`'s three |
+  | 2 | job 618083 runs under Slurm name `llr8w16b` but writes `run_id` prefix `llr8w16`, identical to 617920's | two jobs, one arm identity -- registering both would have double-pooled |
+  | 3 | jobs 612240-612243 run under Slurm names `llr8w5-*` but write `run_id` prefix `llr8w4` | a whole wave wore the previous wave's name and went uncollected for four days |
+
+  The job id is the only identifier that has never been wrong. The registry in `benchlib/shards.py`
+  is what binds a job id to a wave, which is why the collection is registry-driven rather than a
+  directory scan. Expect a fourth instance.
 
 Each experiment's `artifacts/README.md` has the per-wave table: which jobs, how many arms, how many
 kernels, and what that wave added that no earlier one had.
@@ -145,13 +164,13 @@ needs to change.
 | GPT-OSS-120B / Fortran / base | 618222 | **final** (COMPLETED) | 6 |
 | GPT-OSS-120B / C / skills | 618229 | **final** (COMPLETED) | 6 |
 | GPT-OSS-120B / Fortran / skills | 618231 | **final** (COMPLETED) | 6 |
-| Qwen3.8 / C / base | 618217 -> **619183** | snapshot; timed out at 8h, resubmitted at 16h | 3 |
-| Qwen3.8 / Fortran / base | 618219 -> **619184** | snapshot; timed out at 8h, resubmitted at 16h | 3 |
-| Kimi K2.7 / C / base | 618223 -> **619185** | snapshot; timed out at 8h, resubmitted at 16h | 4 |
-| Kimi K2.7 / Fortran / base | 618225 -> **619186** | snapshot; timed out at 8h, resubmitted at 16h | 4 |
-| Qwen3.8 / C / skills | 618226 | snapshot; still running | 1 |
-| Qwen3.8 / Fortran / skills | 618228 | snapshot; still running | 1 |
-| Kimi K2.7 / C / skills | 618232 | snapshot; still running | 1 |
+| Qwen3.8 / C / base | 618217 -> **619183** | snapshot; TIMEOUT at 8h, rerunning at 16h | 3 |
+| Qwen3.8 / Fortran / base | 618219 -> **619184** | snapshot; TIMEOUT at 8h, queued at 16h | 3 |
+| Kimi K2.7 / C / base | 618223 -> **619185** | snapshot; TIMEOUT at 8h, rerunning at 16h | 4 |
+| Kimi K2.7 / Fortran / base | 618225 -> **619186** | snapshot; TIMEOUT at 8h, queued at 16h | 4 |
+| Qwen3.8 / C / skills | 618226 | snapshot; still running | 2 |
+| Qwen3.8 / Fortran / skills | 618228 | snapshot; still running | 2 |
+| Kimi K2.7 / C / skills | 618232 | snapshot; still running | 3 |
 | Kimi K2.7 / Fortran / skills | 618234 | snapshot; still running | 2 |
 
 **When 619183-619186 land they SUPERSEDE 618217/618219/618223/618225**, which is a registry edit and
@@ -171,17 +190,18 @@ Per cell, over the six refreshed kernels (`-` where the arm never reached the ke
 | GPT-OSS-120B / Fortran / base | 15.4x | no submission | 1.0x | 10.1x | no submission | 3.6x |
 | GPT-OSS-120B / Fortran / skills | 3.8x | no submission | no submission | 9.5x | 11.2x | 3.6x |
 | Kimi K2.7 / C / base | 20.8x | 10.3x | 6.6x | 19.0x | - | - |
-| Kimi K2.7 / C / skills | 17.9x | - | - | - | - | - |
+| Kimi K2.7 / C / skills | 18.3x | 13.2x | no submission | - | - | - |
 | Kimi K2.7 / Fortran / base | 18.1x | 12.0x | 5.0x | 10.6x | - | - |
-| Kimi K2.7 / Fortran / skills | 18.8x | no submission | - | - | - | - |
+| Kimi K2.7 / Fortran / skills | 18.8x | 12.9x | - | - | - | - |
 | Qwen3.8 / C / base | 20.8x | 17.9x | 6.6x | - | - | - |
-| Qwen3.8 / C / skills | 10.6x | - | - | - | - | - |
+| Qwen3.8 / C / skills | 10.6x | 10.9x | - | - | - | - |
 | Qwen3.8 / Fortran / base | 18.6x | 11.4x | 5.0x | - | - | - |
-| Qwen3.8 / Fortran / skills | 20.4x | - | - | - | - | - |
+| Qwen3.8 / Fortran / skills | 20.4x | 11.2x | - | - | - | - |
 
-`argmax_with_index` is the only one of the six every cell reached, which is what makes its
-before-and-after readable today. The other five are a partial draw and the llr9 figures carry them
-as such.
+`argmax_with_index` and `compact_threshold_pack` are the two every cell has now reached, which is
+what makes their before-and-after readable today. The other four are a partial draw and the llr9
+figures carry them as such. These numbers move every time the running arms are re-collected; the
+four GPT-OSS rows are the only ones that will not.
 
 ## Where the raw data is
 
@@ -215,14 +235,45 @@ Kept and moved: `problems/problems-llr6-*.jsonl` and `problems/problems-llr8kimi
 packets the llr8 waves actually dispatched (the wave-2 packets carry llr6 filenames), and are now
 under `experiments/llr8/artifacts/problems/`.
 
-## One open question the layout cannot express
+## What waves 5 and 16 were
 
-**Four jobs write `llr8w4-*` run ids the registry does not list.** Jobs 612240-612243 carry the same
-arm names as the registered 612044/612045/612048/612049 -- 209 calls and 33 submissions over one to
-three kernels each. Whether they supersede those jobs or ran alongside them is exactly what a
-registry exists to record and what the rows cannot say, so they are reported rather than merged.
+Both ran on the cluster and were missing from the dataset until 2026-09-02. Both are now registered.
+They are opposite kinds of correction and it is worth not confusing them.
 
-## What wave 16 was, and one job left out of it
+### w5 (jobs 612240-612243) -- corrected the COST, changed no result
+
+The registry used to say "a gap is fine (there is no w5)". There is. Slurm names it `llr8w5-*`; only
+its `run_id` says `llr8w4`, which is why it read as a resubmission of the registered
+612044/612045/612048/612049 rather than a wave of its own. It was submitted 29 minutes after the last
+w4 job ended and all four arms COMPLETED.
+
+It is a COMPLETION wave over w4's Fortran legs, on three independent facts: the runs are strictly
+sequential rather than overlapping; the submitted-kernel sets of each w4/w5 pair are **disjoint, all
+four pairs**; and w5 drew almost exactly the kernels its w4 counterpart called but never submitted.
+A resubmission re-runs the same draw; this re-runs the complement, so treating it as superseding w4
+would have discarded 50 accepted submissions over 21 cells w4 never produced.
+
+Registering it added **no cell, no timed number and no solve, and moved no speed-up** -- all 19 of
+its timed cells had been re-drawn by a strictly later wave (w12, w13, w14 or w16) that owns the
+last-submission stamp. What it corrected is `tokens`, which sums over waves:
+
+| leg | before | after | |
+|---|---|---|---|
+| Qwen3.8 / Fortran / base | 300.01M | 351.60M | +17.2% |
+| Qwen3.8 / Fortran / skills | 233.90M | 244.54M | +4.5% |
+| GPT-OSS-120B / Fortran / base | 225.37M | 232.92M | +3.4% |
+| GPT-OSS-120B / Fortran / skills | 209.76M | 218.88M | +4.3% |
+
+**That is a cost correction, not a measurement change.** Those four legs were under-reporting what
+they spent because a wave they really ran was missing from the sum; the speed-up and success figures
+are bit-for-bit what they were. The rise is smaller than w5's raw spend because `tsvc_2_s2233` is
+excluded from the table and took 6% to 57% of each job's tokens.
+
+Two things about w5 are NOT known and are recorded as unknown rather than guessed: whether it was
+intended as the wave the registry calls w6 (also a completion wave over this campaign, run the same
+day), and what wrote the `adhoc` `run_id` rows in 612044, which stay excluded from every count.
+
+### w16 (jobs 617916-617919, 618083) -- filled holes, changed no cost
 
 `llr8w16` was uncollected until 2026-09-02 and is now registered, because it fills holes and
 duplicates nothing: after w15, llr8 had exactly SIX cells with no timed last submission, w16 ran one

@@ -334,6 +334,58 @@ ARMS: list[dict[str, object]] = [
     # rather than read off a summary. The two oss120b arms were cut short 13 minutes in, after each
     # had scored 5 of its 7 kernels; their shards hold that work and the remaining two kernels moved
     # to w7, which runs under the prompt fix (no -ffast-math in the agents' own local builds).
+    # llr8w5: the COMPLETION wave for w4's Fortran legs, and the reason the "there is no w5" note
+    # above was retracted. It ran (Slurm names `llr8w5-*`, jobs submitted 16:57 on 2026-08-29, 29
+    # minutes after the last w4 job ended, all four COMPLETED 0:0) and it writes `run_id` prefix
+    # `llr8w4-*`, which is the only reason it looked like a resubmission of 612044/612045/612048/
+    # 612049 rather than a wave of its own.
+    #
+    # It is a completion wave, not a resubmission, on three independent facts: the runs are strictly
+    # sequential rather than overlapping; the submitted-kernel sets of each w4/w5 pair are DISJOINT,
+    # all four pairs; and w5 draws almost exactly the kernels its w4 counterpart called but never
+    # submitted. A resubmission re-runs the same draw. This re-runs the complement, so treating it
+    # as superseding w4 would discard 50 accepted submissions over 21 cells w4 never produced.
+    #
+    # WHAT REGISTERING IT CHANGES IS THE COST, NOT THE RESULTS. All 19 of its timed cells were
+    # re-drawn by a strictly later wave (w12, w13, w14 or w16) that owns the last-submission stamp,
+    # so no speed-up moves, no cell is new and no solve flips. `tokens` sums over waves, and those
+    # four Fortran legs were under-reporting their cost by 6% to 18% without it.
+    #
+    # Two things about it stay UNKNOWN and are not guessed at here: whether w5 was meant to be the
+    # wave the registry calls w6 (also a completion wave over this campaign, run the same day), and
+    # what wrote the `adhoc` run_id rows in 612044, which are excluded from every count as usual.
+    {
+        "campaign": "llr8w5",
+        "job": 612240,
+        "model": "qwen38",
+        "language": "fortran",
+        "skills": False,
+        "problems": 7
+    },
+    {
+        "campaign": "llr8w5",
+        "job": 612241,
+        "model": "qwen38",
+        "language": "fortran",
+        "skills": True,
+        "problems": 3
+    },
+    {
+        "campaign": "llr8w5",
+        "job": 612242,
+        "model": "oss120b",
+        "language": "fortran",
+        "skills": False,
+        "problems": 10
+    },
+    {
+        "campaign": "llr8w5",
+        "job": 612243,
+        "model": "oss120b",
+        "language": "fortran",
+        "skills": True,
+        "problems": 8
+    },
     {
         "campaign": "llr8w6",
         "job": 612291,
@@ -790,12 +842,17 @@ PROBLEM_COUNT = {"llr6v10": 40, "llr8": 40}
 #: THE WAVE NAMING SCHEME, for every campaign added after this line.
 #:
 #: A wave is named ``llr8w<N>``: one SUBMISSION BATCH, N monotonically increasing, never reused and
-#: never renumbered -- the token is stamped into the ``data-llr8w<N>`` directory the figures read,
-#: so renaming a wave silently orphans a frozen result. A gap is fine (there is no w5). Two waves
-#: exist rather than one whenever the thing being measured changed between them: a new agent
-#: prompt, a new flag matrix, a new skills packet. A pure resubmission of the same arms under the
-#: same everything is the SAME wave under a new job id, and the registry keeps the job with the
-#: most calls.
+#: never renumbered -- the token is stamped into the wave directory the figures read, so renaming a
+#: wave silently orphans a frozen result. Two waves exist rather than one whenever the thing being
+#: measured changed between them: a new agent prompt, a new flag matrix, a new skills packet. A pure
+#: resubmission of the same arms under the same everything is the SAME wave under a new job id, and
+#: the registry keeps the job that reached the judge's submit route.
+#:
+#: THIS COMMENT USED TO SAY "a gap is fine (there is no w5)". IT WAS WRONG, and saying so is what
+#: kept w5 out of the dataset for four days. w5 ran: jobs 612240-612243, Slurm names ``llr8w5-*``,
+#: submitted 29 minutes after the last w4 job ended. Only the ``run_id`` says ``llr8w4``, because
+#: the launcher writes the campaign token it was handed and that token does not reliably follow the
+#: job name. A gap in the numbering is evidence of nothing; go and look.
 #:
 #: Every llr8 wave draws from the ``llr-focus40`` tag, so :data:`LLR8_WAVE_KERNELS` is its
 #: denominator and a new wave needs no entry in :data:`PROBLEM_COUNT`. What a COMPLETION wave does
@@ -808,6 +865,29 @@ PROBLEM_COUNT = {"llr6v10": 40, "llr8": 40}
 #: reason the registry above exists.
 LLR8_WAVE_KERNELS = 40
 
+#: THE LAUNCHER'S CAMPAIGN TOKEN HAS MIS-SET THE WAVE IDENTITY THREE TIMES. It is not a one-off and
+#: the next collection should expect a fourth:
+#:
+#:   1. w12 and w13 inherited ``RUN_ROOT`` from the env file they were derived from, so one wave's
+#:      jobs sit under two campaign-family DIRECTORIES (``llr8w4-20260829/`` and
+#:      ``llr8w8-20260830/``). Picking the family that holds the wave's first job lost w12's kimi
+#:      Fortran arm and two of w13's three.
+#:   2. Job 618083 runs under Slurm name ``llr8w16b`` but writes ``run_id`` prefix ``llr8w16``,
+#:      identical to 617920's -- two jobs, one arm identity.
+#:   3. Jobs 612240-612243 run under Slurm names ``llr8w5-*`` and write ``run_id`` prefix
+#:      ``llr8w4`` -- a whole wave wearing the previous wave's name.
+#:
+#: SO: ATTRIBUTE BY ``run_id`` PREFIX **AND** JOB ID, never by either alone and never by directory
+#: name. The job id is the only identifier that has never been wrong; the registry below is what
+#: binds it to a wave, which is the whole reason the registry exists rather than a directory scan.
+#:
+#: AND SO THE AGGREGATION RANKS BY WAVE, NOT BY CLOCK. Because a wave's number and its wall-clock
+#: run time can disagree -- that is what instances 2 and 3 above ARE -- ``benchlib.kernels.last_of``
+#: takes each kernel's last submission from the HIGHEST-NUMBERED wave that has one, and only breaks
+#: ties inside that wave by the judge's ``ts_ms``. Last-by-timestamp would hand the winner to
+#: whichever wave happened to finish last, which for a mis-tokened wave is not the wave that
+#: supersedes it. The two rules agree on every cell today; this is for the fourth instance.
+#:
 #: Where the launcher puts a run: ``<RUN_ROOT>/[<campaign-family>/]<jobid>/``. One constant, so
 #: the driver script and this file cannot drift onto two different scratch trees.
 RUN_ROOT = pathlib.Path("/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs")

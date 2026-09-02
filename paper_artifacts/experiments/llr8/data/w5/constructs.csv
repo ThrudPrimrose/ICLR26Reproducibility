@@ -1,0 +1,5 @@
+arm,model,language,skills,answers,omp_parallel,omp_simd,omp_collapse,omp_reduction,omp_schedule,do_concurrent,restrict,aligned,unroll,ivdep,blocking,intrinsics,math_reassoc,array_syntax,matmul_intrinsic
+llr8w5-qwen38-fortran,qwen38,fortran,0,17,0.8235,0.0588,0.0,0.2353,0.7059,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+llr8w5-qwen38-fortran-skills,qwen38,fortran,1,8,1.0,0.25,0.0,0.5,0.125,0.0,0.0,0.0,0.0,0.0,0.25,0.0,0.0,0.0,0.0
+llr8w5-oss120b-fortran,oss120b,fortran,0,14,0.5714,0.3571,0.0,0.2143,0.4286,0.0,0.1429,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+llr8w5-oss120b-fortran-skills,oss120b,fortran,1,13,0.7692,0.0769,0.0,0.0769,0.4615,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0

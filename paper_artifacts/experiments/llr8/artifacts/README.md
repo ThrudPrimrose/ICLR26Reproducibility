@@ -33,7 +33,7 @@ which job was which arm, its Slurm state and elapsed time, and how that wave was
 
 ## The waves
 
-Fourteen submission batches over the 40-kernel `llr-focus40` tag. "Cells first solved here" is what
+Fifteen submission batches over the 40-kernel `llr-focus40` tag. "Cells first solved here" is what
 the wave ADDED: a `(model, language, skills, kernel)` no earlier wave had ever solved.
 
 | wave | jobs | arms | kernels drawn | calls | submissions | cells first solved here |
@@ -41,22 +41,54 @@ the wave ADDED: a `(model, language, skills, kernel)` no earlier wave had ever s
 | w2 | 610653-610672 | 7 | 40 | 1675 | 308 | 153 |
 | w3 | 611560-611567 | 8 | 40 | 1116 | 199 | 111 |
 | w4 | 612042-612051 | 10 | 35 | 1455 | 146 | 76 |
+| w5 | 612240-612243 | 4 | 16 | 209 | 36 | 16 |
 | w6 | 612291-612315 | 6 | 23 | 646 | 95 | 30 |
 | w7 | 612301-612302 | 2 | 3 | 26 | 1 | 0 |
 | w8 | 612477 | 1 | 17 | 248 | 34 | 15 |
 | w9 | 612478 | 1 | 18 | 289 | 40 | 15 |
 | w10 | 612995 | 1 | 19 | 381 | 51 | 17 |
 | w11 | 612996 | 1 | 20 | 348 | 54 | 18 |
-| w12 | 613035-613045 | 11 | 22 | 488 | 63 | 28 |
-| w13 | 613252-613254 | 3 | 9 | 167 | 20 | 8 |
-| w14 | 613359-613362 | 4 | 3 | 88 | 9 | 3 |
+| w12 | 613035-613045 | 11 | 22 | 488 | 63 | 16 |
+| w13 | 613252-613254 | 3 | 9 | 167 | 20 | 5 |
+| w14 | 613359-613362 | 4 | 3 | 88 | 9 | 2 |
 | w15 | 613533 | 1 | 15 | 454 | 67 | 4 |
 | w16 | 617916-618083 | 5 | 5 | 70 | 5 | 1 |
 
-There is no w1 (excluded, see the top-level README) and no w5. w7 added nothing: both its arms ran
+There is no w1 (excluded, see the top-level README). w7 added nothing: both its arms ran
 and neither solved a kernel an earlier wave had not. w8/w9 and w10/w11 are two halves of one draw.
 w12 and w13 straddle two campaign-family directories, which is why jobs and not directory names are
 what maps a run to a wave.
+
+**w5 changed the cost figure and none of the results.** It was uncollected until 2026-09-02 because
+the registry said a gap in the numbering was fine and there was no w5. There is: jobs 612240-612243,
+Slurm names `llr8w5-*`, submitted 29 minutes after the last w4 job ended, all four COMPLETED. Only
+the `run_id` says `llr8w4`, which is why it read as a resubmission of 612044/612045/612048/612049
+rather than a wave.
+
+It is a COMPLETION wave over w4's Fortran legs, on three independent facts: the runs are strictly
+sequential rather than overlapping; the submitted-kernel sets of each w4/w5 pair are DISJOINT, all
+four pairs; and w5 drew almost exactly the kernels its w4 counterpart had called but never
+submitted. A resubmission re-runs the same draw -- this re-runs the complement.
+
+Registering it added **no cell, no timed number and no solve**, and moved **no speed-up**: all 19 of
+its timed cells had been re-drawn by a strictly later wave (w12, w13, w14 or w16) that owns the
+last-submission stamp. What it corrected is `tokens`, which sums over waves, and only on the four
+Fortran legs it ran:
+
+| leg | tokens before | after | |
+|---|---|---|---|
+| Qwen3.8 / Fortran / base | 300.01M | 351.60M | +17.2% |
+| Qwen3.8 / Fortran / skills | 233.90M | 244.54M | +4.5% |
+| GPT-OSS-120B / Fortran / base | 225.37M | 232.92M | +3.4% |
+| GPT-OSS-120B / Fortran / skills | 209.76M | 218.88M | +4.3% |
+
+Read that as a cost correction, never as a measurement change: those legs were under-reporting what
+they spent because a wave they really ran was missing from the sum. The rise is smaller than w5's
+raw spend because `tsvc_2_s2233` is excluded from the table and took 6% to 57% of each job's tokens.
+
+Two things about w5 are NOT known and are not guessed at here: whether it was intended as the wave
+the registry calls w6 (also a completion wave over this campaign, run the same day), and what wrote
+the `adhoc` `run_id` rows in 612044, which stay excluded from every count as usual.
 
 **w16 is the SPEED-UP completion wave**, and its one new solve understates it. After w15 the
 campaign had six cells that had been drawn, sometimes solved, but never left a trustworthy timing --
