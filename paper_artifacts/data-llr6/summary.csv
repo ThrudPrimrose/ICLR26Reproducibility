@@ -1,3 +1,0 @@
-arm,model,language,skills,job,problems,attempted,solved,success_rate,success_rate_attempted,calls,submits,submits_ok,tokens,tokens_per_kernel,tokens_per_solved,speedup_n,speedup_median,speedup_mean,speedup_max,frac_speedup_gt_1_1
-llr6-qwen30b-c,qwen30b,c,0,604475,40,39,36,0.9,0.9231,921,256,232,36719113,941515,1019975,232,1.0204,2.8526,33.3333,0.4569
-llr6-qwen30b-c-skills,qwen30b,c,1,604476,40,40,36,0.9,0.9,746,228,207,42082552,1052063,1168959,207,1.0,2.9314,20.0,0.3768

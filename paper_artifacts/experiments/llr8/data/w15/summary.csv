@@ -1,0 +1,2 @@
+arm,model,language,skills,job,problems,attempted,solved,success_rate,success_rate_attempted,calls,submits,submits_ok,tokens,tokens_per_kernel,tokens_per_solved,speedup_n,speedup_geomean,speedup_kernels,speedup_geomean_kernel_best,speedup_geomean_kernel_median,speedup_median,speedup_mean,speedup_max,frac_speedup_gt_1_1
+llr8w15-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,613533,15,15,14,0.9333,0.9333,454,67,67,50996787,3399785,3642627,67,15.924,14,15.7854,14.2552,11.4482,29.6396,127.2064,1.0

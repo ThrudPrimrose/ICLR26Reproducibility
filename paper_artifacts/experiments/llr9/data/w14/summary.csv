@@ -1,0 +1,5 @@
+arm,model,language,skills,job,problems,attempted,solved,success_rate,success_rate_attempted,calls,submits,submits_ok,tokens,tokens_per_kernel,tokens_per_solved,speedup_n,speedup_geomean,speedup_kernels,speedup_geomean_kernel_best,speedup_geomean_kernel_median,speedup_median,speedup_mean,speedup_max,frac_speedup_gt_1_1
+llr8w14-oss120b-fortran-skills,oss120b,fortran,1,613359,1,1,1,1.0,1.0,5,1,1,1521318,1521318,1521318,1,1.01,1,1.01,1.01,1.01,1.01,1.01,0.0
+llr8w14-oss120b-fortran,oss120b,fortran,0,613360,1,1,0,0.0,0.0,8,0,0,4428107,4428107,0,0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0
+llr8w14-kimi27sglang-c,kimi27sglang,c,0,613361,1,1,1,1.0,1.0,42,6,5,8532836,8532836,8532836,5,3.5526,1,4.0271,3.9872,3.9872,3.5921,4.0271,1.0
+llr8w14-kimi27sglang-fortran,kimi27sglang,fortran,0,613362,1,1,1,1.0,1.0,33,3,3,6796034,6796034,6796034,3,1.0,1,1.0,1.0,1.0,1.0,1.0,0.0

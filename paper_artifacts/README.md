@@ -1,186 +1,195 @@
-# Loop-level reasoning: skills on vs off
+# Paper artifacts
 
-Reproducibility artifact. Every number and figure in the paper is derived from `data/*.csv` by
-`plot.py`; `data/` itself is derived from the judge databases by `collect.py`.
+Every number and figure in the paper, with the code that produced it. One directory per experiment;
+nothing is shared between two experiments except the engine under `benchlib/`.
 
-```bash
-./reproduce.sh          # figures/ from data/ -- needs Python >= 3.10 + matplotlib
+```
+paper_artifacts/
+  benchlib/            the shared engine: shard reading, the arm registry, pooling, the figure style
+  experiments/
+    llr8/              the thirteen-wave llr-focus40 campaign
+    llr9/              llr8 with six kernels re-measured, and one dropped
+    git/               kernel framing against repository framing
+    canon/             the dace canonicalization ablation (no agents)
+    evasion/           the anti-cheat sweep over submitted sources
+  *.md                 every document, at this level
+  requirements.txt reproduce.sh conftest.py
 ```
 
-The skill packet that is the treatment in every skills-on arm lives in `../skill_history/`: one
-directory per version, with the ledger of what changed and what the run said about it.
+Each experiment holds `data/` (the collected rows), `figures/` (plots built from that data only),
+`artifacts/` (what was submitted, plus a README describing it) and the `collect*` / `aggregate*` /
+`plot_*` scripts that produced them. A script belongs to exactly one experiment and lives with it.
 
-## What was run
+```bash
+./reproduce.sh                  # every figure, from the committed CSVs -- Python >= 3.10 + matplotlib
+./reproduce.sh --collect        # re-read the judge databases first (cluster only)
+python3 -m pytest               # the tests, from this directory
+```
 
-Each **arm** is one Slurm job: a model, a language, and the skills packet either present in the
-prompt or absent. All arms draw from the same 242 kernels of the `loop_level_reasoning` track and
-run 80 agents against one vLLM endpoint, with a judge that compiles, checks and times every
-submission against a serial baseline. Per-arm configuration, the exact submit command and the job
-id are in `experiments/<arm>/`.
+`benchlib/` is the one thing not inside an experiment, because two experiments genuinely share it:
+`shards` (judge databases to per-wave CSVs, and the registry of which job is which arm), `kernels`
+(the pooling rules), `sources` (the final submitted source of each cell), `constructs` (what the
+agents wrote), and `dumbbell` / `beforeafter` / `style` (the figures). The tag size and the
+exclusion set are NOT in it: those are per-experiment decisions and each experiment's
+`aggregate_*.py` states its own.
 
-| model | C | C skills | Fortran | Fortran skills |
-|---|---|---|---|---|
-| Qwen3-Coder-30B | 601850 | 601851 | 601852 | *incomplete* |
-| gpt-oss-120b | 602070 | 602071 | 602072 | 602073 |
-| Kimi-K2.7-Code | -- | -- | -- | -- |
+## The experiments
 
-Kimi arms are absent: the engine died repeatedly under agent load on this hardware and produced no
-gradeable results. Qwen3-Coder Fortran-skills had not finished at the time of collection.
-
-## The headline result, and the caveat that governs it
-
-**On matched problems, no skills effect reaches significance.** `figures/matched.png`:
-
-| pair | n | off | skills | delta | McNemar exact p |
-|---|---|---|---|---|---|
-| Qwen3-Coder-30B - C | 217 | 73.3% | 74.2% | +0.9 pp | 0.89 |
-| gpt-oss-120b - C | 105 | 26.7% | 37.1% | +10.5 pp | 0.14 |
-| gpt-oss-120b - Fortran | 84 | 26.2% | 21.4% | -4.8 pp | 0.57 |
-
-Three denominators are reported because they disagree, and the disagreement is itself a finding:
-
-- **`solved / 242`** (`figures/success.png`) -- yield at a fixed budget. Reads as if skills *hurt*
-  gpt-oss on C (21.5% -> 19.4%).
-- **`solved / attempted`** (`figures/success_attempted.png`) -- capability on problems reached.
-  Reverses the sign (27.1% -> 36.1%).
-- **matched subset** (`figures/matched.png`) -- the only fair comparison, scoring both arms on the
-  kernels *both* reached.
-
-The cause is coverage, not capability, and the mechanism is prompt length.
-
-The skills packet is inlined into the prompt, making the `task` field **22,791 characters against
-93**. A prompt is re-read on every agent turn, so the packet is charged **once per turn, not once
-per task**. Measured on the gpt-oss-120b C pair (`figures/cost_per_kernel.png`):
-
-| | tokens per kernel | kernels reached |
-|---|---|---|
-| skills off | 1.86M | 192 |
-| skills on | 2.28M | 130 |
-
-The 418k difference is **~72x the packet's own token count** -- the packet was paid about
-seventy-two times per kernel. At a fixed budget that buys 62 fewer kernels, and `solved / 242`
-records the shortfall as if it were incapability. Reporting only that denominator would have
-published a throughput artifact as a capability claim.
-
-The packet was cut by ~40% in response; `../skill_history/` holds every version of the packet and
-the ledger of what changed and why. The confound is reduced by that much and not removed, so the
-matched subset stays the honest comparison.
-
-**A larger effect than skills sits underneath this.** `score` records nothing; only `submit` earns
-a grade. **136 of the 192 kernels the gpt-oss C arm reached (71%) were scored and never submitted**
--- worked on, then lost. Across all arms only 18 of 608 kernels ever had a last submission worse
-than an earlier one, so the protocol failure is non-submission, not bad stopping. Any comparison of
-models on `solved / 242` reads submission discipline as much as optimization skill.
-
-## Performance
-
-`figures/fastp.png` is the headline performance figure: fast_p, the fraction of matched problems
-that are both correct and at least p times faster. At p=1 it is the success rate, so one curve
-carries correctness and speed together and cannot be gamed by returning a correct but unoptimised
-kernel. `figures/speedup_ecdf.png` shows the raw distribution, faceted by language.
-
-| pair | fast_1 | fast_2 | fast_4 |
+| experiment | what it varies | models | data |
 |---|---|---|---|
-| Qwen3-Coder-30B - C | 73.3 -> 74.2 | 8.8 -> 6.0 | 5.1 -> 2.3 |
-| gpt-oss-120b - C | 26.7 -> 37.1 | 6.7 -> 8.6 | 3.8 -> 1.9 |
-| gpt-oss-120b - Fortran | 26.2 -> 21.4 | 3.6 -> 2.4 | 0.0 -> 1.2 |
+| `llr8` | the skills packet, in the prompt or absent | Qwen3.8, GPT-OSS-120B, Kimi K2.7 | 13 waves, 480 kernel rows over 12 legs |
+| `llr9` | the same, over a kernel set corrected on 2026-09-01 | the same three | 14 waves, 497 kernel rows over 12 legs |
+| `git` | kernel framing against repository framing | Qwen3.8, GPT-OSS-120B | 4 arms, 120 cells |
+| `canon` | dace canonicalization, on or off | none (a compiler ablation) | takes a sweep directory |
+| `evasion` | nothing; it audits the submitted sources | all of the above | one candidate table |
 
-Skills raise fast_1 on gpt-oss C but lower fast_4 in two of three pairs: more answers are correct,
-fewer are aggressively optimised. At fast_4 that is 11 problems against 5 out of 217, so the
-direction is suggestive and the magnitude is not.
+Only three models appear in any agent figure: Qwen3.8, GPT-OSS-120B and Kimi K2.7. Qwen3-Coder-30B
+ran only in the excluded first wave and is in no table here.
 
-**Caveat on the speedup column.** 512 of 801 submissions report exactly 1.000000, and the
-`baseline_ns` / `native_ns` recorded beside them do not reproduce it (one row is 1.29x by its own
-timings, another 0.75x, both stored as 1.00). Only 90 distinct speedup values occur across 801
-submissions, on the grid 1/0.99, 1/0.98, 1/0.97, so the ratio is rounded to two decimals before
-inversion. The likely explanation is that `/submit` re-times on a second seed and `speedup` comes
-from that measurement rather than from the stored ns columns, but this has not been confirmed
-against the harness. If the value is floored at 1.0, the mass at x=1 in both performance figures is
-a property of the metric rather than of the generated code. Confirm before publishing a speedup
-claim.
+Every speed-up is reported as a GEOMEAN, never a median: a speed-up is a ratio, so the mean that
+matches the product over the set is the geometric one, and the median of a mostly-flat distribution
+reports "no effect" everywhere.
 
-## Does the skills packet cause compile failures? No -- it prevents them
+## An experiment is the union of its waves
 
-| pair | build_error, off -> on |
-|---|---|
-| Qwen3-Coder-30B - C | 3.6% -> 2.7% |
-| gpt-oss-120b - C | 7.6% -> 7.2% |
-| gpt-oss-120b - Fortran | 22.4% -> 17.6% |
+The campaign does not fit in one job, so it is deliberately submitted in batches. `llr8` is thirteen
+of them and `llr9` fourteen. This is a size constraint, not an accident, and it has consequences the
+layout keeps visible rather than flattening away:
 
-Build errors fall in every pair, most on Fortran. What rises instead is timeouts and wrong
-answers: on Qwen C, timeouts go 3.4% -> 5.2% and incorrect 7.5% -> 9.6%. That is consistent with
-prompt length rather than bad advice: agents spend more of a fixed budget reading and less
-iterating, and iteration is where speedup comes from. The skills teach OpenMP (13 `#pragma omp` and
-16 `parallel for` mentions in the C packet); the effect shows up as a build-error reduction rather
-than as more speedup.
+- **The dataset is the union.** One wave directory is never the experiment. Most waves are
+  COMPLETION waves that re-run only the kernels an earlier arm never submitted, and `w8`/`w9` (and
+  `w10`/`w11`) are two HALVES of one 40-kernel draw, split to fit the node budget.
+- **A kernel can appear in several waves.** It is de-duplicated by the judge's own millisecond
+  stamp -- the LAST submission is the one the agent stood behind -- never by picking a directory. A
+  kernel whose latest stamp is missing or tied reports no last value and says so in `ordering`.
+- **The per-wave directories stay.** `data/w<N>/` is the provenance; `data/kernels.csv` is derived
+  and sits beside them, not instead of them.
+- **A directory name is not attribution.** Several waves' `.env` files mis-inherited `RUN_ROOT`, so
+  one wave's jobs can sit under another wave's directory: `llr8w12` put ten arms under
+  `llr8w4-20260829/` and its Kimi Fortran arm under `llr8w8-20260830/`. Job ids are unique and every
+  row carries a `run_id` prefix, so both are read and the directory name is ignored.
 
-One page was pure overhead. `openacc` (2,141 chars of every prompt, ~40k tokens per kernel at the
-turn multiplier above) opens by saying that no submission build in this harness passes `-fopenacc`
-or `-acc` -- a page whose whole subject is unreachable on a CPU image. It is now gated on the
-hardware image and no longer ships. `doconcurrent-fortran` was merged into `lang-fortran`.
+Each experiment's `artifacts/README.md` has the per-wave table: which jobs, how many arms, how many
+kernels, and what that wave added that no earlier one had.
 
-## Limitations
+## What llr9 is
 
-- **One run per cell.** No repeats, so no confidence intervals on any single arm; the McNemar test
-  is available only because the paired comparison shares problems.
-- **Underpowered.** No pair reaches p<0.05. Fill runs re-running each arm on only the kernels it
-  never reached are in flight to close coverage and raise n; `make_fill_problems.py` generates them.
-- Speedups are wall-clock against a serial baseline on the same node type; submissions the judge
-  flagged `suspect` are excluded from the speedup figures.
+**llr9 = llr8 for every kernel llr8 still speaks for, plus the `llr40v9` campaign for six it does
+not, minus one that no longer exists.** The rule is executed in `experiments/llr9/collect_llr9.py`,
+which names the three sets and filters at collection time, so the wave CSVs never claim coverage the
+figures do not have.
 
-## How a submission's numbers are graded
+**Six kernels are REFRESHED** -- taken from `llr40v9` (run root `llr40v9-20260902`, jobs
+618217-618234) and filtered out of every inherited llr8 wave:
 
-A speedup only counts if the answer is right, so the correctness rule is part of the result. The
-harness grades every output against a NumPy reference with a tolerance derived from the run
-precision -- a kernel cannot declare its own `rtol`/`atol`, the manifest loader rejects both -- and
-accepts an answer that is close ELEMENTWISE **or** within the backward-error bound for the
-arithmetic that produced it:
+- `compact_threshold_pack`, `scan_affine_decay`, `scatter_accum_dup`, `segment_reduce_ragged` and
+  `versioned_distance_update` are new, authored 2026-09-01. They have no llr8 history, so for them
+  the filter removes nothing.
+- `argmax_with_index` is an old kernel RE-MEASURED. Its Fortran arm was unwinnable until
+  2026-09-01: `out_index` is declared `index_array: true` and the ABI seam rebases index buffers in
+  both directions, so a Fortran submission must store the **1-based** position. Nothing in the task
+  said so and `skills/lang-fortran/SKILL.md` stated the opposite. Measured with the same loop body
+  and only the stored base differing, 1-based grades `correct=True` 5/5 hidden and 0-based grades
+  `correct=False, out_index: integer mismatch: 1 of 1 elements`. Its pre-2026-09-01 Fortran rows
+  therefore measure the prompt, not the model. Its C rows are unaffected (`index_base` is 0 there)
+  but are dropped with them: half a kernel measured under two prompts is not one kernel, and
+  `llr40v9` re-ran C as well. In the new run it scores 15.4x to 20.2x in Fortran.
 
-```
-per-element   |a-e| <= atol + rtol*|e|                      (numpy allclose; fp64 band 1e-9 / 1e-11)
-normwise      max|a-e| / (eps * log2(n) * ||e||_inf) <= 30  (LAPACK's test ratio and its own THRESH)
-```
+**One kernel is DROPPED.** `tsvc_2_s13110` was removed from the benchmark repository as a
+byte-identical duplicate of `tsvc_2_s3110` -- same `_numpy.py`, same `_dace.py`, byte-identical
+`_reference.c`, same presets and sizes. Its 80 llr8 calls and 21 llr8 submissions are **dropped, not
+folded into `s3110`**: an agent that drew both drew the same code twice as two independent problems,
+so merging the cells would report one kernel's two attempts as one attempt while doubling that
+kernel's token cost. `experiments/llr9/test_llr9_filter.py` asserts both halves of that decision.
 
-The second path is not a loosening for its own sake. An optimizer that lifts a serial recurrence to
-a parallel scan REASSOCIATES the sum, which is a legitimate implementation of an associative
-operator but not a bit-identical one; where a signed accumulation passes near zero, the per-element
-relative error there is meaningless because cancellation destroyed the digits. Measured on
-`fission_dep_then_indep`: a 3.6x-faster scanned variant disagreed with the sequential reference by
-4.4e-9 on an array reaching 4.9e6 -- about 4 ULP of the data's own scale -- and was scored a wrong
-answer on 40 of 47,000,000 elements, all of them near-zero crossings. Its LAPACK ratio is 0.16
-against a threshold of 30. Grading on the per-element rule alone therefore penalised precisely the
-transformation under study and rewarded the slower arm for not attempting it.
+**Everything else is llr8's, unchanged**, because re-running a kernel nothing changed about would
+spend a day of nodes measuring the same thing twice.
 
-Both numbers are reported on every failure, so a reassociation (large relative error, ratio << 30)
-is distinguishable from a real defect (ratio 1e8 and up) without rerunning anything. Full contract:
-[`hpcagent_bench/docs/numerical_validation.md`](../../optarena/hpcagent_bench/docs/numerical_validation.md).
+That makes the llr9 kernel set 44: llr8's 40, less the duplicate, plus the five new ones.
 
-## Layout
+## llr9 coverage: what is actually there
 
-```
-collect.py               judge shards  -> data/*.csv
-plot.py                  data/*.csv    -> figures/*.{png,svg}
-make_fill_problems.py    per-arm problem sets for the unreached kernels
-reproduce.sh             figures from the committed CSVs
-data/calls.csv           every judge call: route, status, tokens, speedup
-data/submissions.csv     final submissions: baseline_ns, native_ns, speedup, suspect
-data/summary.csv         per-arm aggregates
-data/matched.csv         paired comparison on the common subset, with McNemar p
-problems/                the exact problem sets, skills packet inlined
-experiments/<arm>/       arm.env, submit.sh, README.md, per-arm results
-```
+The `llr40v9` run is INCOMPLETE at the time of collection, and the tables say so rather than
+smoothing it over. Re-running `collect_llr9.py` picks up whatever has landed since.
 
-`tokens` on a judge call is the agent's CUMULATIVE usage at that moment, so per-kernel cost is the
-LAST call's value, not the sum of the calls. `collect.py` takes the high-water mark per kernel;
-summing would multiply the totals about fourfold.
+- **Leg 1 (no skills)** ran to the wall clock. `oss120b` C and Fortran completed and reached all six
+  kernels; `qwen38` C and Fortran and `kimi27sglang` C and Fortran hit the 8-hour limit having
+  reached three and four of the six.
+- **Leg 2 (skills)** was still running at collection. Only `oss120b-fortran-skills` (618231) had
+  completed; 618226, 618228, 618229, 618232 and 618234 were mid-run.
+- **The C++ arms were cancelled** (618218, 618221, 618224) and are deliberately not registered: C++
+  is not part of this experiment. Their rows are left in the shards.
 
-## Raw data
+Per cell, over the six refreshed kernels (`-` where the arm never reached the kernel):
 
-The judge shards are **~3 GB** and are not in this repository. `data/*.csv` is the complete
-reduction and is sufficient for every figure. To rebuild from raw:
+| leg | argmax_with_index | compact_threshold_pack | scan_affine_decay | scatter_accum_dup | segment_reduce_ragged | versioned_distance_update |
+|---|---|---|---|---|---|---|
+| GPT-OSS-120B / C / base | 20.4x | no submission | 5.6x | no submission | 1.1x | 19.8x |
+| GPT-OSS-120B / C / skills | 15.3x | 11.3x | no submission | no submission | no submission | - |
+| GPT-OSS-120B / Fortran / base | 15.4x | no submission | 1.0x | 10.1x | no submission | 3.6x |
+| GPT-OSS-120B / Fortran / skills | 3.8x | no submission | no submission | 9.5x | 11.2x | 3.6x |
+| Kimi K2.7 / C / base | 20.8x | 10.3x | 6.6x | 19.0x | - | - |
+| Kimi K2.7 / C / skills | 17.7x | - | - | - | - | - |
+| Kimi K2.7 / Fortran / base | 18.1x | 12.0x | 5.0x | 10.6x | - | - |
+| Kimi K2.7 / Fortran / skills | 18.8x | - | - | - | - | - |
+| Qwen3.8 / C / base | 20.8x | 17.9x | 6.6x | - | - | - |
+| Qwen3.8 / C / skills | 10.6x | - | - | - | - | - |
+| Qwen3.8 / Fortran / base | 18.6x | 11.4x | 5.0x | - | - | - |
+| Qwen3.8 / Fortran / skills | 20.2x | - | - | - | - | - |
 
-```bash
-python3 collect.py --run-root <RUN_ROOT>   # <RUN_ROOT>/<jobid>/judge/rank-*/*.db
-```
+`argmax_with_index` is the only one of the six every cell reached, which is what makes it the one
+whose before-and-after is readable today. The other five are a partial draw and the llr9 figures
+carry them as such.
 
-`RUN_ROOT` is the `RUN_ROOT` set in each `experiments/<arm>/arm.env`.
+## Where the raw data is
+
+The judge writes one SQLite shard per rank under
+`<RUN_ROOT>/[<campaign-family>/]<jobid>/judge/rank-*/hpcagent_bench*.db`, with the submitted sources
+as blobs in a `*_prompts/` tree beside each shard. That is ~3 GB and is not in this repository. The
+default run root is `/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs`; pass `--run-root`
+to point elsewhere.
+
+`llr8` wave 1 is excluded and this is deliberate. The `llr8` campaign (jobs 608446-608987) ran on
+2026-08-25, before the C reference fix of 08-26: 208 of 298 `_reference.c` in the corpus were
+verbatim TSVC, so an agent that followed the reference it was shown built a shared library that
+could not load and the judge recorded that as `incorrect`. Those C results measure the corpus, not
+the model.
+
+## What was deleted, and why
+
+Everything below came from campaigns whose run roots no longer exist. Deleted rather than archived:
+a stale CSV that still parses is the one that gets plotted.
+
+| what | files | size | rows |
+|---|---|---|---|
+| `analysis/` -- llr6v10 skills ablation, campaign readout, arm dumps, HTML figure, probes | 22 | 151 KiB | 0 |
+| `problems/problems-llr2-*.jsonl`, `problems-llr4-*.jsonl` | 4 | 12.3 MiB | 968 |
+| `experiments/llr4-*` per-arm provenance directories | 21 | 68 KiB | 0 |
+| `problems-llr8/` -- wave-1 packets; 3 of the 4 byte-identical to the kept set | 4 | 1.5 MiB | 160 |
+| `figures/` -- all previous plots, regenerated per experiment | 8 | 892 KiB | 0 |
+| **total** | **59** | **14.8 MiB** | **1128** |
+
+Kept and moved: `problems/problems-llr6-*.jsonl` and `problems/problems-llr8kimi-*.jsonl` are the
+packets the llr8 waves actually dispatched (the wave-2 packets carry llr6 filenames), and are now
+under `experiments/llr8/artifacts/problems/`.
+
+## Two things this layout cannot express
+
+**An uncollected llr8 wave 16 exists.** Five Fortran arms under jobs 617916-617920 and 618083 write
+`run_id` prefixes `llr8w16-*` -- 93 calls and 5 submissions over one kernel per arm, physically
+inside `llr8w4-20260829/` and `llr8w8-20260830/`. They are in no registry entry and therefore in no
+table here. Registering a wave is a decision about what belongs to the campaign, so it is left to be
+made rather than guessed at.
+
+**Four more jobs write `llr8w4-*` run ids than the registry lists.** Jobs 612240-612243 carry the
+same arm names as the registered 612044/612045/612048/612049 -- 209 calls and 33 submissions over
+one to three kernels each. Whether they are a resubmission that supersedes those jobs or a second
+batch alongside them is exactly what a registry exists to record and what the rows cannot say, so
+they are reported here rather than merged.
+
+**The `llr-focus40` tag has moved under llr9.** It was re-cut on 2026-09-01 to stay at 40: it took
+the five new kernels in, put `tsvc_2_s2233` back, and untagged `ext_break_find_first`,
+`ext_break_post_body`, `tsvc_2_s232`, `wavefront2d` and `wf_north_west`. llr9 KEEPS those five,
+because dropping a measured kernel to match a tag re-cut after the measurement would change what the
+experiment reports without anyone deciding to. `tsvc_2_s2233` stays excluded from both experiments:
+it took 296 judge calls across llr8 and graded ok zero times in every arm of every wave.

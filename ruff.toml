@@ -3,5 +3,9 @@
 line-length = 120
 target-version = "py310"
 
+# Agent-written submissions saved as evidence, not source this repository maintains. They are the
+# measured artifact: reformatting or "fixing" one would change what the paper reports it observed.
+extend-exclude = ["paper_artifacts/experiments/*/artifacts/**"]
+
 [lint]
 select = ["E", "F", "W", "B", "C4", "UP", "SIM"]

@@ -1,0 +1,8 @@
+arm,model,language,skills,answers,omp_parallel,omp_simd,omp_collapse,omp_reduction,omp_schedule,do_concurrent,restrict,aligned,unroll,ivdep,blocking,intrinsics,math_reassoc,array_syntax,matmul_intrinsic
+llr8w2-qwen38-c,qwen38,c,0,45,0.8667,0.0,0.0,0.0889,0.5111,0.0,0.8,0.0222,0.1111,0.0222,0.0,0.3333,0.0444,0.0,0.0
+llr8w2-qwen38-c-skills,qwen38,c,1,43,0.8837,0.2791,0.0,0.2326,0.6744,0.0,0.907,0.0,0.0,0.0,0.0,0.2326,0.0233,0.0,0.0
+llr8w2-qwen38-fortran,qwen38,fortran,0,26,0.6923,0.1923,0.0,0.1154,0.5769,0.0,0.0,0.0385,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+llr8w2-qwen38-fortran-skills,qwen38,fortran,1,45,0.8889,0.5333,0.0,0.3333,0.2,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+llr8w2-oss120b-fortran,oss120b,fortran,0,31,0.6774,0.0968,0.0,0.2258,0.5161,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+llr8w2-oss120b-fortran-skills,oss120b,fortran,1,32,0.9375,0.2188,0.0,0.2188,0.5312,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+llr8w2-kimi27sglang-c-skills-r1,kimi27sglang,c,1,30,0.9333,0.8667,0.0,0.0667,0.5667,0.0,1.0,0.0,0.0,0.0,0.0,0.2333,0.0,0.0,0.0

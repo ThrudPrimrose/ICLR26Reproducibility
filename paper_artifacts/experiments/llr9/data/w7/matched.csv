@@ -1,0 +1,2 @@
+model,language,arm_off,arm_skills,reached_off,reached_skills,common,solved_off,solved_skills,rate_off,rate_skills,delta_pp,only_off,only_skills,discordant,mcnemar_p,fast1_off,fast1_skills,fast2_off,fast2_skills,fast4_off,fast4_skills,paired_n,paired_geo_off,paired_geo_skills,paired_ratio,sign_wins,sign_losses,sign_p
+oss120b,c,llr8w7-oss120b-c,llr8w7-oss120b-c-skills,2,2,1,0,0,0.0,0.0,0.0,0,0,0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0,0.0,0.0,0.0,0,0,1.0

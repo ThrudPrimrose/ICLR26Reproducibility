@@ -1,0 +1,7 @@
+arm,model,language,skills,job,problems,attempted,solved,success_rate,success_rate_attempted,calls,submits,submits_ok,tokens,tokens_per_kernel,tokens_per_solved,speedup_n,speedup_geomean,speedup_kernels,speedup_geomean_kernel_best,speedup_geomean_kernel_median,speedup_median,speedup_mean,speedup_max,frac_speedup_gt_1_1
+llr8w6-qwen38-c,qwen38,c,0,612291,4,4,3,0.75,0.75,43,19,18,34211541,8552885,11403847,15,2.0758,3,6.892,6.2675,1.01,13.3085,92.5178,0.2667
+llr8w6-qwen38-c-skills,qwen38,c,1,612292,3,2,1,0.3333,0.5,19,8,5,9469776,4734888,9469776,5,9.3264,1,16.3797,16.3797,16.3797,13.2392,16.3797,0.8
+llr8w6-oss120b-c,oss120b,c,0,612293,7,7,6,0.8571,0.8571,15,6,6,1726196,246599,287699,5,35.2413,5,35.2413,35.2413,32.8702,50.8996,127.2064,1.0
+llr8w6-oss120b-c-skills,oss120b,c,1,612294,7,7,6,0.8571,0.8571,15,7,7,1557271,222467,259545,5,21.7719,5,21.7719,21.7719,23.2035,34.5253,107.4102,1.0
+llr8w6-kimi27sglang-c,kimi27sglang,c,0,612314,14,14,11,0.7857,0.7857,296,43,39,34092641,2435188,3099331,38,8.7832,11,9.0735,8.5077,10.1597,11.4336,24.631,1.0
+llr8w6-kimi27sglang-c-skills,kimi27sglang,c,1,612315,11,11,9,0.8182,0.8182,256,48,41,32165758,2924159,3573973,26,8.7143,7,8.35,7.763,7.6892,9.8777,17.7369,1.0

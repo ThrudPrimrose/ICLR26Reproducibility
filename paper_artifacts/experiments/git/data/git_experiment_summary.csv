@@ -1,0 +1,5 @@
+arm,arm_dir,model,framing,job,cells,cells_with_data,cells_submitted,cells_accepted,kernels_expected,kernels_with_data,kernels_missing,correct_rate_of_cells,correct_rate_of_cells_with_data,geomean_speedup_accepted,geomean_speedup_best_score,total_tokens,adhoc_rows,off_task_rows
+git-scicomp-oss120b-kernel,oss120b_kernel,openai/gpt-oss-120b,kernel,617395,30,10,3,2,10,8,ludcmp;spgemm_hash,0.0667,0.2000,2.151522,6.537318,35248452,0,1
+git-scicomp-oss120b-repo,oss120b_repo,openai/gpt-oss-120b,repo,617396,30,12,7,2,10,8,ludcmp;spgemm_hash,0.0667,0.1667,2.216715,4.692790,28192534,0,0
+git-scicomp-qwen38-kernel,qwen38_kernel,Qwen/Qwen3.8-27B-FP8,kernel,617397,30,7,5,2,10,6,covariance;ludcmp;mandelbrot1;spgemm_hash,0.0667,0.2857,2.329790,7.378457,23016776,18,0
+git-scicomp-qwen38-repo,qwen38_repo,Qwen/Qwen3.8-27B-FP8,repo,617398,30,11,7,3,10,8,ludcmp;mandelbrot1,0.1000,0.2727,8.298740,5.473921,41763403,54,0

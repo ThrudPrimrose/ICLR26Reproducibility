@@ -1,0 +1,2 @@
+arm,model,language,skills,job,benchmark,preset,baseline_ns,native_ns,speedup,suspect,ts_ms
+llr8w7-oss120b-c,oss120b,c,0,612301,quasi_affine_reduce_odd,fuzzed,183078734.0,17268172.0,10.261278269382446,0,1788029594249

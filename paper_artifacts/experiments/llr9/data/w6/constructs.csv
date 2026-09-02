@@ -1,0 +1,7 @@
+arm,model,language,skills,answers,omp_parallel,omp_simd,omp_collapse,omp_reduction,omp_schedule,do_concurrent,restrict,aligned,unroll,ivdep,blocking,intrinsics,math_reassoc,array_syntax,matmul_intrinsic
+llr8w6-qwen38-c,qwen38,c,0,10,0.9,0.0,0.0,0.6,0.6,0.0,1.0,0.0,0.0,0.0,0.0,0.7,0.6,0.0,0.0
+llr8w6-qwen38-c-skills,qwen38,c,1,7,0.7143,0.2857,0.0,0.1429,0.2857,0.0,1.0,0.0,0.0,0.0,0.0,0.4286,0.0,0.0,0.0
+llr8w6-oss120b-c,oss120b,c,0,6,1.0,0.3333,0.0,0.1667,1.0,0.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+llr8w6-oss120b-c-skills,oss120b,c,1,7,1.0,0.5714,0.0,0.2857,1.0,0.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+llr8w6-kimi27sglang-c,kimi27sglang,c,0,41,0.878,0.0976,0.0,0.0488,0.6341,0.0,1.0,0.0,0.0,0.0,0.0,0.5854,0.0,0.0,0.0
+llr8w6-kimi27sglang-c-skills,kimi27sglang,c,1,39,0.9487,0.3333,0.0,0.2564,0.6154,0.0,1.0,0.0,0.0,0.0,0.0,0.1795,0.0,0.0,0.0
