@@ -19,10 +19,6 @@ llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,tsvc_2_s316,fu
 llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,tsvc_2_s311,fuzzed,181784469.0,8626596.0,20.797876917347367,0,1788102883795
 llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,tsvc_2_s316,fuzzed,243362536.0,17119011.0,14.108648906301106,0,1788103248936
 llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,tsvc_2_s316,fuzzed,244106075.0,17082162.0,14.249735395364118,0,1788103732887
-llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,wavefront2d,fuzzed,730181948.0,60017806.0,11.678291847040295,0,1788106903314
-llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,wavefront2d,fuzzed,730159155.0,61297025.0,11.562665195089401,0,1788108659830
-llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,wavefront2d,fuzzed,729785874.0,57246440.0,12.396742120232647,0,1788111929570
-llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,wavefront2d,fuzzed,730309382.0,56348439.0,12.520709541434973,0,1788114148579
 llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,tsvc_2_s318,fuzzed,310372240.0,20320111.0,13.558134286164345,0,1788089048470
 llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,tsvc_2_s255,fuzzed,103371372.0,18505529.0,5.4279213112123665,0,1788089308333
 llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,tsvc_2_s318,fuzzed,310451065.0,20555731.0,13.423895332835984,0,1788094400754
@@ -43,8 +39,6 @@ llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,tsvc_2_vpvts,f
 llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,tsvc_2_s319,fuzzed,149422884.0,17571535.0,8.493669602907282,0,1788104894551
 llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,tsvc_2_s319,fuzzed,149137657.0,17536014.0,8.493669602907282,0,1788106259932
 llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,tsvc_2_s319,fuzzed,149305077.0,17536075.0,8.493669602907282,0,1788107467725
-llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,wf_north_west,fuzzed,85970896.0,14890770.0,5.268286948389225,0,1788108834482
-llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,wf_north_west,fuzzed,85872422.0,13816884.0,5.936437599362551,0,1788109963121
 llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,tsvc_2_vpvts,fuzzed,87977346.0,18315519.0,4.7693114479560705,0,1788110894155
 llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,tsvc_2_s275,fuzzed,1138777407.0,112010107.0,9.763254184302157,0,1788089094837
 llr8w11-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,612996,tsvc_2_s275,fuzzed,1137240097.0,37906489.0,28.595847000743838,0,1788090606000

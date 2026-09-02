@@ -1,14 +1,15 @@
 # llr9 artifacts
 
-llr8's waves for every kernel they still speak for, plus the `llr40v9` campaign for the six they do
-not. The construction rule, and why each of the six is fresh, is in `../collect_llr9.py` and the
-top-level README; this directory is what was submitted.
+llr9 is the experiment over the `llr-focus40` tag as the benchmark repository holds it after the
+2026-09-01 re-cut: llr8's waves for the thirty-four kernels still in the tag, the `llr40v9` campaign
+for the six re-measured, and nothing for the six the re-cut removed. The construction rule and why
+each kernel is in its set are in `../collect_llr9.py` and the top-level README; this directory is
+what was submitted.
 
 ## `sources/` -- the final submitted source of every cell
 
-Same shape and same rule as llr8: one file per `(model, language, skills, kernel)` cell, holding the
-submission with the latest judge stamp -- the one `../data/kernels.csv` quotes as `last_speedup`.
-482 files.
+One file per `(model, language, skills, kernel)` cell, holding the submission with the latest judge
+stamp -- the one `../data/kernels.csv` quotes as `last_speedup`. 426 files.
 
 ```
 sources/<model>-<language>[-skills]/<kernel>__submitted.<ext>
@@ -20,28 +21,59 @@ sources/index.csv
 
 ## The waves
 
-Fourteen batches: llr8's thirteen with the six refreshed kernels and the dropped duplicate filtered
-out, and `v9` for the refreshed six. Compare the `calls` column with llr8's to see exactly what the
-filter removed.
+Fifteen batches: llr8's fourteen with the refreshed six, the duplicate and the five replaced
+kernels filtered out, and `v9` for the refreshed six. w16 arrives here as it does in llr8 -- llr9
+inherits every REGISTERED llr8 wave, and all five kernels w16 touched are still in the re-cut tag,
+so none of them is filtered. Compare the `calls` column with llr8's to see
+exactly what the filter removed.
 
 | wave | jobs | arms | kernels drawn | calls | submissions | cells first solved here |
 |---|---|---|---|---|---|---|
-| w2 | 610653-610672 | 7 | 38 | 1638 | 298 | 145 |
-| w3 | 611560-611567 | 8 | 38 | 1057 | 184 | 102 |
-| w4 | 612042-612051 | 10 | 34 | 1433 | 142 | 74 |
-| w6 | 612291-612315 | 6 | 22 | 644 | 94 | 29 |
+| w2 | 610653-610672 | 7 | 34 | 1546 | 281 | 131 |
+| w3 | 611560-611567 | 8 | 34 | 913 | 154 | 87 |
+| w4 | 612042-612051 | 10 | 30 | 1372 | 130 | 69 |
+| w6 | 612291-612315 | 6 | 20 | 478 | 71 | 24 |
 | w7 | 612301-612302 | 2 | 3 | 26 | 1 | 0 |
-| w8 | 612477 | 1 | 15 | 232 | 31 | 14 |
-| w9 | 612478 | 1 | 18 | 289 | 40 | 15 |
-| w10 | 612995 | 1 | 17 | 353 | 49 | 16 |
-| w11 | 612996 | 1 | 20 | 348 | 54 | 18 |
-| w12 | 613035-613045 | 11 | 21 | 481 | 63 | 28 |
-| w13 | 613252-613254 | 3 | 8 | 147 | 17 | 7 |
+| w8 | 612477 | 1 | 13 | 181 | 28 | 12 |
+| w9 | 612478 | 1 | 17 | 287 | 39 | 14 |
+| w10 | 612995 | 1 | 14 | 311 | 40 | 13 |
+| w11 | 612996 | 1 | 18 | 317 | 48 | 16 |
+| w12 | 613035-613045 | 8 | 18 | 347 | 40 | 17 |
+| w13 | 613252-613254 | 3 | 6 | 108 | 13 | 5 |
 | w14 | 613359-613362 | 4 | 3 | 88 | 9 | 3 |
-| w15 | 613533 | 1 | 14 | 443 | 63 | 3 |
-| v9 | 618217-618234 | 12 | 6 | 583 | 79 | 32 |
+| w15 | 613533 | 1 | 11 | 321 | 49 | 3 |
+| w16 | 617916-618083 | 5 | 5 | 70 | 5 | 1 |
+| v9 | 618217-618234 | 12 | 6 | 633 | 86 | 33 |
 
-`v9` IS A SNAPSHOT. Six of its twelve arms were still running when it was collected and two of its
-completed arms had hit the wall clock with three or four of the six kernels reached; the C++ arms
-were cancelled and are not registered. The per-cell coverage table is in the top-level README.
-Re-running `../collect_llr9.py` picks up whatever has landed since.
+w12 shows 8 arms against llr8's 11: three of its arms drew nothing but replaced kernels, so they
+contribute no rows. The collector names them rather than failing -- an arm the filter emptied is not
+an arm that returned nothing.
+
+## Which cells are final and which are a snapshot
+
+The inherited `w<N>` waves are FINAL: every job in them has long since ended.
+
+`v9` is a SNAPSHOT. Four of its twelve arms are final, four timed out at 8h and have been
+resubmitted at 16h as jobs **619183, 619184, 619185, 619186**, and four were still running when it
+was collected.
+
+| arm | job | state at collection | reached of 6 |
+|---|---|---|---|
+| GPT-OSS-120B / C / base | 618220 | final | 6 |
+| GPT-OSS-120B / Fortran / base | 618222 | final | 6 |
+| GPT-OSS-120B / C / skills | 618229 | final | 6 |
+| GPT-OSS-120B / Fortran / skills | 618231 | final | 6 |
+| Qwen3.8 / C / base | 618217 -> 619183 | snapshot, resubmitted | 3 |
+| Qwen3.8 / Fortran / base | 618219 -> 619184 | snapshot, resubmitted | 3 |
+| Kimi K2.7 / C / base | 618223 -> 619185 | snapshot, resubmitted | 4 |
+| Kimi K2.7 / Fortran / base | 618225 -> 619186 | snapshot, resubmitted | 4 |
+| Qwen3.8 / C / skills | 618226 | snapshot, running | 1 |
+| Qwen3.8 / Fortran / skills | 618228 | snapshot, running | 1 |
+| Kimi K2.7 / C / skills | 618232 | snapshot, running | 1 |
+| Kimi K2.7 / Fortran / skills | 618234 | snapshot, running | 2 |
+
+To finalise: when 619183-619186 land, swap those four `job` values into the matching `llr40v9`
+entries in `../../../benchlib/shards.py` -- a resubmission SUPERSEDES the job it replaces, it does
+not join it, and two jobs under one arm name would count one agent's draw twice -- then re-run
+`../collect_llr9.py` and `../aggregate_llr9.py`. The still-running skills arms need no registry edit
+at all; a re-collect picks them up where they are.

@@ -21,11 +21,15 @@ subroutine argmax_with_index_fp64(a, out_index, out_value, LEN_1D) bind(C)
   integer(c_int64_t) :: i
 
   res = maxloc_t(a(1), 1_c_int64_t)
-  !$omp parallel do reduction(maxloc : res)
-  do i = 1, LEN_1D
-     res = merge(maxloc_t(a(i), i), res, &
-          a(i) > res%v .or. (a(i) == res%v .and. i < res%i))
+  !$omp parallel do reduction(maxloc : res) schedule(static)
+  do i = 2, LEN_1D
+     if (a(i) > res%v .or. (a(i) == res%v .and. i < res%i)) then
+        res%v = a(i)
+        res%i = i
+     end if
   end do
+
+  if (res%i > LEN_1D) res = maxloc_t(a(1), 1_c_int64_t)
 
   out_value = res%v
   out_index = res%i

@@ -23,12 +23,13 @@ subroutine argmax_with_index_fp64(a, out_index, out_value, len_1d, workspace, wo
   end if
 
   nt = omp_get_max_threads()
+  if (nt > 32) nt = 32
   if (nt < 1) nt = 1
   allocate(pval(nt), pidx(nt))
   pval = -huge(0.0d0)
   pidx = huge(1_c_int64_t)
 
-  !$omp parallel shared(a, pval, pidx, nt, len_1d) private(t, lo, hi, i, nmain, nmain4, v0,v1,v2,v3, v, k0,k1,k2,k3, k)
+  !$omp parallel num_threads(nt) shared(a, pval, pidx, nt, len_1d) private(t, lo, hi, i, nmain, nmain4, v0,v1,v2,v3, v, k0,k1,k2,k3, k)
   t = omp_get_thread_num()
   hi = (len_1d * t) / nt + 1
   lo = (len_1d * (t + 1)) / nt

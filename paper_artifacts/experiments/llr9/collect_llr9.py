@@ -1,10 +1,17 @@
 """Collect llr9: the llr8 waves for every kernel they still speak for, plus the llr40v9 re-measure.
 
 WHAT LLR9 IS. The same experiment as llr8 -- three models, two languages, the skills packet in the
-prompt or absent -- over a kernel set that moved under it on 2026-09-01. Six kernels cannot be
-inherited from llr8 and are taken from the ``llr40v9`` campaign instead; one is dropped outright.
-Every other kernel is llr8's, unchanged, because re-running a kernel nothing changed about would
-cost a day of nodes to measure the same thing twice.
+prompt or absent -- over the ``llr-focus40`` tag AS THE BENCHMARK REPOSITORY NOW HOLDS IT. The tag
+was re-cut on 2026-09-01 and llr9 is the experiment over the re-cut roster, not over the roster llr8
+happened to draw: six of its forty kernels are taken from the ``llr40v9`` campaign, six of llr8's
+are dropped because they are no longer in the tag, and the remaining thirty-four are llr8's
+unchanged, because re-running a kernel nothing changed about would cost a day of nodes to measure
+the same thing twice.
+
+THE TAG IS AUTHORITATIVE, NOT THE MEASUREMENT HISTORY. The five untagged kernels below were REPLACED
+deliberately -- three ext_break kernels collapsed into one, four wavefronts into two, and
+``tsvc_2_s232`` removed as agent hyper-specialisation -- so carrying them because llr8 happened to
+measure them would report a roster the benchmark no longer has.
 
     REFRESHED, taken from llr40v9 and filtered out of the inherited waves:
 
@@ -22,7 +29,7 @@ cost a day of nodes to measure the same thing twice.
       C++ rows are unaffected (``index_base`` is 0 for those) but are dropped with the rest: half a
       kernel measured under two prompts is not one kernel, and llr40v9 re-ran C as well.
 
-    DROPPED, kept by neither campaign:
+    DROPPED as a duplicate:
 
       tsvc_2_s13110 was removed from the benchmark repository as a byte-identical duplicate of
       tsvc_2_s3110 -- same ``_numpy.py``, same ``_dace.py``, byte-identical ``_reference.c``, same
@@ -30,6 +37,14 @@ cost a day of nodes to measure the same thing twice.
       s3110: an agent that drew both drew the same code twice as two independent problems, and
       merging the two cells would report one kernel's two attempts as one attempt at one kernel
       while inflating that kernel's token cost. It is a deletion, not a rename.
+
+    DROPPED as replaced:
+
+      ext_break_find_first, ext_break_post_body, tsvc_2_s232, wavefront2d and wf_north_west were
+      untagged from llr-focus40 in the same re-cut that took the five new kernels in. They were not
+      retired for being uninteresting: the three ext_break kernels collapsed into one, the four
+      wavefronts into two, and s232 came out because agents were hyper-specialising on it. Keeping
+      their llr8 rows would let llr9 report a forty-five kernel roster the benchmark does not have.
 
 THE EXPERIMENT IS THE UNION OF ITS WAVES. llr9 inherits llr8's thirteen submission batches and adds
 one of its own, and the per-wave directories stay so that union is auditable: the wave a row came
@@ -63,6 +78,17 @@ REFRESHED = frozenset({
 #: Removed from the benchmark repository as a duplicate; dropped from the inherited waves with it.
 DUPLICATE = frozenset({"tsvc_2_s13110"})
 
+#: Untagged from ``llr-focus40`` in the 2026-09-01 re-cut, having been REPLACED by the kernels that
+#: came in with it. llr8 measured all five; llr9 drops them, because the tag is the roster and a
+#: kernel the benchmark no longer offers is not part of what this experiment is over.
+REPLACED = frozenset({
+    "ext_break_find_first",
+    "ext_break_post_body",
+    "tsvc_2_s232",
+    "wavefront2d",
+    "wf_north_west",
+})
+
 #: The kernel no arm has ever scored; see ``aggregate_llr9.EXCLUDED``.
 EXCLUDED = frozenset({"tsvc_2_s2233"})
 
@@ -80,7 +106,7 @@ def main() -> int:
     args = parser.parse_args()
 
     inherited = [(campaign, campaign.removeprefix("llr8")) for campaign in shards.wave_campaigns("llr8")]
-    lines, empty = shards.collect_waves(args.run_root, args.out, inherited, REFRESHED | DUPLICATE)
+    lines, empty = shards.collect_waves(args.run_root, args.out, inherited, REFRESHED | DUPLICATE | REPLACED)
     fresh, fresh_empty = shards.collect_waves(args.run_root, args.out, [("llr40v9", "v9")])
     sources.export(args.run_root, args.out, args.sources, EXCLUDED)
 

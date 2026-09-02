@@ -1,0 +1,6 @@
+arm,model,language,skills,job,benchmark,preset,baseline_ns,native_ns,speedup,suspect,ts_ms
+llr8w16-qwen38-fortran,qwen38,fortran,0,617917,tsvc_2_s319,fuzzed,147109661.0,17493485.0,8.32631075669766,0,1788287384643
+llr8w16-qwen38-fortran-skills,qwen38,fortran,1,617916,quasi_affine_reduce_odd,fuzzed,182530414.0,17196253.0,10.467529962597034,0,1788285972733
+llr8w16-qwen38-fortran-skills,qwen38,fortran,1,617916,quasi_affine_reduce_odd,fuzzed,182847514.0,17217356.0,10.363891052076271,0,1788286971989
+llr8w16-qwen38-fortran-skills,qwen38,fortran,1,617916,quasi_affine_reduce_odd,fuzzed,183066683.0,17245911.0,10.467529962597034,0,1788289017845
+llr8w16-kimi27sglang-fortran-skills,kimi27sglang,fortran,1,618083,tsvc_2_s323,fuzzed,149925685.0,147175190.0,1.01,0,1788300822561

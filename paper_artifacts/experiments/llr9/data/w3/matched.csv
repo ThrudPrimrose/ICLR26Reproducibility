@@ -1,3 +1,3 @@
 model,language,arm_off,arm_skills,reached_off,reached_skills,common,solved_off,solved_skills,rate_off,rate_skills,delta_pp,only_off,only_skills,discordant,mcnemar_p,fast1_off,fast1_skills,fast2_off,fast2_skills,fast4_off,fast4_skills,paired_n,paired_geo_off,paired_geo_skills,paired_ratio,sign_wins,sign_losses,sign_p
-oss120b,c,llr8w3-oss120b-c,llr8w3-oss120b-c-skills,38,37,37,31,31,0.8378,0.8378,0.0,2,2,4,1.0,0.7838,0.7568,0.5405,0.5676,0.3784,0.5135,25,4.7921,6.4002,1.3356,14,11,0.69
-kimi27sglang,c,llr8w3-kimi27sglang-c,llr8w3-kimi27sglang-c-skills,19,16,15,11,10,0.7333,0.6667,-6.67,3,2,5,1.0,0.7333,0.6667,0.6,0.6667,0.4,0.4,8,5.0753,6.5657,1.2936,4,3,1.0
+oss120b,c,llr8w3-oss120b-c,llr8w3-oss120b-c-skills,34,33,33,27,27,0.8182,0.8182,0.0,2,2,4,1.0,0.7576,0.7273,0.5455,0.5758,0.3939,0.5152,21,5.5924,7.5199,1.3447,11,10,1.0
+kimi27sglang,c,llr8w3-kimi27sglang-c,llr8w3-kimi27sglang-c-skills,17,14,13,9,8,0.6923,0.6154,-7.69,3,2,5,1.0,0.6923,0.6154,0.5385,0.6154,0.4615,0.3846,6,5.6203,7.7661,1.3818,3,2,1.0

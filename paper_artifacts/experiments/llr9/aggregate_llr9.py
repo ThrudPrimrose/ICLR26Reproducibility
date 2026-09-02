@@ -15,22 +15,23 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 from benchlib import kernels  # noqa: E402  -- the artifact is run from a clone, not installed
 
-#: The llr9 kernel set, and the denominator of every success rate: llr8's 40, less the duplicate
-#: ``tsvc_2_s13110``, plus the five kernels authored on 2026-09-01. ``argmax_with_index`` is in both
-#: counts -- it is re-measured, not added -- so it moves the numbers without moving the size.
+#: The ``llr-focus40`` tag as the benchmark repository holds it after the 2026-09-01 re-cut, and the
+#: denominator of every success rate. The re-cut kept the tag at forty: it took the five kernels
+#: authored that day in, put ``tsvc_2_s2233`` back, deleted the duplicate ``tsvc_2_s13110``, and
+#: untagged the five kernels those replaced. llr9 is the experiment over THAT roster, so the size is
+#: the tag's, not llr8's forty plus whatever llr8 happened to have measured.
 #:
-#: It is NOT the ``llr-focus40`` tag as the benchmark repository currently holds it. That tag was
-#: re-cut on 2026-09-01 to stay at 40: it took the five new kernels in, put ``tsvc_2_s2233`` back,
-#: and untagged ``ext_break_find_first``, ``ext_break_post_body``, ``tsvc_2_s232``, ``wavefront2d``
-#: and ``wf_north_west``. Those five were measured by llr8 and are kept here, because dropping a
-#: measured kernel to match a tag re-cut after the measurement changes what the experiment reports
-#: without anyone deciding to.
-TAG_SIZE = 44
+#: The pooled table holds THIRTY-NINE kernels against this forty, and the missing one is
+#: ``tsvc_2_s2233`` below. That is deliberate: an arm was given forty kernels, one of which the
+#: harness cannot score, so the denominator counts it and the numerator cannot. Reporting 39 here
+#: instead would quietly credit every leg for a kernel it was never able to solve.
+TAG_SIZE = 40
 
 #: Dropped from every figure. ``tsvc_2_s2233`` took 296 judge calls across llr8 and graded ok ZERO
 #: times, in every arm of every wave -- a kernel no arm can score measures the harness, not the
-#: model (the pass/fail is size- and thread-dependent; see the open harness bug). llr40v9 did not
-#: draw it, so it contributes nothing to llr9 either way.
+#: model (the pass/fail is size- and thread-dependent; see the open harness bug). It is back IN the
+#: re-cut tag, so it counts towards :data:`TAG_SIZE`; it is kept out of the table so that its 296
+#: unscoreable calls do not inflate the token cost of the kernels that ARE scoreable.
 EXCLUDED = frozenset({"tsvc_2_s2233"})
 
 ROOT = pathlib.Path(__file__).resolve().parent

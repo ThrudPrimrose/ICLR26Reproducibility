@@ -613,6 +613,61 @@ ARMS: list[dict[str, object]] = [
         "skills": True,
         "problems": 15
     },
+    # llr8w16: the SPEED-UP completion wave, and the last one. After w15, llr8 had exactly six cells
+    # with no timed last submission -- a kernel an arm had drawn, sometimes solved, but never left a
+    # trustworthy timing for, so the figures plotted nothing there. Each of those six was the missing
+    # half of a pair whose OTHER leg was timed, which is what makes them worth a wave: a pair the
+    # speed-up dumbbell and the before-and-after scatter both have to drop.
+    #
+    # The wave is five arms over those six kernels, and 617919 carries two of them.
+    #
+    # 617920 IS DELIBERATELY NOT HERE. It writes the same run_id prefix as 618083
+    # (`llr8w16-kimi27sglang-fortran-skills`; only the Slurm job NAME differs, `llr8w16b`), so
+    # registering both would pool two runs of one arm into a single arm and count one agent's draw
+    # twice. 618083 is the one kept, and NOT by the usual "most calls" rule, which points the other
+    # way here: 617920 has 23 calls to 618083's 20. It is kept because 617920 made no `submit` call
+    # at all -- 23 score calls, then the job failed -- while 618083 reached the judge's submit route
+    # and left the graded row. A run with more calls and no submission ran longer, not further.
+    {
+        "campaign": "llr8w16",
+        "job": 617917,
+        "model": "qwen38",
+        "language": "fortran",
+        "skills": False,
+        "problems": 1
+    },
+    {
+        "campaign": "llr8w16",
+        "job": 617916,
+        "model": "qwen38",
+        "language": "fortran",
+        "skills": True,
+        "problems": 1
+    },
+    {
+        "campaign": "llr8w16",
+        "job": 617919,
+        "model": "oss120b",
+        "language": "fortran",
+        "skills": False,
+        "problems": 2
+    },
+    {
+        "campaign": "llr8w16",
+        "job": 617918,
+        "model": "oss120b",
+        "language": "fortran",
+        "skills": True,
+        "problems": 1
+    },
+    {
+        "campaign": "llr8w16",
+        "job": 618083,
+        "model": "kimi27sglang",
+        "language": "fortran",
+        "skills": True,
+        "problems": 1
+    },
     # llr40v9: the six kernels the llr8 waves cannot speak for, measured fresh on 2026-09-02.
     # Five are NEW -- authored 2026-09-01, so they have no llr8 history at all -- and the sixth,
     # `argmax_with_index`, is an OLD kernel re-measured because its Fortran arm was unwinnable
@@ -1192,6 +1247,7 @@ def collect_campaign(run_root: pathlib.Path,
     all_submissions: list[list] = []
     empty: list[str] = []
     dropped_calls = dropped_submissions = 0
+    filtered_out: list[str] = []
     for arm in selected:
         calls, submissions = read_arm(run_root, arm)
         # A dropped kernel is REMOVED HERE, at the only point where the raw row is still visible,
@@ -1203,13 +1259,22 @@ def collect_campaign(run_root: pathlib.Path,
         dropped_calls += len(calls) - len(kept_calls)
         dropped_submissions += len(submissions) - len(kept_subs)
         print(f"{arm_name(arm)}: calls={len(kept_calls)} submissions={len(kept_subs)}")
-        if not kept_calls:
+        # AN ARM THE FILTER EMPTIED IS NOT AN ARM THAT RETURNED NOTHING. The non-zero exit exists
+        # for the arm that ran and produced no rows, which is invisible in the CSVs afterwards; a
+        # completion arm whose whole draw is a kernel this experiment does not carry produced rows
+        # and this experiment has no use for them. Conflating the two made llr9 fail its own
+        # collection over three llr8w12 arms that drew nothing but replaced kernels.
+        if not calls:
             empty.append(arm_name(arm))
+        elif not kept_calls:
+            filtered_out.append(arm_name(arm))
         all_calls += kept_calls
         all_submissions += kept_subs
     if drop:
         print(f"  dropped {dropped_calls} calls and {dropped_submissions} submissions "
               f"over {len(drop)} filtered kernels")
+    if filtered_out:
+        print(f"  arms whose whole draw was filtered out: {', '.join(filtered_out)}")
     # Every arm empty is the signature of a wrong run root, not of a campaign that measured nothing.
     # Writing the CSVs anyway would freeze a full set of zero rows into the figures downstream.
     if not all_calls:

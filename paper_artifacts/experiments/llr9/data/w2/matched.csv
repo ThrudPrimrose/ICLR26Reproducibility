@@ -1,4 +1,4 @@
 model,language,arm_off,arm_skills,reached_off,reached_skills,common,solved_off,solved_skills,rate_off,rate_skills,delta_pp,only_off,only_skills,discordant,mcnemar_p,fast1_off,fast1_skills,fast2_off,fast2_skills,fast4_off,fast4_skills,paired_n,paired_geo_off,paired_geo_skills,paired_ratio,sign_wins,sign_losses,sign_p
-qwen38,c,llr8w2-qwen38-c,llr8w2-qwen38-c-skills,27,33,22,17,19,0.7727,0.8636,9.09,2,4,6,0.6875,0.7273,0.8636,0.7273,0.8182,0.7273,0.7727,14,18.3133,16.8281,0.9189,2,10,0.0386
-qwen38,fortran,llr8w2-qwen38-fortran,llr8w2-qwen38-fortran-skills,29,34,25,16,16,0.64,0.64,0.0,3,3,6,1.0,0.64,0.64,0.4,0.52,0.36,0.44,13,5.5413,8.0137,1.4462,8,5,0.5811
-oss120b,fortran,llr8w2-oss120b-fortran,llr8w2-oss120b-fortran-skills,38,38,38,26,23,0.6842,0.6053,-7.89,6,3,9,0.5078,0.6053,0.5789,0.3947,0.4737,0.2895,0.3421,18,3.8914,4.0517,1.0412,9,8,1.0
+qwen38,c,llr8w2-qwen38-c,llr8w2-qwen38-c-skills,24,30,20,17,17,0.85,0.85,0.0,2,2,4,1.0,0.8,0.85,0.8,0.8,0.8,0.8,14,18.3133,16.8281,0.9189,2,10,0.0386
+qwen38,fortran,llr8w2-qwen38-fortran,llr8w2-qwen38-fortran-skills,26,30,22,15,14,0.6818,0.6364,-4.55,3,2,5,1.0,0.6818,0.6364,0.4545,0.5,0.4091,0.4545,12,6.3911,8.529,1.3345,7,5,0.7744
+oss120b,fortran,llr8w2-oss120b-fortran,llr8w2-oss120b-fortran-skills,34,34,34,22,20,0.6471,0.5882,-5.88,5,3,8,0.7266,0.5588,0.5588,0.3529,0.4412,0.2647,0.3529,15,3.8983,4.3233,1.109,9,5,0.424
