@@ -27,9 +27,12 @@ for exp in llr8 llr9; do
   "$PY" "experiments/$exp/plot_${exp}_before_after.py"
 done
 
+if [ "${1:-}" = "--collect" ]; then
+  echo "== git  collect   judge databases -> experiments/git/data/*.csv + artifacts/"
+  "$PY" experiments/git/collect_git.py
+fi
+echo "== git  aggregate experiments/git/data/git_experiment_all.csv -> experiments/git/data/kernels.csv"
+"$PY" experiments/git/aggregate_git.py
 echo "== git  figures   experiments/git/data/ -> experiments/git/figures/"
 "$PY" experiments/git/plot_git.py
-
-echo
-echo "The canonicalization ablation and the evasion sweep take a directory rather than a committed"
-echo "table; see experiments/canon/artifacts/README.md and experiments/evasion/artifacts/README.md."
+"$PY" experiments/git/plot_git_kernels.py

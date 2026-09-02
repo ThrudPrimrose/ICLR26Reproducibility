@@ -40,8 +40,32 @@ from benchlib import style  # noqa: E402  -- ditto: it pulls matplotlib in itsel
 
 MODEL_COLOR = style.MODEL_COLOR
 
-#: The two skills legs: base first, so the hollow marker is always the one the pair started from.
+#: The two legs: the "0" one first, so the hollow marker is always the one the pair started from.
 LEGS = ("0", "1")
+
+
+@dataclasses.dataclass(frozen=True)
+class Contrast:
+    """What the two legs MEAN in the experiment being drawn.
+
+    The FORM is the same wherever this module is used -- hollow marker, filled marker, joined in
+    the model's colour -- but the contrast is not: llr8 and llr9 put a skills packet against its
+    absence, the git experiment puts two framings of the same task against each other. Leaving the
+    words hard-coded meant a second experiment had to copy the drawing to change a legend, and a
+    copied figure drifts from the original in ways a reader cannot see.
+    """
+
+    #: Legend text, hollow leg then filled leg.
+    key_labels: tuple[str, str] = ("base", "+ skills")
+    #: The same two legs as stdout names, where a leading "+" would read as arithmetic.
+    names: tuple[str, str] = ("base", "skills")
+    #: Trailing clause for the speed-up and token titles; must read after "Speed-up ".
+    clause: str = "with and without the skills packet"
+    #: What the success figure's denominator is called when the count is explained on stdout.
+    tag_label: str = "llr-focus40"
+
+
+SKILLS = Contrast()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -122,12 +146,13 @@ def draw_rows(ax, drawn: list[Cell], value: Callable[[Cell, str], float | None],
     ax.set_xlim(left=floor)
 
 
-def finish(fig, ax, drawn: list[Cell], out: pathlib.Path, unpaired: bool = False) -> None:
+def finish(fig, ax, drawn: list[Cell], out: pathlib.Path, contrast: Contrast, unpaired: bool = False) -> None:
     if unpaired:
         for tick, cell in zip(ax.get_yticklabels(), drawn, strict=True):
             if not cell.shared():
                 tick.set_color(style.WARN)
-    style.key(ax, [("base", style.marker(style.INK2, on=False)), ("+ skills", style.marker(style.INK2, on=True))],
+    style.key(ax, [(contrast.key_labels[0], style.marker(style.INK2, on=False)),
+                   (contrast.key_labels[1], style.marker(style.INK2, on=True))],
               anchor=(1.0, 1.005))
     style.save(fig, out)
 
@@ -157,7 +182,7 @@ def speedup_axis(values: list[float]) -> tuple[float, float, list[float]]:
     return span[0], span[1], ticks
 
 
-def speedup_figure(drawn: list[Cell], out: pathlib.Path) -> None:
+def speedup_figure(drawn: list[Cell], out: pathlib.Path, contrast: Contrast) -> None:
     """Per-kernel geomean of the LAST submission, base leg against skills leg, one row per pair."""
     pairs = [c for c in drawn if len(c.legs) == 2]
     lonely = [c for c in drawn if len(c.legs) == 1]
@@ -172,7 +197,7 @@ def speedup_figure(drawn: list[Cell], out: pathlib.Path) -> None:
         return "n=" + "/".join(str(len(cell.speedups(s))) for s in LEGS)
 
     labels = [c.label() + ("  UNPAIRED" if not c.shared() else "") for c in pairs]
-    fig, ax = row_figure(len(pairs), "Speed-up with and without the skills packet, aggregated per kernel",
+    fig, ax = row_figure(len(pairs), f"Speed-up {contrast.clause}, aggregated per kernel",
                          "geomean of each kernel's last submission (x, log scale)")
     # Log: a speed-up is a ratio, and one group at 70x flattens every 3x-to-8x group into the floor
     # on a linear scale.
@@ -186,13 +211,13 @@ def speedup_figure(drawn: list[Cell], out: pathlib.Path) -> None:
     ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     ax.get_xaxis().set_minor_formatter(matplotlib.ticker.NullFormatter())
     ax.grid(True, axis="x")
-    finish(fig, ax, pairs, out, unpaired=True)
+    finish(fig, ax, pairs, out, contrast, unpaired=True)
     # BEST is reported rather than drawn. What it is for: a cell whose last and best diverge was
     # carried by lucky resubmissions rather than by a repeatable win, so the ratio is the thing to
     # look at. Drawn as a second mark it was two identical ticks per row with nothing tying either
     # to its leg, and an undecodable mark is worse than a number.
     for cell in pairs:
-        for skills, leg in zip(LEGS, ("base", "skills"), strict=True):
+        for skills, leg in zip(LEGS, contrast.names, strict=True):
             last, top = value(cell, skills), best(cell, skills)
             if last is not None and top is not None:
                 print(f"  speedup: {cell.label()} {leg}: last {last:.2f}x, best {top:.2f}x "
@@ -200,11 +225,11 @@ def speedup_figure(drawn: list[Cell], out: pathlib.Path) -> None:
     print(f"  speedup: {sum(1 for c in pairs if not c.shared())} of {len(pairs)} pairs share no timed kernel "
           f"and are marked UNPAIRED")
     if lonely:
-        print(f"  speedup: {len(lonely)} cells have no skills counterpart and are omitted: "
+        print(f"  speedup: {len(lonely)} cells have no {contrast.names[1]} counterpart and are omitted: "
               f"{', '.join(c.label() for c in lonely)}")
 
 
-def success_figure(drawn: list[Cell], out: pathlib.Path, tag_size: int) -> None:
+def success_figure(drawn: list[Cell], out: pathlib.Path, tag_size: int, contrast: Contrast) -> None:
     """Solved kernels over the llr-focus40 tag, every wave of the cell pooled."""
 
     def value(cell: Cell, skills: str) -> float | None:
@@ -223,13 +248,13 @@ def success_figure(drawn: list[Cell], out: pathlib.Path, tag_size: int) -> None:
         style.rounded_bar(ax, 0.0, 100.0, row, 0.62, style.RAISE, zorder=1.0)
     draw_rows(ax, drawn, value, note, 0.0)
     ax.set_xlim(0.0, 100.0)
-    finish(fig, ax, drawn, out)
+    finish(fig, ax, drawn, out, contrast)
     print(f"  success: the numerator is the UNION of distinct kernels solved over every wave of the cell, never a "
           f"sum of per-wave counts (which double-counts a kernel two completion waves both drew), over the "
-          f"llr-focus40 tag of {tag_size}")
+          f"{contrast.tag_label} tag of {tag_size}")
 
 
-def tokens_figure(drawn: list[Cell], out: pathlib.Path) -> None:
+def tokens_figure(drawn: list[Cell], out: pathlib.Path, contrast: Contrast) -> None:
     """Token cost of one kernel, first agent turn to last grade -- the term the packet moves."""
 
     def value(cell: Cell, skills: str) -> float | None:
@@ -239,17 +264,18 @@ def tokens_figure(drawn: list[Cell], out: pathlib.Path) -> None:
     def note(cell: Cell) -> str:
         return "n=" + "/".join(str(len(cell.legs[s])) for s in LEGS if s in cell.legs)
 
-    fig, ax = row_figure(len(drawn), "Token cost per kernel, with and without the skills packet",
+    fig, ax = row_figure(len(drawn), f"Token cost per kernel, {contrast.clause}",
                          "million tokens per kernel reached")
     style.row_axis(ax, [c.label() for c in drawn])
     draw_rows(ax, drawn, value, note, 0.0)
     ax.margins(x=0.1)
-    finish(fig, ax, drawn, out)
+    finish(fig, ax, drawn, out, contrast)
     print("  tokens: the agent's cumulative usage at its last judge call on a kernel, summed over the waves that "
           "drew it and over the kernels the arm reached, divided by that count; n = kernels reached")
 
 
-def main(data: pathlib.Path, out: pathlib.Path, prefix: str, tag_size: int) -> int:
+def main(data: pathlib.Path, out: pathlib.Path, prefix: str, tag_size: int,
+         contrast: Contrast = SKILLS) -> int:
     """Draw the three figures for one experiment: ``<out>/<prefix>_<figure>.{png,pdf}``."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=pathlib.Path, default=data, help="tidy kernel table")
@@ -257,7 +283,7 @@ def main(data: pathlib.Path, out: pathlib.Path, prefix: str, tag_size: int) -> i
     args = parser.parse_args()
     style.apply()
     drawn = cells(read(args.data))
-    speedup_figure(drawn, args.out / f"{prefix}_speedup_per_kernel")
-    success_figure(drawn, args.out / f"{prefix}_success_rate", tag_size)
-    tokens_figure(drawn, args.out / f"{prefix}_tokens_per_kernel")
+    speedup_figure(drawn, args.out / f"{prefix}_speedup_per_kernel", contrast)
+    success_figure(drawn, args.out / f"{prefix}_success_rate", tag_size, contrast)
+    tokens_figure(drawn, args.out / f"{prefix}_tokens_per_kernel", contrast)
     return 0

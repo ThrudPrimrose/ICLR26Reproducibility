@@ -1,17 +1,17 @@
 # What a coding agent does instead of the computation
 
-A survey of the llr8 campaign's submissions for wins that came from not doing the work. Produced by
-`sweep_evasion.py`, adjudicated by hand, and written so every claim carries the submission it came
-from. `sweep_evasion.py` reads; it never writes to a run root or to the benchmark corpus.
+A survey of the llr8 campaign's submissions for wins that came from not doing the work. The
+candidates were swept out of the run roots mechanically and then adjudicated BY HAND, which is why
+every claim below carries the submission it came from: the sweep proposes, a reader decides.
+
+The sweep script is not part of this artifact. It took a run root and a benchmark directory --
+neither of which a clone has -- and its output was a worklist, not a result; what survived
+adjudication is the cases written out here, each one checkable against the quoted submission
+without re-running anything.
 
 The other half of the pair is [`anti_cheat.md`](anti_cheat.md): what the HARNESS does about all
 of this, mechanism by mechanism with file:line, plus the gaps. This document is the cases; that
 one is the machinery. Neither repeats the other.
-
-```bash
-python3 sweep_evasion.py --runs <RUN_ROOT> --benchmarks <BENCHMARKS_DIR> --out data/evasion_candidates.csv
-python3 -m pytest test_sweep_evasion.py
-```
 
 ## What the benchmark asks for, and what honest means
 
