@@ -55,10 +55,7 @@ def gains(cells, ceil=None):
     rho_c = (solves["1"] + 0.5) / (solves["0"] + 0.5)  # Jeffreys: finite at 0 and at a clean sweep
     # Score CONDITIONAL on solving, so completion is not counted twice: an unsolved task
     # already scores 1.0, and a roster-wide geomean would therefore re-encode the solve count.
-    s = {
-        a: geomean([v[a][1] / ceil.get(k, 1.0) for k, v in cells.items() if a in v and v[a][0]])
-        for a in "01"
-    }
+    s = {a: geomean([v[a][1] / ceil.get(k, 1.0) for k, v in cells.items() if a in v and v[a][0]]) for a in "01"}
     rho_S = s["1"] / s["0"] if s["0"] > 0 else 1.0
     rho_T = tok["0"] / tok["1"] if tok["1"] > 0 else 1.0
     return rho_c, rho_S, rho_T
@@ -68,7 +65,7 @@ def efficacy(cells, w=W, ceil=None, scale="ln"):
     """(Q, (rho_c, rho_S, rho_T)). Q = 0 at no effect, positive when the treatment helped."""
     r = gains(cells, ceil)
     f = math.log if scale == "ln" else g
-    return sum(wi * f(ri) for wi, ri in zip(w, r)), r
+    return sum(wi * f(ri) for wi, ri in zip(w, r, strict=True)), r
 
 
 def bootstrap(cells, n=4000, seed=0, ceil=None, scale="ln"):
@@ -99,12 +96,13 @@ def ceilings(legs):
 
 def load(path=CSV):
     legs = defaultdict(dict)
-    for r in csv.DictReader(open(path)):
-        legs[(r["model"], r["language"])].setdefault(r["benchmark"], {})[r["skills"]] = (
-            int(r["solved"]),
-            max(float(r["last_speedup"] or 0), 1.0),  # the S_i convention: unsolved scores 1.0
-            int(float(r["tokens"] or 0)),
-        )
+    with open(path) as handle:
+        for r in csv.DictReader(handle):
+            legs[(r["model"], r["language"])].setdefault(r["benchmark"], {})[r["skills"]] = (
+                int(r["solved"]),
+                max(float(r["last_speedup"] or 0), 1.0),  # the S_i convention: unsolved scores 1.0
+                int(float(r["tokens"] or 0)),
+            )
     return legs
 
 
@@ -119,8 +117,10 @@ if __name__ == "__main__":
         f"ceiling coverage: {sum(1 for v in ceil.values() if v > 1.0)}/{len(ceil)} kernels above 1.0x, "
         f"geomean {geomean(list(ceil.values())):.1f}x\n"
     )
-    hdr = f"{'leg':24s} {'rho_c':>7s} {'rho_S':>7s} {'rho_T':>7s} | {'Q(ln)':>7s} {'95% CI':>18s} | {'Q(g)':>7s} {'gap':>6s}"
-    print(hdr)
+    print(
+        f"{'leg':24s} {'rho_c':>7s} {'rho_S':>7s} {'rho_T':>7s} | "
+        f"{'Q(ln)':>7s} {'95% CI':>18s} | {'Q(g)':>7s} {'gap':>6s}"
+    )
     qs_ln, qs_g = [], []
     for key in sorted(legs):
         cells = paired(legs, key)
@@ -133,14 +133,15 @@ if __name__ == "__main__":
         qs_g.append(q_g)
         flag = "" if lo <= 0.0 <= hi else " *"
         print(
-            f"{key[0]+'/'+key[1]:24s} {rc:7.3f} {rs:7.3f} {rt:7.3f} | {q_ln:+7.4f} "
-            f"[{lo:+.3f},{hi:+.3f}]{flag:2s} | {q_g:+7.4f} {abs(q_ln-q_g):6.4f}"
+            f"{key[0] + '/' + key[1]:24s} {rc:7.3f} {rs:7.3f} {rt:7.3f} | {q_ln:+7.4f} "
+            f"[{lo:+.3f},{hi:+.3f}]{flag:2s} | {q_g:+7.4f} {abs(q_ln - q_g):6.4f}"
         )
     n = len(qs_ln)
-    print(f"\nsuite Q(ln) = {sum(qs_ln)/n:+.4f}  -> overall {math.exp(sum(qs_ln)/n):.3f}x effect")
-    print(f"suite Q(g)  = {sum(qs_g)/n:+.4f}")
-    same_sign = sum((a > 0) == (b > 0) for a, b in zip(qs_ln, qs_g))
+    print(f"\nsuite Q(ln) = {sum(qs_ln) / n:+.4f}  -> overall {math.exp(sum(qs_ln) / n):.3f}x effect")
+    print(f"suite Q(g)  = {sum(qs_g) / n:+.4f}")
+    same_sign = sum((a > 0) == (b > 0) for a, b in zip(qs_ln, qs_g, strict=True))
     order_ln = [i for i, _ in sorted(enumerate(qs_ln), key=lambda t: -t[1])]
     order_g = [i for i, _ in sorted(enumerate(qs_g), key=lambda t: -t[1])]
-    print(f"\nln vs g: {same_sign}/{n} legs agree on sign; ordering {'IDENTICAL' if order_ln == order_g else 'DIFFERS'}")
+    verdict = "IDENTICAL" if order_ln == order_g else "DIFFERS"
+    print(f"\nln vs g: {same_sign}/{n} legs agree on sign; ordering {verdict}")
     print("* = 95% CI excludes 0 (a real effect); every other leg is indistinguishable from no effect")
