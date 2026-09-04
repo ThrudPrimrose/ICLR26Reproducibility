@@ -1,0 +1,58 @@
+subroutine argmax_with_index_fp64(a, out_index, out_value, len_1d, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_1d
+  integer(c_int64_t), value, intent(in) :: workspace_size
+  real(c_double), intent(in) :: a(len_1d)
+  integer(c_int64_t), intent(out) :: out_index(1)
+  real(c_double), intent(out) :: out_value(1)
+  real(c_double), intent(inout) :: workspace(workspace_size)
+
+  integer :: nt, t
+  integer(c_int64_t) :: lo, hi, i
+  real(c_double) :: v
+  integer(c_int64_t) :: k
+  real(c_double), allocatable :: pval(:)
+  integer(c_int64_t), allocatable :: pidx(:)
+
+  if (len_1d == 1) then
+    out_value(1) = a(1)
+    out_index(1) = 1
+    return
+  end if
+
+  nt = omp_get_max_threads()
+  if (nt < 1) nt = 1
+  allocate(pval(nt), pidx(nt))
+  pval = -huge(0.0d0)            ! neutral in case a thread slot does not run
+  pidx = huge(1_c_int64_t)
+
+  !$omp parallel shared(a, pval, pidx, nt, len_1d) private(t, lo, hi, i, v, k)
+  t = omp_get_thread_num()
+  hi = (len_1d * t) / nt + 1     ! first element (1-based)
+  lo = (len_1d * (t + 1)) / nt   ! last element (1-based, inclusive)
+  v = -huge(0.0d0)
+  k = huge(1_c_int64_t)
+  do i = hi, lo                   ! naturally empty when hi > lo
+    if (a(i) > v) then
+      v = a(i)
+      k = i
+    end if
+  end do
+  pval(t + 1) = v
+  pidx(t + 1) = k
+  !$omp end parallel
+
+  out_value(1) = pval(1)
+  out_index(1) = pidx(1)
+  do t = 2, nt
+    if (pval(t) > out_value(1)) then
+      out_value(1) = pval(t)
+      out_index(1) = pidx(t)
+    else if (pval(t) == out_value(1) .and. pidx(t) < out_index(1)) then
+      out_index(1) = pidx(t)
+    end if
+  end do
+  deallocate(pval, pidx)
+end subroutine argmax_with_index_fp64

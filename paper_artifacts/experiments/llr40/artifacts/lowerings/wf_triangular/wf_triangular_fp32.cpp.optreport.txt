@@ -1,0 +1,5 @@
+wf_triangular_fp32.cpp:161:31: missed: couldn't vectorize loop
+wf_triangular_fp32.cpp:161:31: missed: not vectorized: inner-loop count not invariant.
+wf_triangular_fp32.cpp:162:33: missed: couldn't vectorize loop
+wf_triangular_fp32.cpp:163:59: missed: not vectorized: no vectype for stmt: _6 = *_5;
+ scalar_type: float

@@ -1,0 +1,2 @@
+ext_war_unit_fp64.cpp:161:31: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+ext_war_unit_fp64.cpp:161:31: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8

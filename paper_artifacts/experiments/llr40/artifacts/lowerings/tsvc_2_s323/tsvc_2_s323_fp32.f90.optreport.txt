@@ -1,0 +1,3 @@
+tsvc_2_s323_fp32.f90:12:13: missed: couldn't vectorize loop
+tsvc_2_s323_fp32.f90:13:79: missed: not vectorized: no vectype for stmt: _2 = (*b_18(D))[_1];
+ scalar_type: real(kind=4)

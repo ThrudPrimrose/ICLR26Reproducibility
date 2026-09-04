@@ -1,0 +1,4 @@
+language,arms,submissions,kernels,geomean_su,median_su,min_su,max_su
+c,9,449,39,16.735,17.737,1.0,242.884
+cpp,3,6,3,7.196,5.013,3.61,20.592
+fortran,9,325,39,13.655,15.126,1.0,247.766

@@ -1,0 +1,29 @@
+# HPCAgent-Bench benchmark manifest -- adding a benchmark: see README.md.
+name: Adversarial jacobi_2d_tile_swapped_dims
+kind: microkernel
+level: 1
+parameters:
+  S:
+    N: 64
+    TSTEPS: 20
+  M:
+    N: 1942
+    TSTEPS: 20
+  L:
+    N: 3376
+    TSTEPS: 20
+  XL:
+    N: 5869
+    TSTEPS: 20
+init:
+  arrays:
+    A: (N,N)
+    B: (N,N)
+output_args:
+- A
+- B
+taxonomy:
+  track: loop_level_reasoning
+  domain: classical compiler optimizations
+loop_level_reasoning:
+  source: adversarial_tile

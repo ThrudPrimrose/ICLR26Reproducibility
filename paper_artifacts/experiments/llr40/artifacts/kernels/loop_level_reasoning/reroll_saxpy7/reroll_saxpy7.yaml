@@ -1,0 +1,24 @@
+# HPCAgent-Bench benchmark manifest -- adding a benchmark: see README.md.
+name: TSVC reroll_saxpy7
+kind: microkernel
+level: 1
+parameters:
+  S:
+    NBLK: 73
+  M:
+    NBLK: 13571428
+  L:
+    NBLK: 22468266
+  XL:
+    NBLK: 37197484
+init:
+  arrays:
+    a: (7 * NBLK,)
+    b: (7 * NBLK,)
+output_args:
+- a
+taxonomy:
+  track: loop_level_reasoning
+  domain: classical compiler optimizations
+loop_level_reasoning:
+  source: tsvc_2_5

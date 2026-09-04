@@ -1,0 +1,5 @@
+tsvc_2_s318_fp64.f90:17:13: missed: couldn't vectorize loop
+tsvc_2_s318_fp64.f90:2:1: missed: not vectorized: unsupported use in stmt.
+tsvc_2_s318_fp64.f90:17:13: missed: couldn't vectorize loop
+tsvc_2_s318_fp64.f90:2:1: missed: not vectorized: unsupported use in stmt.
+tsvc_2_s318_fp64.f90:25:36: optimized: basic block part vectorized using 16 byte vectors

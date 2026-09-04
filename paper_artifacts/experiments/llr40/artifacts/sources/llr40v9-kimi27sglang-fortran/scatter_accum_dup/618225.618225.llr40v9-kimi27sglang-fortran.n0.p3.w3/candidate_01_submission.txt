@@ -1,0 +1,50 @@
+module scatter_accum_dup_mod
+  use, intrinsic :: iso_c_binding, only: c_double, c_int32_t, c_int64_t, c_char
+  implicit none
+contains
+  subroutine scatter_accum_dup_fp64(bins, ip, src, LEN_1D, workspace, workspace_bytes) bind(C, name='scatter_accum_dup_fp64')
+    real(c_double), intent(inout) :: bins(*)
+    integer(c_int32_t), intent(in) :: ip(*)
+    real(c_double), intent(in) :: src(*)
+    integer(c_int64_t), value :: LEN_1D
+    character(c_char), intent(inout) :: workspace(*)
+    integer(c_int64_t), value :: workspace_bytes
+
+    integer(c_int64_t) :: i, idx
+    integer(c_int32_t), allocatable :: seen(:)
+    logical :: is_perm
+
+    ! Check if ip is a permutation (no duplicates)
+    allocate(seen(LEN_1D))
+    seen = 0
+    is_perm = .true.
+    do i = 1, LEN_1D
+      idx = int(ip(i), c_int64_t)
+      if (seen(idx) /= 0) then
+        is_perm = .false.
+        exit
+      end if
+      seen(idx) = 1
+    end do
+
+    if (is_perm) then
+      !$omp parallel do private(i, idx)
+      do i = 1, LEN_1D
+        idx = int(ip(i), c_int64_t)
+        bins(idx) = bins(idx) + src(i)
+      end do
+      !$omp end parallel do
+    else
+      !$omp parallel do private(i, idx)
+      do i = 1, LEN_1D
+        idx = int(ip(i), c_int64_t)
+        !$omp atomic update
+        bins(idx) = bins(idx) + src(i)
+        !$omp end atomic
+      end do
+      !$omp end parallel do
+    end if
+
+    deallocate(seen)
+  end subroutine scatter_accum_dup_fp64
+end module scatter_accum_dup_mod

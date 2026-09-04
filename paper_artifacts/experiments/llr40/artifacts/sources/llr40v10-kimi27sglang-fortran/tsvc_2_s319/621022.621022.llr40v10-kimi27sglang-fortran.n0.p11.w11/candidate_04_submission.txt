@@ -1,0 +1,54 @@
+module tsvc_2_s319_mod
+  use iso_c_binding, only: c_double, c_int64_t
+  implicit none
+contains
+  subroutine tsvc_2_s319_fp64(a, b, c, d, e, LEN_1D) bind(c, name='tsvc_2_s319_fp64')
+    integer(c_int64_t), value, intent(in) :: LEN_1D
+    real(c_double), intent(out) :: a(LEN_1D), b(LEN_1D)
+    real(c_double), intent(in) :: c(LEN_1D), d(LEN_1D), e(LEN_1D)
+    real(c_double) :: sum_a, sum_b, s0, s1, s2, s3, s4, s5, s6, s7
+    integer(c_int64_t) :: i, n
+    sum_a = 0.0_c_double
+    sum_b = 0.0_c_double
+    n = LEN_1D - mod(LEN_1D, 8_c_int64_t)
+    do i = 1, n, 8
+      a(i)   = c(i)   + d(i)
+      a(i+1) = c(i+1) + d(i+1)
+      a(i+2) = c(i+2) + d(i+2)
+      a(i+3) = c(i+3) + d(i+3)
+      a(i+4) = c(i+4) + d(i+4)
+      a(i+5) = c(i+5) + d(i+5)
+      a(i+6) = c(i+6) + d(i+6)
+      a(i+7) = c(i+7) + d(i+7)
+      s0 = a(i)   + a(i+1)
+      s1 = a(i+2) + a(i+3)
+      s2 = a(i+4) + a(i+5)
+      s3 = a(i+6) + a(i+7)
+      s0 = s0 + s1
+      s2 = s2 + s3
+      sum_a = sum_a + s0 + s2
+      b(i)   = c(i)   + e(i)
+      b(i+1) = c(i+1) + e(i+1)
+      b(i+2) = c(i+2) + e(i+2)
+      b(i+3) = c(i+3) + e(i+3)
+      b(i+4) = c(i+4) + e(i+4)
+      b(i+5) = c(i+5) + e(i+5)
+      b(i+6) = c(i+6) + e(i+6)
+      b(i+7) = c(i+7) + e(i+7)
+      s4 = b(i)   + b(i+1)
+      s5 = b(i+2) + b(i+3)
+      s6 = b(i+4) + b(i+5)
+      s7 = b(i+6) + b(i+7)
+      s4 = s4 + s5
+      s6 = s6 + s7
+      sum_b = sum_b + s4 + s6
+    end do
+    do i = n + 1, LEN_1D
+      a(i) = c(i) + d(i)
+      sum_a = sum_a + a(i)
+      b(i) = c(i) + e(i)
+      sum_b = sum_b + b(i)
+    end do
+    b(1) = sum_a + sum_b
+  end subroutine tsvc_2_s319_fp64
+end module tsvc_2_s319_mod

@@ -1,0 +1,41 @@
+{
+  "kernel": "tsvc_2_s4112_fp32",
+  "abi": "c",
+  "args": [
+    {
+      "name": "a",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "b",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "ip",
+      "kind": "ptr_int32",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "LEN_1D",
+      "kind": "int64"
+    }
+  ],
+  "symbols": {
+    "c": "tsvc_2_s4112_fp32",
+    "cpp": "tsvc_2_s4112_fp32",
+    "fortran": "tsvc_2_s4112_fp32"
+  },
+  "sources": {
+    "c": "tsvc_2_s4112_fp32.c",
+    "cpp": "tsvc_2_s4112_fp32.cpp",
+    "fortran": "tsvc_2_s4112_fp32.f90"
+  }
+}

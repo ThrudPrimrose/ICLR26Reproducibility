@@ -1,0 +1,5 @@
+tsvc_2_s275_fp32.f90:10:13: missed: couldn't vectorize loop
+tsvc_2_s275_fp32.f90:10:13: missed: not vectorized: unsupported control flow in loop.
+tsvc_2_s275_fp32.f90:12:21: missed: couldn't vectorize loop
+tsvc_2_s275_fp32.f90:14:45: missed: not vectorized: no vectype for stmt: _6 = (*aa_26(D))[_5];
+ scalar_type: real(kind=4)

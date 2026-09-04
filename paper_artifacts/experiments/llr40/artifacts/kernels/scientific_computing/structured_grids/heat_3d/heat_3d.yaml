@@ -1,0 +1,57 @@
+# HPCAgent-Bench benchmark manifest -- adding a benchmark: see README.md.
+name: Heat-3D
+kind: microkernel
+level: 2
+parameters:
+  S:
+    TSTEPS: 20
+    N: 25
+  M:
+    TSTEPS: 20
+    N: 192
+  L:
+    TSTEPS: 20
+    N: 350
+  XL:
+    TSTEPS: 20
+    N: 638
+init:
+  arrays:
+    A: "(N, N, N)"
+    B: "(N, N, N)"
+  input_args:
+  - N
+  output_args:
+  - A
+  - B
+  - alpha
+  scalars:
+    alpha: 0.125
+  func_name: initialize
+array_args:
+- A
+- B
+output_args:
+- A
+- B
+taxonomy:
+  track: scientific_computing
+  subtrack: polybench
+  dwarf: structured_grids
+  domain: Physics
+  tags:
+  - npbench
+mpi:
+  decomposition:
+    axis:
+    - N
+    work_exponent: 3
+  arrays:
+    A:
+    - N
+    - N
+    - N
+    B:
+    - N
+    - N
+    - N

@@ -1,0 +1,6 @@
+fuse_stencil_through_transient_fp32.cpp:165:31: optimized: loop vectorized using 64 byte vectors and unroll factor 16
+fuse_stencil_through_transient_fp32.cpp:165:31: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 16
+fuse_stencil_through_transient_fp32.cpp:162:31: optimized: loop vectorized using 64 byte vectors and unroll factor 16
+fuse_stencil_through_transient_fp32.cpp:162:31: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 16
+fuse_stencil_through_transient_fp32.cpp:161:37: missed: statement clobbers memory: tmp_36 = malloc (_2);
+fuse_stencil_through_transient_fp32.cpp:168:13: missed: statement clobbers memory: free (tmp_36);

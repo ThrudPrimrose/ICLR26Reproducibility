@@ -1,0 +1,5 @@
+tsvc_2_s2275_fp64.c:172:31: missed: couldn't vectorize loop
+tsvc_2_s2275_fp64.c:174:41: missed: not vectorized: not suitable for strided load _6 = *_5;
+tsvc_2_s2275_fp64.c:173:33: missed: couldn't vectorize loop
+tsvc_2_s2275_fp64.c:174:41: missed: not vectorized: no vectype for stmt: _6 = *_5;
+ scalar_type: double

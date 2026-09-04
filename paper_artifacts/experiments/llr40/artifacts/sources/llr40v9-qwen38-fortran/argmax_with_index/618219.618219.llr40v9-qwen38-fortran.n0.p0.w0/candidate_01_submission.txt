@@ -1,0 +1,97 @@
+pure function pmx(pa, pb) result(r)
+  implicit none
+  real(8), intent(in) :: pa, pb
+  real(8) :: r
+  if (.not. (pa == pa)) then
+    r = pb
+  else if (.not. (pb == pb)) then
+    r = pa
+  else if (pa >= pb) then
+    r = pa
+  else
+    r = pb
+  end if
+end function pmx
+
+subroutine argmax_with_index_fp64(a, out_index, out_value, len_1d) &
+    bind(C, name="argmax_with_index_fp64")
+  use, intrinsic :: iso_c_binding
+  implicit none
+  type(c_ptr), value :: a
+  type(c_ptr), value :: out_index
+  type(c_ptr), value :: out_value
+  integer(8), value :: len_1d
+
+  interface
+    pure function pmx(pa, pb) result(r)
+      real(8), intent(in) :: pa, pb
+      real(8) :: r
+    end function pmx
+  end interface
+
+  real(8), pointer, contiguous :: ap(:)
+  integer(8), pointer :: ip
+  real(8), pointer :: vp
+  integer(8) :: n, u, k, mb
+  real(8) :: x, v, m, t1, t2, t3
+
+  n = len_1d
+  call c_f_pointer(a, ap, [n])
+  call c_f_pointer(out_index, ip)
+  call c_f_pointer(out_value, vp)
+
+  if (n <= 1) then
+    if (n == 1) then
+      vp = ap(1)
+      ip = 1
+    end if
+    return
+  end if
+
+  x = ap(1)
+  ip = 1
+  k = n / 16
+  do u = 1, 16 * k - 15, 16
+    m = pmx(ap(u), ap(u + 1))
+    t1 = pmx(ap(u + 2), ap(u + 3))
+    t2 = pmx(ap(u + 4), ap(u + 5))
+    t3 = pmx(ap(u + 6), ap(u + 7))
+    m = pmx(m, pmx(ap(u + 8), ap(u + 9)))
+    m = pmx(m, pmx(ap(u + 10), ap(u + 11)))
+    t1 = pmx(t1, pmx(ap(u + 12), ap(u + 13)))
+    t2 = pmx(t2, pmx(ap(u + 14), ap(u + 15)))
+    t1 = pmx(t1, t2)
+    t2 = pmx(t3, t1)
+    m = pmx(m, t2)
+    if (m > x) then
+      x = m
+      mb = transfer(m, 0_8)
+      ip = u + 15
+      if (transfer(ap(u + 14), 0_8) == mb) ip = u + 14
+      if (transfer(ap(u + 13), 0_8) == mb) ip = u + 13
+      if (transfer(ap(u + 12), 0_8) == mb) ip = u + 12
+      if (transfer(ap(u + 11), 0_8) == mb) ip = u + 11
+      if (transfer(ap(u + 10), 0_8) == mb) ip = u + 10
+      if (transfer(ap(u + 9), 0_8) == mb) ip = u + 9
+      if (transfer(ap(u + 8), 0_8) == mb) ip = u + 8
+      if (transfer(ap(u + 7), 0_8) == mb) ip = u + 7
+      if (transfer(ap(u + 6), 0_8) == mb) ip = u + 6
+      if (transfer(ap(u + 5), 0_8) == mb) ip = u + 5
+      if (transfer(ap(u + 4), 0_8) == mb) ip = u + 4
+      if (transfer(ap(u + 3), 0_8) == mb) ip = u + 3
+      if (transfer(ap(u + 2), 0_8) == mb) ip = u + 2
+      if (transfer(ap(u + 1), 0_8) == mb) ip = u + 1
+      if (transfer(ap(u), 0_8) == mb) ip = u
+    end if
+  end do
+  u = 16 * k + 1
+  do while (u <= n)
+    v = ap(u)
+    if (v > x) then
+      x = v
+      ip = u
+    end if
+    u = u + 1
+  end do
+  vp = x
+end subroutine argmax_with_index_fp64

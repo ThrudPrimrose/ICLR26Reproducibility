@@ -1,0 +1,54 @@
+subroutine compact_threshold_pack_fp64(out_count, packed, src, weight, n, workspace, workspace_size) bind(C, name="compact_threshold_pack_fp64")
+  use iso_c_binding, only: c_double, c_int64_t, c_int8_t
+  use omp_lib, only: omp_get_max_threads, omp_get_thread_num, omp_get_num_threads
+  implicit none
+  integer(c_int64_t), value, intent(in) :: n, workspace_size
+  integer(c_int64_t), intent(out) :: out_count(1)
+  real(c_double), intent(out) :: packed(n)
+  real(c_double), intent(in) :: src(n), weight(n)
+  integer(c_int8_t), intent(inout) :: workspace(workspace_size)
+
+  integer :: nt, t
+  integer(c_int64_t) :: i, lo, hi, c, total
+  integer(c_int64_t), allocatable :: cnt(:), off(:)
+
+  nt = omp_get_max_threads()
+  allocate(cnt(0:nt-1), off(0:nt))
+  cnt = 0
+  off = 0
+
+  !$omp parallel private(t, lo, hi, i, c)
+  t = omp_get_thread_num()
+  lo = (n * int(t, c_int64_t)) / nt + 1
+  hi = (n * int(t + 1, c_int64_t)) / nt
+  c = 0
+  do i = lo, hi
+    if (src(i) > 0.0d0) c = c + 1
+  end do
+  cnt(t) = c
+  !$omp end parallel
+
+  ! exclusive prefix sum over thread counts
+  total = 0
+  do t = 0, nt - 1
+    off(t) = total
+    total = total + cnt(t)
+  end do
+  off(nt) = total
+
+  !$omp parallel private(t, lo, hi, i, c)
+  t = omp_get_thread_num()
+  lo = (n * int(t, c_int64_t)) / nt + 1
+  hi = (n * int(t + 1, c_int64_t)) / nt
+  c = off(t)
+  do i = lo, hi
+    if (src(i) > 0.0d0) then
+      c = c + 1
+      packed(c) = src(i) * weight(i)
+    end if
+  end do
+  !$omp end parallel
+
+  out_count(1) = total
+  deallocate(cnt, off)
+end subroutine compact_threshold_pack_fp64

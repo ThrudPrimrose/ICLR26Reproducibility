@@ -1,0 +1,8 @@
+fuse_move_ifs_fp32.cpp:169:33: missed: couldn't vectorize loop
+fuse_move_ifs_fp32.cpp:171:62: missed: not vectorized: complicated access pattern.
+fuse_move_ifs_fp32.cpp:170:35: optimized: loop vectorized using 64 byte vectors and unroll factor 16
+fuse_move_ifs_fp32.cpp:170:35: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 16
+fuse_move_ifs_fp32.cpp:161:31: missed: couldn't vectorize loop
+fuse_move_ifs_fp32.cpp:161:31: missed: not vectorized: unsupported control flow in loop.
+fuse_move_ifs_fp32.cpp:163:35: optimized: loop vectorized using 64 byte vectors and unroll factor 16
+fuse_move_ifs_fp32.cpp:163:35: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 16

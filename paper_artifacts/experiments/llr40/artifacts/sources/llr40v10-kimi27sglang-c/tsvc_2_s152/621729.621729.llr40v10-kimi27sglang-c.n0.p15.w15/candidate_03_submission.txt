@@ -1,0 +1,32 @@
+#include <stdint.h>
+
+void tsvc_2_s152_fp64(double *restrict a, double *restrict b,
+                      const double *restrict c, const double *restrict d,
+                      const double *restrict e, const int64_t LEN_1D) {
+    const int64_t n = LEN_1D;
+    const int64_t n8 = n & ~7;
+#pragma omp parallel for schedule(static)
+    for (int64_t i = 0; i < n8; i += 8) {
+        double t0 = d[i+0] * e[i+0];
+        double t1 = d[i+1] * e[i+1];
+        double t2 = d[i+2] * e[i+2];
+        double t3 = d[i+3] * e[i+3];
+        double t4 = d[i+4] * e[i+4];
+        double t5 = d[i+5] * e[i+5];
+        double t6 = d[i+6] * e[i+6];
+        double t7 = d[i+7] * e[i+7];
+        b[i+0] = t0; a[i+0] += t0 * c[i+0];
+        b[i+1] = t1; a[i+1] += t1 * c[i+1];
+        b[i+2] = t2; a[i+2] += t2 * c[i+2];
+        b[i+3] = t3; a[i+3] += t3 * c[i+3];
+        b[i+4] = t4; a[i+4] += t4 * c[i+4];
+        b[i+5] = t5; a[i+5] += t5 * c[i+5];
+        b[i+6] = t6; a[i+6] += t6 * c[i+6];
+        b[i+7] = t7; a[i+7] += t7 * c[i+7];
+    }
+    for (int64_t i = n8; i < n; ++i) {
+        double t = d[i] * e[i];
+        b[i] = t;
+        a[i] += t * c[i];
+    }
+}

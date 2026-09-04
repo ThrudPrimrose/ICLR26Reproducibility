@@ -1,0 +1,11 @@
+#include <stdint.h>
+
+void tsvc_2_s1244_fp64(double *restrict a, const double *restrict b, const double *restrict c, double *restrict d,
+                       const int64_t LEN_1D) {
+  const int64_t m = LEN_1D - 1;
+  for (int64_t i = 0; i < m; i++) {
+    double f = b[i] + c[i] * c[i] + b[i] * b[i] + c[i];
+    d[i] = f + a[i + 1];
+    a[i] = f;
+  }
+}

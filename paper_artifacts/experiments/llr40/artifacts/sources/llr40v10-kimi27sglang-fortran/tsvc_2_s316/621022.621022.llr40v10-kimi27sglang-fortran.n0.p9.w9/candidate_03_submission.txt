@@ -1,0 +1,35 @@
+subroutine tsvc_2_s316_fp64(a, result, LEN_1D) bind(c, name="tsvc_2_s316_fp64")
+  use iso_c_binding, only: c_int64_t, c_double
+  implicit none
+  integer(c_int64_t), intent(in), value :: LEN_1D
+  real(c_double), intent(in) :: a(LEN_1D)
+  real(c_double), intent(out) :: result(1)
+  real(c_double) :: x0,x1,x2,x3,x4,x5,x6,x7,y
+  integer(c_int64_t) :: i, n8, rem
+
+  x0 = a(1); x1 = a(1); x2 = a(1); x3 = a(1)
+  x4 = a(1); x5 = a(1); x6 = a(1); x7 = a(1)
+
+  n8 = (LEN_1D - 1) / 8
+  rem = LEN_1D - 1 - n8*8
+
+  !$omp parallel do reduction(min:x0,x1,x2,x3,x4,x5,x6,x7) schedule(static)
+  do i = 0, n8-1
+     x0 = min(x0, a(2+i*8))
+     x1 = min(x1, a(3+i*8))
+     x2 = min(x2, a(4+i*8))
+     x3 = min(x3, a(5+i*8))
+     x4 = min(x4, a(6+i*8))
+     x5 = min(x5, a(7+i*8))
+     x6 = min(x6, a(8+i*8))
+     x7 = min(x7, a(9+i*8))
+  end do
+  !$omp end parallel do
+
+  do i = LEN_1D - rem + 1, LEN_1D
+     x0 = min(x0, a(i))
+  end do
+
+  y = min(x0,x1,x2,x3,x4,x5,x6,x7)
+  result(1) = y
+end subroutine tsvc_2_s316_fp64

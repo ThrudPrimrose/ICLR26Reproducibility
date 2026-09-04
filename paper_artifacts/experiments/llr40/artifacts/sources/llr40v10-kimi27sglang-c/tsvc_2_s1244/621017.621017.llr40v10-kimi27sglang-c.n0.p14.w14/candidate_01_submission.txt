@@ -1,0 +1,21 @@
+#include <stdint.h>
+
+void tsvc_2_s1244_fp64(double *restrict a, const double *restrict b, const double *restrict c, double *restrict d,
+                       const int64_t LEN_1D) {
+
+#pragma omp parallel
+{
+  // Phase 1: save original a[i+1] into d[i]. d[LEN_1D-1] is left untouched.
+  #pragma omp for
+  for (int64_t i = 0; i < LEN_1D - 1; i++) {
+    d[i] = a[i + 1];
+  }
+
+  // Phase 2: compute new a[i] and then d[i] = new_a[i] + original_a[i+1].
+  #pragma omp for
+  for (int64_t i = 0; i < LEN_1D - 1; i++) {
+    a[i] = b[i] + c[i] * c[i] + b[i] * b[i] + c[i];
+    d[i] = a[i] + d[i];
+  }
+}
+}

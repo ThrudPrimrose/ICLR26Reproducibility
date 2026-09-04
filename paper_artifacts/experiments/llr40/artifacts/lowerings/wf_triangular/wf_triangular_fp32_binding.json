@@ -1,0 +1,28 @@
+{
+  "kernel": "wf_triangular_fp32",
+  "abi": "c",
+  "args": [
+    {
+      "name": "a",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_2D",
+        "LEN_2D"
+      ]
+    },
+    {
+      "name": "LEN_2D",
+      "kind": "int64"
+    }
+  ],
+  "symbols": {
+    "c": "wf_triangular_fp32",
+    "cpp": "wf_triangular_fp32",
+    "fortran": "wf_triangular_fp32"
+  },
+  "sources": {
+    "c": "wf_triangular_fp32.c",
+    "cpp": "wf_triangular_fp32.cpp",
+    "fortran": "wf_triangular_fp32.f90"
+  }
+}

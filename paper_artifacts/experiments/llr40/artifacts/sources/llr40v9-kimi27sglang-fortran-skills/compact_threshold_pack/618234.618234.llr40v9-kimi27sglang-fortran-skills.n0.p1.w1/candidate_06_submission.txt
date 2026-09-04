@@ -1,0 +1,76 @@
+subroutine compact_threshold_pack_fp64(out_count, packed, src, weight, n, workspace, workspace_size) bind(C, name="compact_threshold_pack_fp64")
+  use iso_c_binding, only: c_double, c_int64_t, c_int8_t
+  implicit none
+  integer(c_int64_t), value, intent(in) :: n, workspace_size
+  integer(c_int64_t), intent(out) :: out_count(1)
+  real(c_double), intent(out) :: packed(n)
+  real(c_double), intent(in) :: src(n), weight(n)
+  integer(c_int8_t), intent(inout) :: workspace(workspace_size)
+
+  integer(c_int64_t), parameter :: BS = 65536
+  integer(c_int64_t), parameter :: WBITS = 64
+  integer :: b
+  integer(c_int64_t) :: nblocks, lo, hi, c, total
+  integer(c_int64_t) :: nw, wstart, idx, w, k, wi, nb
+  integer(c_int64_t), allocatable :: cnt(:), off(:)
+  integer(c_int64_t), allocatable :: bits(:)
+
+  nw = (n + WBITS - 1) / WBITS
+  nblocks = (n + BS - 1) / BS
+  allocate(cnt(0:nblocks-1), off(0:nblocks))
+  allocate(bits(0:nw-1))
+  cnt = 0
+  off = 0
+  bits = 0
+
+  !$omp parallel do schedule(dynamic, 1) private(b, lo, hi, wstart, wi, w, k, idx, c, nb)
+  do b = 0, int(nblocks - 1)
+    lo = int(b, c_int64_t) * BS + 1
+    hi = min(n, lo + BS - 1)
+    wstart = (lo - 1) / WBITS
+    nb = (hi - lo + 1 + WBITS - 1) / WBITS
+    c = 0
+    do wi = 0, nb - 1
+      w = 0
+      do k = 0, WBITS - 1
+        idx = (wstart + wi) * WBITS + k + 1
+        if (idx > hi) exit
+        if (src(idx) > 0.0d0) w = ibset(w, int(k))
+      end do
+      bits(wstart + wi) = w
+      c = c + int(popcnt(w), c_int64_t)
+    end do
+    cnt(b) = c
+  end do
+  !$omp end parallel do
+
+  total = 0
+  do b = 0, int(nblocks - 1)
+    off(b) = total
+    total = total + cnt(b)
+  end do
+  off(nblocks) = total
+
+  !$omp parallel do schedule(dynamic, 1) private(b, lo, hi, wstart, wi, w, k, idx, c, nb)
+  do b = 0, int(nblocks - 1)
+    lo = int(b, c_int64_t) * BS + 1
+    hi = min(n, lo + BS - 1)
+    wstart = (lo - 1) / WBITS
+    nb = (hi - lo + 1 + WBITS - 1) / WBITS
+    c = off(b)
+    do wi = 0, nb - 1
+      w = bits(wstart + wi)
+      do while (w /= 0)
+        k = int(trailz(w), c_int64_t)
+        idx = (wstart + wi) * WBITS + k + 1
+        c = c + 1
+        packed(c) = src(idx) * weight(idx)
+        w = ibclr(w, int(k))
+      end do
+    end do
+  end do
+  !$omp end parallel do
+
+  out_count(1) = total
+  deallocate(cnt, off, bits)
+end subroutine compact_threshold_pack_fp64

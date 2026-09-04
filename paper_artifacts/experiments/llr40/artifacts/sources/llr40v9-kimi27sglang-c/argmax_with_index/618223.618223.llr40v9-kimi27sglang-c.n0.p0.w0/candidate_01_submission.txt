@@ -1,0 +1,28 @@
+#include <stdint.h>
+#include <omp.h>
+
+struct pair { double val; int64_t idx; };
+
+#pragma omp declare reduction(maxidx : struct pair : \
+    omp_out = (omp_in.val > omp_out.val) ? omp_in : \
+              (omp_in.val < omp_out.val) ? omp_out : \
+              (omp_in.idx < omp_out.idx ? omp_in : omp_out))
+
+void argmax_with_index_fp64(const double *restrict a, int64_t *restrict out_index, double *restrict out_value,
+                            const int64_t LEN_1D) {
+    if (LEN_1D <= 0) {
+        out_value[0] = 0.0;
+        out_index[0] = 0;
+        return;
+    }
+    struct pair best = { a[0], 0 };
+    #pragma omp parallel for reduction(maxidx : best) schedule(static)
+    for (int64_t i = 1; i < LEN_1D; ++i) {
+        if (a[i] > best.val) {
+            best.val = a[i];
+            best.idx = i;
+        }
+    }
+    out_value[0] = best.val;
+    out_index[0] = best.idx;
+}

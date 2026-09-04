@@ -1,0 +1,12 @@
+segment_reduce_ragged_fp64.f90:11:13: missed: couldn't vectorize loop
+segment_reduce_ragged_fp64.f90:11:13: missed: not vectorized: unsupported control flow in loop.
+segment_reduce_ragged_fp64.f90:13:17: missed: couldn't vectorize loop
+segment_reduce_ragged_fp64.f90:14:59: missed: not vectorized: unsupported use in stmt.
+segment_reduce_ragged_fp64.f90:2:1: missed: statement clobbers memory: __builtin_GOMP_parallel (segment_reduce_ragged_fp64._loopfn.0, &.paral_data_store.29, 12, 0);
+segment_reduce_ragged_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+segment_reduce_ragged_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+segment_reduce_ragged_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+segment_reduce_ragged_fp64.f90:13:70: missed: couldn't vectorize loop
+segment_reduce_ragged_fp64.f90:13:70: missed: not vectorized: unsupported control flow in loop.
+segment_reduce_ragged_fp64.f90:13:17: missed: couldn't vectorize loop
+segment_reduce_ragged_fp64.f90:14:59: missed: not vectorized: unsupported use in stmt.

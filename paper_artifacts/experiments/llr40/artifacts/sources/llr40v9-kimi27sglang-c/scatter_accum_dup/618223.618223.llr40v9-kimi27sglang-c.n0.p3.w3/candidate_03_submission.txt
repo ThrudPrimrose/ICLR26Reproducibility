@@ -1,0 +1,46 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <omp.h>
+
+void scatter_accum_dup_fp64(double *restrict bins, const int32_t *restrict ip, const double *restrict src, const int64_t LEN_1D, uint8_t *restrict workspace, const int64_t workspace_size) {
+    (void)workspace_size;
+    bool is_permutation = false;
+
+    // Use workspace as a byte mask to check for duplicate indices.
+    if (workspace != NULL && workspace_size >= LEN_1D) {
+        uint8_t *seen = workspace;
+        memset(seen, 0, LEN_1D);
+        is_permutation = true;
+        for (int64_t i = 0; i < LEN_1D; ++i) {
+            int64_t idx = (int64_t)ip[i];
+            if (idx < 0 || idx >= LEN_1D || seen[idx]) {
+                is_permutation = false;
+                break;
+            }
+            seen[idx] = 1;
+        }
+    }
+
+    if (is_permutation) {
+        #pragma omp parallel for schedule(static)
+        for (int64_t i = 0; i < LEN_1D; ++i) {
+            bins[ip[i]] += src[i];
+        }
+    } else {
+        const int64_t PF = 16;
+        int64_t limit = LEN_1D - PF;
+        #pragma omp parallel for schedule(static)
+        for (int64_t i = 0; i < limit; ++i) {
+            __builtin_prefetch(&bins[ip[i + PF]], 1, 2);
+            #pragma omp atomic update
+            bins[ip[i]] += src[i];
+        }
+        #pragma omp parallel for schedule(static)
+        for (int64_t i = limit; i < LEN_1D; ++i) {
+            #pragma omp atomic update
+            bins[ip[i]] += src[i];
+        }
+    }
+}

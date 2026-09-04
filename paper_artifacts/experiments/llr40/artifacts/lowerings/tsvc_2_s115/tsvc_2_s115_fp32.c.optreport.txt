@@ -1,0 +1,9 @@
+tsvc_2_s115_fp32.c:173:39: missed: couldn't vectorize loop
+tsvc_2_s115_fp32.c:173:39: missed: not vectorized: inner-loop count not invariant.
+tsvc_2_s115_fp32.c:173:39: optimized: loop vectorized using 64 byte vectors and unroll factor 16
+tsvc_2_s115_fp32.c:173:39: optimized:  loop versioned for vectorization because of possible aliasing
+tsvc_2_s115_fp32.c:173:39: optimized: epilogue loop vectorized using 32 byte vectors and unroll factor 8
+tsvc_2_s115_fp32.c:173:39: optimized: epilogue loop vectorized using 16 byte vectors and unroll factor 4
+tsvc_2_s115_fp32.c:171:6: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s115_fp32.c:171:6: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s115_fp32.c:171:6: missed: not vectorized: vectorization is not profitable.

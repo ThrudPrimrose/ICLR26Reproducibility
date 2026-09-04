@@ -1,0 +1,2 @@
+argmax_with_index_fp64.cpp:165:31: missed: couldn't vectorize loop
+argmax_with_index_fp64.cpp:166:11: missed: not vectorized: unsupported use in stmt.

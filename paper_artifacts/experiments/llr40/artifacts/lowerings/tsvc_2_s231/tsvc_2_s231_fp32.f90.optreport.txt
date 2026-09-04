@@ -1,0 +1,5 @@
+tsvc_2_s231_fp32.f90:9:13: missed: couldn't vectorize loop
+tsvc_2_s231_fp32.f90:9:13: missed: not vectorized: unsupported outerloop form.
+tsvc_2_s231_fp32.f90:10:17: missed: couldn't vectorize loop
+tsvc_2_s231_fp32.f90:11:104: missed: not vectorized: no vectype for stmt: _5 = (*aa_21(D))[_4];
+ scalar_type: real(kind=4)

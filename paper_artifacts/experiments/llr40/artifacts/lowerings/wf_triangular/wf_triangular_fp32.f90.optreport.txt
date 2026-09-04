@@ -1,0 +1,8 @@
+wf_triangular_fp32.f90:8:13: missed: couldn't vectorize loop
+wf_triangular_fp32.f90:8:13: missed: not vectorized: inner-loop count not invariant.
+wf_triangular_fp32.f90:9:17: missed: couldn't vectorize loop
+wf_triangular_fp32.f90:11:34: missed: not vectorized: no vectype for stmt: _6 = (*a_25(D))[_5];
+ scalar_type: real(kind=4)
+wf_triangular_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.
+wf_triangular_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.
+wf_triangular_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.

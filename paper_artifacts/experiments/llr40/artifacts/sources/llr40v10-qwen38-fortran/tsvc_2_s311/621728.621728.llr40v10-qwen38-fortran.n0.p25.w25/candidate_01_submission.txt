@@ -1,0 +1,35 @@
+! TSVC tsvc_2 s311: sum of LEN_1D doubles into sum_out(1).
+! v2: OpenMP SIMD reduction.  Small n: single-thread SIMD;  large n:
+! parallel-do SIMD reduction (contiguous static chunks).
+subroutine tsvc_2_s311_fp64(a, sum_out, len_1d) bind(c, name="tsvc_2_s311_fp64")
+  use, intrinsic :: iso_c_binding
+  implicit none
+  real(c_double), dimension(*), intent(in) :: a
+  real(c_double), dimension(*), intent(out) :: sum_out
+  integer(c_int64_t), value, intent(in) :: len_1d
+  integer(c_int64_t) :: n, i
+  real(c_double) :: vs
+
+  n = len_1d
+  if (n <= 0) then
+     sum_out(1) = 0d0
+     return
+  end if
+
+  if (n < 4000000) then
+     vs = 0d0
+     !$omp simd reduction(+:vs)
+     do i = 1, n
+        vs = vs + a(i)
+     end do
+     sum_out(1) = vs
+     return
+  end if
+
+  vs = 0d0
+  !$omp parallel do simd reduction(+:vs)
+  do i = 1, n
+     vs = vs + a(i)
+  end do
+  sum_out(1) = vs
+end subroutine

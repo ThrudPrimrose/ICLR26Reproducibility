@@ -1,0 +1,2 @@
+tsvc_2_s3111_fp64.f90:10:13: missed: couldn't vectorize loop
+tsvc_2_s3111_fp64.f90:2:1: missed: not vectorized: unsupported use in stmt.

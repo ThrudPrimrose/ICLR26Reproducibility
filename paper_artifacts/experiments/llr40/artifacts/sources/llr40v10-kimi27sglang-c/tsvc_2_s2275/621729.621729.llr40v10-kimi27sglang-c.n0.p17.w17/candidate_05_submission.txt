@@ -1,0 +1,41 @@
+#include <stdint.h>
+#include <omp.h>
+#include <immintrin.h>
+
+void tsvc_2_s2275_fp64(double *restrict a, double *restrict aa, const double *restrict b, const double *restrict bb,
+                       const double *restrict c, const double *restrict cc, const double *restrict d,
+                       const int64_t LEN_2D) {
+
+    const int64_t n2 = LEN_2D * LEN_2D;
+    const int64_t n2_vec = n2 / 8;
+
+#pragma omp parallel for
+    for (int64_t kk = 0; kk < n2_vec; ++kk) {
+        int64_t k = kk * 8;
+        __m512d va = _mm512_loadu_pd(&aa[k]);
+        __m512d vb = _mm512_loadu_pd(&bb[k]);
+        __m512d vc = _mm512_loadu_pd(&cc[k]);
+        va = _mm512_fmadd_pd(vb, vc, va);
+        _mm512_storeu_pd(&aa[k], va);
+    }
+
+    for (int64_t k = n2_vec * 8; k < n2; ++k) {
+        aa[k] = aa[k] + bb[k] * cc[k];
+    }
+
+    const int64_t n_vec = LEN_2D / 8;
+#pragma omp parallel for
+    for (int64_t ii = 0; ii < n_vec; ++ii) {
+        int64_t i = ii * 8;
+        __m512d va = _mm512_loadu_pd(&a[i]);
+        __m512d vb = _mm512_loadu_pd(&b[i]);
+        __m512d vc = _mm512_loadu_pd(&c[i]);
+        __m512d vd = _mm512_loadu_pd(&d[i]);
+        va = _mm512_fmadd_pd(vc, vd, vb);
+        _mm512_storeu_pd(&a[i], va);
+    }
+
+    for (int64_t i = n_vec * 8; i < LEN_2D; ++i) {
+        a[i] = b[i] + c[i] * d[i];
+    }
+}

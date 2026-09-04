@@ -1,0 +1,8 @@
+tsvc_2_s2233_fp64.f90:10:13: missed: couldn't vectorize loop
+tsvc_2_s2233_fp64.f90:10:13: missed: not vectorized: loop nest containing two or more consecutive inner loops cannot be vectorized
+tsvc_2_s2233_fp64.f90:14:17: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+tsvc_2_s2233_fp64.f90:14:17: optimized:  loop versioned for vectorization because of possible aliasing
+tsvc_2_s2233_fp64.f90:14:17: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+tsvc_2_s2233_fp64.f90:11:17: missed: couldn't vectorize loop
+tsvc_2_s2233_fp64.f90:12:104: missed: not vectorized: no vectype for stmt: _5 = (*aa_35(D))[_4];
+ scalar_type: real(kind=8)

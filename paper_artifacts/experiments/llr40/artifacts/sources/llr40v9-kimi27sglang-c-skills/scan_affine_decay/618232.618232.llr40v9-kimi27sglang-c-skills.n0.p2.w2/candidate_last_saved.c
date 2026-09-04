@@ -1,0 +1,89 @@
+#include <stdint.h>
+#include <omp.h>
+
+void scan_affine_decay_fp64(const double *restrict c, const double *restrict x,
+                            double *restrict y, int64_t LEN_1D,
+                            uint8_t *restrict workspace, int64_t workspace_size) {
+    if (LEN_1D <= 0) return;
+
+    int64_t nthreads = omp_get_max_threads();
+    int64_t target = nthreads * 14;
+    if (target < 16) target = 16;
+    int64_t BS = (LEN_1D + target - 1) / target;
+    if (BS < 1024) BS = 1024;
+
+    if (LEN_1D <= BS) {
+        y[0] = x[0];
+        for (int64_t i = 1; i < LEN_1D; ++i) {
+            y[i] = c[i] * y[i - 1] + x[i];
+        }
+        return;
+    }
+
+    int64_t NB = (LEN_1D + BS - 1) / BS;
+    if (workspace_size < 16 * NB) {
+        y[0] = x[0];
+        for (int64_t i = 1; i < LEN_1D; ++i) {
+            y[i] = c[i] * y[i - 1] + x[i];
+        }
+        return;
+    }
+
+    double *restrict A = (double *restrict)workspace;
+    double *restrict B = A + NB;
+
+    #pragma omp parallel
+    {
+        #pragma omp for schedule(dynamic, 8)
+        for (int64_t k = 0; k < NB; ++k) {
+            int64_t l = k * BS;
+            int64_t r = l + BS;
+            if (r > LEN_1D) r = LEN_1D;
+            double a = 1.0;
+            double b = 0.0;
+            if (r < LEN_1D) {
+                for (int64_t i = l + 1; i <= r; ++i) {
+                    a *= c[i];
+                    b = b * c[i] + x[i];
+                }
+            } else {
+                for (int64_t i = l + 1; i < r; ++i) {
+                    a *= c[i];
+                    b = b * c[i] + x[i];
+                }
+            }
+            A[k] = a;
+            B[k] = b;
+        }
+
+        #pragma omp single
+        {
+            double prefix_a = 1.0;
+            double prefix_b = 0.0;
+            for (int64_t k = 0; k < NB; ++k) {
+                double ak = A[k];
+                double bk = B[k];
+                A[k] = prefix_a;
+                B[k] = prefix_b;
+                double new_a = ak * prefix_a;
+                double new_b = ak * prefix_b + bk;
+                prefix_a = new_a;
+                prefix_b = new_b;
+            }
+        }
+
+        double y0 = x[0];
+        #pragma omp for schedule(dynamic, 8)
+        for (int64_t k = 0; k < NB; ++k) {
+            int64_t l = k * BS;
+            int64_t r = l + BS;
+            if (r > LEN_1D) r = LEN_1D;
+            double acc = A[k] * y0 + B[k];
+            y[l] = acc;
+            for (int64_t i = l + 1; i < r; ++i) {
+                acc = c[i] * acc + x[i];
+                y[i] = acc;
+            }
+        }
+    }
+}

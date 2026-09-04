@@ -1,0 +1,48 @@
+{
+  "kernel": "segment_reduce_ragged_fp64",
+  "abi": "c",
+  "args": [
+    {
+      "name": "out",
+      "kind": "ptr_double",
+      "shape": [
+        "NSEG"
+      ]
+    },
+    {
+      "name": "row_ptr",
+      "kind": "ptr_int64",
+      "shape": [
+        "NSEG + 1"
+      ]
+    },
+    {
+      "name": "val",
+      "kind": "ptr_double",
+      "shape": [
+        "NSEG * 24"
+      ]
+    },
+    {
+      "name": "w",
+      "kind": "ptr_double",
+      "shape": [
+        "NSEG * 24"
+      ]
+    },
+    {
+      "name": "NSEG",
+      "kind": "int64"
+    }
+  ],
+  "symbols": {
+    "c": "segment_reduce_ragged_fp64",
+    "cpp": "segment_reduce_ragged_fp64",
+    "fortran": "segment_reduce_ragged_fp64"
+  },
+  "sources": {
+    "c": "segment_reduce_ragged_fp64.c",
+    "cpp": "segment_reduce_ragged_fp64.cpp",
+    "fortran": "segment_reduce_ragged_fp64.f90"
+  }
+}

@@ -1,0 +1,1 @@
+quasi_affine_reduce_odd_fp32.c:173:31: optimized: loop vectorized using 64 byte vectors and unroll factor 16

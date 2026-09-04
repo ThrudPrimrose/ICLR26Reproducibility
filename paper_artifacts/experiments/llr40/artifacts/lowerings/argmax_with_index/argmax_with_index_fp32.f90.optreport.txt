@@ -1,0 +1,12 @@
+argmax_with_index_fp32.f90:16:18:
+
+   16 |             idx = i_l0
+      |                  1
+Warning: Possible change of value in conversion from INTEGER(8) to REAL(4) at (1) [-Wconversion]
+argmax_with_index_fp32.f90:20:25:
+
+   20 |     out_index((0) + 1) = (idx) + 1
+      |                         1
+Warning: Possible change of value in conversion from REAL(4) to INTEGER(8) at (1) [-Wconversion]
+argmax_with_index_fp32.f90:13:13: missed: couldn't vectorize loop
+argmax_with_index_fp32.f90:2:1: missed: not vectorized: unsupported use in stmt.

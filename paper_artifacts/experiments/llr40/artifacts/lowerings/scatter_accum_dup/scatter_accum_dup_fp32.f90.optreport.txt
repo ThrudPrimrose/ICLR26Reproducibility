@@ -1,0 +1,3 @@
+scatter_accum_dup_fp32.f90:10:13: missed: couldn't vectorize loop
+scatter_accum_dup_fp32.f90:11:103: missed: not vectorized: no vectype for stmt: _4 = (*bins_13(D))[_3];
+ scalar_type: real(kind=4)

@@ -1,0 +1,73 @@
+module tsvc_2_s318_mod
+  use iso_c_binding
+  use omp_lib
+  implicit none
+
+  type :: maxloc_t
+    real(c_double) :: maxv
+    integer(c_int64_t) :: idx
+  end type maxloc_t
+
+contains
+
+  subroutine tsvc_2_s318_fp64(a, result, LEN_1D, inc) bind(c, name='tsvc_2_s318_fp64')
+    real(c_double), intent(in) :: a(*)
+    real(c_double), intent(out) :: result(*)
+    integer(c_int64_t), value, intent(in) :: LEN_1D, inc
+
+    integer :: nthreads, tid
+    integer(c_int64_t) :: chunk, istart, iend, i
+    real(c_double) :: tmaxv, v
+    integer(c_int64_t) :: tidx
+    logical :: mask
+    type(maxloc_t) :: best
+
+    if (LEN_1D < 1024_c_int64_t) then
+      ! Sequential for small inputs
+      best%maxv = abs(a(1))
+      best%idx = 0_c_int64_t
+      do i = 2_c_int64_t, LEN_1D
+        v = abs(a(1_c_int64_t + inc * (i - 1_c_int64_t)))
+        if (v > best%maxv) then
+          best%maxv = v
+          best%idx = i - 1_c_int64_t
+        end if
+      end do
+    else
+      best = maxloc_t(abs(a(1)), 0_c_int64_t)
+
+      !$omp parallel private(nthreads, tid, chunk, istart, iend, i, tmaxv, v, tidx, mask)
+      nthreads = omp_get_num_threads()
+      tid = omp_get_thread_num()
+      chunk = (LEN_1D + int(nthreads, c_int64_t) - 1_c_int64_t) / int(nthreads, c_int64_t)
+      istart = 1_c_int64_t + int(tid, c_int64_t) * chunk
+      iend = min(istart + chunk - 1_c_int64_t, LEN_1D)
+
+      if (istart > iend) then
+        tmaxv = -huge(1.0_c_double)
+        tidx = huge(1_c_int64_t)
+      else
+        tmaxv = abs(a(1_c_int64_t + inc * (istart - 1_c_int64_t)))
+        tidx = istart - 1_c_int64_t
+        !$omp simd
+        do i = istart + 1_c_int64_t, iend
+          v = abs(a(1_c_int64_t + inc * (i - 1_c_int64_t)))
+          mask = v > tmaxv
+          tmaxv = merge(v, tmaxv, mask)
+          tidx = merge(i - 1_c_int64_t, tidx, mask)
+        end do
+        !$omp end simd
+      end if
+
+      !$omp critical
+      if (tmaxv > best%maxv .or. (tmaxv == best%maxv .and. tidx < best%idx)) then
+        best%maxv = tmaxv
+        best%idx = tidx
+      end if
+      !$omp end critical
+      !$omp end parallel
+    end if
+
+    result(1) = best%maxv + dble(best%idx)
+  end subroutine tsvc_2_s318_fp64
+end module tsvc_2_s318_mod

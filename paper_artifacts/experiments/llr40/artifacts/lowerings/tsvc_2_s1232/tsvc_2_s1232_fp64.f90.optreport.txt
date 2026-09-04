@@ -1,0 +1,14 @@
+tsvc_2_s1232_fp64.f90:11:13: missed: couldn't vectorize loop
+tsvc_2_s1232_fp64.f90:11:13: missed: not vectorized: unsupported control flow in loop.
+tsvc_2_s1232_fp64.f90:12:17: missed: couldn't vectorize loop
+tsvc_2_s1232_fp64.f90:13:98: missed: not vectorized: no vectype for stmt: _37 = (*bb_20(D))[_38];
+ scalar_type: real(kind=8)
+tsvc_2_s1232_fp64.f90:2:1: missed: statement clobbers memory: __builtin_GOMP_parallel (tsvc_2_s1232_fp64._loopfn.0, &.paral_data_store.34, 12, 0);
+tsvc_2_s1232_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s1232_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s1232_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s1232_fp64.f90:12:45: missed: couldn't vectorize loop
+tsvc_2_s1232_fp64.f90:12:45: missed: not vectorized: unsupported control flow in loop.
+tsvc_2_s1232_fp64.f90:12:17: missed: couldn't vectorize loop
+tsvc_2_s1232_fp64.f90:13:98: missed: not vectorized: no vectype for stmt: _31 = (*bb.30_8)[_30];
+ scalar_type: real(kind=8)

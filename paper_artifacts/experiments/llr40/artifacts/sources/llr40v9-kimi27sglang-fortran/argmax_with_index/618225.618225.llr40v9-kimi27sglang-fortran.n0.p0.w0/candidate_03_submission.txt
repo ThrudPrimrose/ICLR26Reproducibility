@@ -1,0 +1,72 @@
+subroutine argmax_with_index_fp64(a, out_index, out_value, LEN_1D) bind(C, name="argmax_with_index_fp64")
+    use iso_c_binding
+    use omp_lib
+    implicit none
+    real(c_double), intent(in) :: a(*)
+    integer(c_int64_t), intent(out) :: out_index(*)
+    real(c_double), intent(out) :: out_value(*)
+    integer(c_int64_t), intent(in), value :: LEN_1D
+
+    integer(c_int64_t), parameter :: MAX_THREADS = 256
+    integer(c_int64_t), parameter :: V = 16
+    real(c_double) :: block_max(MAX_THREADS)
+    integer(c_int64_t) :: block_idx(MAX_THREADS)
+    real(c_double) :: x, bx, gv
+    integer(c_int64_t) :: idx, bidx, gi, i, j, t, nthreads, start, end
+
+    if (LEN_1D <= 0) then
+        out_value(1) = a(1)
+        out_index(1) = 1
+        return
+    end if
+
+    nthreads = 1
+    !$ nthreads = omp_get_max_threads()
+    if (LEN_1D < 4096 .or. nthreads <= 1) then
+        idx = maxloc(a(1:LEN_1D), dim=1)
+        out_value(1) = a(idx)
+        out_index(1) = idx
+        return
+    end if
+
+    if (nthreads > MAX_THREADS) nthreads = MAX_THREADS
+
+    !$omp parallel num_threads(nthreads) proc_bind(close) private(t,start,end,i,j,bx,bidx,gv,gi)
+    t = omp_get_thread_num() + 1
+    start = ((t - 1_c_int64_t) * LEN_1D) / nthreads + 1
+    end = (t * LEN_1D) / nthreads
+    bx = a(start)
+    bidx = start
+    j = start + 1
+    do while (j + V - 1 <= end)
+        gi = maxloc(a(j:j+V-1), dim=1) + j - 1
+        gv = a(gi)
+        if (gv > bx) then
+            bx = gv
+            bidx = gi
+        end if
+        j = j + V
+    end do
+    do i = j, end
+        if (a(i) > bx) then
+            bx = a(i)
+            bidx = i
+        end if
+    end do
+    block_max(t) = bx
+    block_idx(t) = bidx
+    !$omp end parallel
+
+    x = block_max(1)
+    idx = block_idx(1)
+    do i = 2, nthreads
+        bx = block_max(i)
+        if (bx > x) then
+            x = bx
+            idx = block_idx(i)
+        end if
+    end do
+
+    out_value(1) = x
+    out_index(1) = idx
+end subroutine argmax_with_index_fp64

@@ -1,0 +1,34 @@
+{
+  "kernel": "fuse_diamond_fp64",
+  "abi": "c",
+  "args": [
+    {
+      "name": "a",
+      "kind": "ptr_double",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "out",
+      "kind": "ptr_double",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "LEN_1D",
+      "kind": "int64"
+    }
+  ],
+  "symbols": {
+    "c": "fuse_diamond_fp64",
+    "cpp": "fuse_diamond_fp64",
+    "fortran": "fuse_diamond_fp64"
+  },
+  "sources": {
+    "c": "fuse_diamond_fp64.c",
+    "cpp": "fuse_diamond_fp64.cpp",
+    "fortran": "fuse_diamond_fp64.f90"
+  }
+}

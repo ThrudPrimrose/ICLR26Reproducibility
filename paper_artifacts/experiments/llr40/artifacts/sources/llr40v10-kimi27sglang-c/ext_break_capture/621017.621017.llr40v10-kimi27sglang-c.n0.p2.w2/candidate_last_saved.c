@@ -1,0 +1,119 @@
+#include <stdint.h>
+#include <immintrin.h>
+#include <omp.h>
+
+extern int setenv(const char *name, const char *value, int overwrite);
+
+__attribute__((constructor))
+static void init_omp(void) {
+    setenv("OMP_WAIT_POLICY", "active", 1);
+    setenv("OMP_PROC_BIND", "true", 1);
+    setenv("OMP_PLACES", "cores", 1);
+    omp_set_dynamic(0);
+}
+
+static __attribute__((noinline)) void scan_seq_avx512(const double *restrict a, int64_t n,
+                                                      int64_t *restrict out_index,
+                                                      double *restrict out_value) {
+    const double k = 1.0;
+    out_index[0] = -1;
+    out_value[0] = -1.0;
+    const __m512d vk = _mm512_set1_pd(k);
+    int64_t i = 0;
+    for (; i + 8 <= n; i += 8) {
+        __m512d va = _mm512_loadu_pd(a + i);
+        __mmask8 m = _mm512_cmp_pd_mask(va, vk, _CMP_GT_OQ);
+        if (m) {
+            int lane = __builtin_ctzll((unsigned long long)m);
+            out_index[0] = i + lane;
+            out_value[0] = a[i + lane];
+            return;
+        }
+    }
+    for (; i < n; ++i) {
+        if (a[i] > k) {
+            out_index[0] = i;
+            out_value[0] = a[i];
+            return;
+        }
+    }
+}
+
+static inline int64_t scan_block_avx512(const double *restrict a, int64_t start, int64_t end, double k) {
+    const __m512d vk = _mm512_set1_pd(k);
+    int64_t i = start;
+    for (; i + 8 <= end; i += 8) {
+        __m512d va = _mm512_loadu_pd(a + i);
+        __mmask8 m = _mm512_cmp_pd_mask(va, vk, _CMP_GT_OQ);
+        if (m) {
+            int lane = __builtin_ctzll((unsigned long long)m);
+            return i + lane;
+        }
+    }
+    for (; i < end; ++i) {
+        if (a[i] > k) return i;
+    }
+    return INT64_MAX;
+}
+
+static __attribute__((noinline)) void capture_par(const double *restrict a,
+                                                  int64_t *restrict out_index,
+                                                  double *restrict out_value,
+                                                  int64_t LEN_1D) {
+    const double k = 1.0;
+    int64_t best = INT64_MAX;
+
+    const int64_t BLOCK = 262144;
+    const int64_t num_blocks = (LEN_1D + BLOCK - 1) / BLOCK;
+
+    #pragma omp parallel
+    {
+        #pragma omp for schedule(dynamic, 1)
+        for (int64_t b = 0; b < num_blocks; ++b) {
+            int64_t start = b * BLOCK;
+            int64_t end = start + BLOCK;
+            if (end > LEN_1D) end = LEN_1D;
+
+            int64_t cur_best;
+            #pragma omp atomic read
+            cur_best = best;
+            if (cur_best <= start) continue;
+
+            int64_t local = scan_block_avx512(a, start, end, k);
+            if (local < LEN_1D) {
+                int64_t old = cur_best;
+                while (local < old) {
+                    int64_t expected = old;
+                    if (__atomic_compare_exchange_n(&best, &expected, local,
+                                                    0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED)) {
+                        break;
+                    }
+                    old = expected;
+                }
+            }
+        }
+    }
+
+    if (best < LEN_1D) {
+        out_index[0] = best;
+        out_value[0] = a[best];
+    } else {
+        out_index[0] = -1;
+        out_value[0] = -1.0;
+    }
+}
+
+void ext_break_capture_fp64(const double *restrict a, int64_t *restrict out_index,
+                            double *restrict out_value, const int64_t LEN_1D) {
+    if (LEN_1D <= 0) {
+        out_index[0] = -1;
+        out_value[0] = -1.0;
+        return;
+    }
+
+    if (LEN_1D < 262144) {
+        scan_seq_avx512(a, LEN_1D, out_index, out_value);
+    } else {
+        capture_par(a, out_index, out_value, LEN_1D);
+    }
+}

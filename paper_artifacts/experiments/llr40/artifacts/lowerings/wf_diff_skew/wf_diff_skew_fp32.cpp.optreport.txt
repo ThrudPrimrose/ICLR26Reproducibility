@@ -1,0 +1,6 @@
+wf_diff_skew_fp32.cpp:161:31: missed: couldn't vectorize loop
+wf_diff_skew_fp32.cpp:163:59: missed: not vectorized: complicated access pattern.
+wf_diff_skew_fp32.cpp:162:33: optimized: loop vectorized using 64 byte vectors and unroll factor 16
+wf_diff_skew_fp32.cpp:162:33: optimized:  loop versioned for vectorization because of possible aliasing
+wf_diff_skew_fp32.cpp:162:33: optimized: epilogue loop vectorized using 32 byte vectors and unroll factor 8
+wf_diff_skew_fp32.cpp:162:33: optimized: epilogue loop vectorized using 16 byte vectors and unroll factor 4

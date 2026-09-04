@@ -1,0 +1,2 @@
+tsvc_2_s3111_fp32.cpp:163:31: optimized: loop vectorized using 64 byte vectors and unroll factor 16
+tsvc_2_s3111_fp32.cpp:163:31: optimized: epilogue loop vectorized using 32 byte vectors and unroll factor 8

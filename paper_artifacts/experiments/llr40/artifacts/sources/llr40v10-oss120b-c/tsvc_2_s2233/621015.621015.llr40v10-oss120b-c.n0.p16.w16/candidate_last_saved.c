@@ -1,0 +1,42 @@
+/* Optimized version of TSVC tsvc_2 s2233 kernel.
+ * Original algorithm computes column-wise prefix sums of aa and row-wise prefix sums of bb,
+ * starting at index 8. The baseline implementation uses nested loops with poor memory stride.
+ * This version swaps the outer loop of the first stage to iterate over rows (j) and then
+ * vectorizes the inner loop over columns (i) for contiguous accesses, improving cache usage
+ * and allowing auto-vectorization. The second stage already accesses contiguous memory in the
+ * inner loop, so we keep its loop order but add a SIMD pragma to encourage vectorization.
+ * The code uses restrict pointers and explicit pointer arithmetic for the compiler to
+ * generate efficient code. OpenMP SIMD pragmas are used, but no threading parallelism is
+ * added because both stages contain loop-carried dependencies that prevent safe
+ * parallelization across the outer dimension.
+ */
+
+#include <stdint.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+    // Stage 1: compute aa[j,i] = aa[j-1,i] + cc[j,i] for j,i >= 8.
+    // Swap loops to make inner loop over i (contiguous) and outer loop over j (sequential due to dependence).
+    for (int64_t j = 8; j < LEN_2D; ++j) {
+        const double *c_row = cc + j * LEN_2D;
+        const double *prev_aa_row = aa + (j - 1) * LEN_2D;
+        double *aa_row = aa + j * LEN_2D;
+        // Vectorizable inner loop over columns i.
+        #pragma omp simd
+        for (int64_t i = 8; i < LEN_2D; ++i) {
+            aa_row[i] = prev_aa_row[i] + c_row[i];
+        }
+    }
+
+    // Stage 2: compute bb[i,j] = bb[i-1,j] + cc[i,j] for i,j >= 8.
+    // The original ordering already has a contiguous inner loop over j.
+    for (int64_t i = 8; i < LEN_2D; ++i) {
+        const double *c_row = cc + i * LEN_2D;
+        const double *prev_bb_row = bb + (i - 1) * LEN_2D;
+        double *bb_row = bb + i * LEN_2D;
+        #pragma omp simd
+        for (int64_t j = 8; j < LEN_2D; ++j) {
+            bb_row[j] = prev_bb_row[j] + c_row[j];
+        }
+    }
+}
+

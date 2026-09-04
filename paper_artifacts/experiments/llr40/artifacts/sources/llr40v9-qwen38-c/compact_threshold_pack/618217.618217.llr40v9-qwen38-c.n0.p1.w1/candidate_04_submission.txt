@@ -1,0 +1,112 @@
+/* compact_threshold_pack -- lockstep-round stream compaction (24 B/elem DRAM).
+ *
+ * Blocks of B elements are processed in rounds: round r covers blocks
+ * [r*nt, r*nt+nt) (block b = elements [b*B, min((b+1)*B, LEN))).
+ *   phase 1: each thread reads its block's src, counts survivors -> cur[r&1][tid].
+ *   barrier
+ *   phase 2: base = run_total + prefix(cur); src is L2/L3-hot, so the block's
+ *            products are compacted (256-entry LUT + permutexvar) and stored
+ *            contiguously; weight is read once, packed written once.
+ * Double-buffered per-round counts avoid a second barrier.
+ * B is a compile-time knob (CTP_B).
+ */
+#include <stdint.h>
+#include <immintrin.h>
+#include <omp.h>
+
+#ifndef CTP_B
+#define CTP_B 131072
+#endif
+
+static int64_t ctp_lut[256][8] __attribute__((aligned(64)));
+__attribute__((constructor)) static void ctp_lut_build(void) {
+  for (int m = 0; m < 256; m++) {
+    int dset = 0;
+    for (int b = 0; b < 8; b++)
+      if (m & (1 << b)) ctp_lut[m][dset++] = 0x3FF0000000000000LL + b;
+    for (int d = dset; d < 8; d++) ctp_lut[m][d] = 0x3FF0000000000000LL + d;
+  }
+}
+
+void compact_threshold_pack_fp64(int64_t *restrict out_count,
+                                 double *restrict packed,
+                                 const double *restrict src,
+                                 const double *restrict weight,
+                                 const int64_t LEN_1D) {
+  if (LEN_1D <= 0) {
+    out_count[0] = 0;
+    return;
+  }
+
+  int nt = omp_get_max_threads();
+  if (nt < 1) nt = 1;
+  if (nt > 32) nt = 32;
+  const int64_t B = CTP_B;
+  const int64_t nblocks = (LEN_1D + B - 1) / B;
+  static int64_t cur[2][32];
+  const __m512d zero = _mm512_setzero_pd();
+
+  #pragma omp parallel num_threads(nt)
+  {
+    int tid = omp_get_thread_num();
+    int64_t run_total = 0;
+    for (int64_t r = 0; r * nt < nblocks; r++) {
+      int64_t b = r * nt + (int64_t)tid;
+      int64_t n_b = 0;
+      const double *s = 0;
+      const double *w = 0;
+      if (b < nblocks) {
+        int64_t lo = b * B;
+        n_b = (lo + B > LEN_1D) ? (LEN_1D - lo) : B;
+        s = src + lo;
+        w = weight + lo;
+      }
+
+      /* phase 1: count survivors in this block (src read #1) */
+      int64_t cnt = 0;
+      {
+        int64_t i = 0;
+        for (; i + 16 <= n_b; i += 16) {
+          __mmask8 m1 = _mm512_cmp_pd_mask(_mm512_loadu_pd(s + i), zero, _CMP_GT_OQ);
+          __mmask8 m2 = _mm512_cmp_pd_mask(_mm512_loadu_pd(s + i + 8), zero, _CMP_GT_OQ);
+          cnt += (int64_t)__builtin_popcount(m1) + (int64_t)__builtin_popcount(m2);
+        }
+        for (; i < n_b; i++) cnt += (s[i] > 0.0);
+      }
+      cur[r & 1][tid] = cnt;
+
+      #pragma omp barrier
+
+      if (n_b) {
+        int64_t base = run_total;
+        for (int t = 0; t < tid; t++) base += cur[r & 1][t];
+
+        /* phase 2: compact + store (src re-read hits L2/L3) */
+        int64_t run = base;
+        int64_t i = 0;
+        for (; i + 16 <= n_b; i += 16) {
+          __m512d sA = _mm512_loadu_pd(s + i);
+          __m512d sB = _mm512_loadu_pd(s + i + 8);
+          __mmask8 mA = _mm512_cmp_pd_mask(sA, zero, _CMP_GT_OQ);
+          __mmask8 mB = _mm512_cmp_pd_mask(sB, zero, _CMP_GT_OQ);
+          __m512d pA = _mm512_mul_pd(sA, _mm512_loadu_pd(w + i));
+          __m512d pB = _mm512_mul_pd(sB, _mm512_loadu_pd(w + i + 8));
+          __m512d cA = _mm512_permutexvar_pd(_mm512_loadu_si512((const void *)ctp_lut[mA]), pA);
+          __m512d cB = _mm512_permutexvar_pd(_mm512_loadu_si512((const void *)ctp_lut[mB]), pB);
+          int cntA = __builtin_popcount(mA);
+          int cntB = __builtin_popcount(mB);
+          _mm512_mask_storeu_pd(packed + run, (__mmask8)((1u << cntA) - 1u), cA);
+          _mm512_mask_storeu_pd(packed + run + cntA, (__mmask8)((1u << cntB) - 1u), cB);
+          run += (int64_t)cntA + (int64_t)cntB;
+        }
+        for (; i < n_b; i++)
+          if (s[i] > 0.0) {
+            packed[run] = s[i] * w[i];
+            run++;
+          }
+      }
+      for (int t = 0; t < nt; t++) run_total += cur[r & 1][t];
+    }
+    if (tid == 0) out_count[0] = run_total;
+  }
+}

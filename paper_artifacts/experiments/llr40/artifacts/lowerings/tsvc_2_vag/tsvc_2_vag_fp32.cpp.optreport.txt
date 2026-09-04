@@ -1,0 +1,3 @@
+tsvc_2_vag_fp32.cpp:161:31: missed: couldn't vectorize loop
+tsvc_2_vag_fp32.cpp:162:38: missed: not vectorized: no vectype for stmt: _9 = *_7;
+ scalar_type: const float

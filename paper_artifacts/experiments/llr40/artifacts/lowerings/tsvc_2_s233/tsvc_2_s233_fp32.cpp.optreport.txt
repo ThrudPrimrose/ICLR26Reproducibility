@@ -1,0 +1,8 @@
+tsvc_2_s233_fp32.cpp:161:31: missed: couldn't vectorize loop
+tsvc_2_s233_fp32.cpp:161:31: missed: not vectorized: loop nest containing two or more consecutive inner loops cannot be vectorized
+tsvc_2_s233_fp32.cpp:165:33: missed: couldn't vectorize loop
+tsvc_2_s233_fp32.cpp:166:66: missed: not vectorized: no vectype for stmt: _22 = *_21;
+ scalar_type: float
+tsvc_2_s233_fp32.cpp:162:33: missed: couldn't vectorize loop
+tsvc_2_s233_fp32.cpp:163:66: missed: not vectorized: no vectype for stmt: _7 = *_6;
+ scalar_type: float

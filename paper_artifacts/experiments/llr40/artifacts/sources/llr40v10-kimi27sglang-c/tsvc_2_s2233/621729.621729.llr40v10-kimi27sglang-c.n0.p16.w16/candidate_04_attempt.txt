@@ -1,0 +1,20 @@
+#include <stdint.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+
+  /* Process row-by-row, updating one row of aa and one row of bb together.
+   * This is equivalent to the original column-by-column aa / row-by-row bb
+   * because each element depends only on the element directly above it.
+   * Fusing lets us read cc[r,*] once and use it for both updates. */
+  #pragma omp parallel
+  {
+    for (int64_t r = 8; r < LEN_2D; ++r) {
+      #pragma omp for simd schedule(static)
+      for (int64_t k = 8; k < LEN_2D; ++k) {
+        const double c = cc[r * LEN_2D + k];
+        aa[r * LEN_2D + k] = aa[(r - 1) * LEN_2D + k] + c;
+        bb[r * LEN_2D + k] = bb[(r - 1) * LEN_2D + k] + c;
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+segment_reduce_ragged_fp32.cpp:162:31: missed: couldn't vectorize loop
+segment_reduce_ragged_fp32.cpp:162:31: missed: not vectorized: unsupported control flow in loop.
+segment_reduce_ragged_fp32.cpp:164:42: optimized: loop vectorized using 64 byte vectors and unroll factor 16
+segment_reduce_ragged_fp32.cpp:164:42: optimized: epilogue loop vectorized using 32 byte vectors and unroll factor 8
+segment_reduce_ragged_fp32.cpp:164:42: optimized: epilogue loop vectorized using 16 byte vectors and unroll factor 4

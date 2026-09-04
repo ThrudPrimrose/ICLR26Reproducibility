@@ -1,0 +1,81 @@
+subroutine scan_affine_decay_fp64(c, x, y, LEN_1D, workspace, workspace_size) bind(C, name="scan_affine_decay_fp64")
+    use, intrinsic :: iso_c_binding
+    use omp_lib
+    implicit none
+    integer(c_int64_t), value, intent(in) :: LEN_1D, workspace_size
+    real(c_double), intent(in) :: c(LEN_1D), x(LEN_1D)
+    real(c_double), intent(inout) :: y(LEN_1D)
+    integer(c_int8_t), dimension(*), intent(inout) :: workspace
+    integer(c_int) :: nthreads_max, nthreads_actual, tid
+    integer(c_int64_t) :: nsteps, block_size, start_i, finish_i, i
+    real(c_double), allocatable :: block_A(:), block_B(:)
+    real(c_double) :: A, B, init_val
+
+    if (LEN_1D <= 1) return
+
+    nthreads_max = omp_get_max_threads()
+
+    if (nthreads_max == 1 .or. LEN_1D < 10000) then
+        do i = 2, LEN_1D
+            y(i) = c(i) * y(i - 1) + x(i)
+        end do
+        return
+    end if
+
+    allocate(block_A(nthreads_max), block_B(nthreads_max))
+    nsteps = LEN_1D - 1
+
+    !$omp parallel default(none) shared(c, x, y, block_A, block_B, LEN_1D, nsteps) &
+    !$omp private(nthreads_actual, block_size, tid, start_i, finish_i, i, A, B, init_val)
+    nthreads_actual = omp_get_num_threads()
+    block_size = (nsteps + int(nthreads_actual, c_int64_t) - 1) / int(nthreads_actual, c_int64_t)
+    tid = omp_get_thread_num()
+    start_i = int(tid, c_int64_t) * block_size + 2
+    finish_i = min((int(tid, c_int64_t) + 1) * block_size + 1, LEN_1D)
+
+    ! Phase 1: compute affine pair for this block
+    if (start_i <= finish_i) then
+        A = 1.0_c_double
+        B = 0.0_c_double
+        do i = start_i, finish_i
+            A = c(i) * A
+            B = c(i) * B + x(i)
+        end do
+        block_A(tid + 1) = A
+        block_B(tid + 1) = B
+    else
+        block_A(tid + 1) = 1.0_c_double
+        block_B(tid + 1) = 0.0_c_double
+    end if
+
+    !$omp barrier
+
+    ! Phase 2: prefix scan of block pairs
+    !$omp single
+    do i = 2, nthreads_actual
+        A = block_A(i)
+        B = block_B(i)
+        block_A(i) = A * block_A(i - 1)
+        block_B(i) = A * block_B(i - 1) + B
+    end do
+    !$omp end single
+
+    !$omp barrier
+
+    ! Phase 3: scan the block using the prefix value
+    if (tid == 0) then
+        init_val = y(1)
+    else
+        init_val = block_A(tid) * y(1) + block_B(tid)
+    end if
+
+    if (start_i <= finish_i) then
+        y(start_i) = c(start_i) * init_val + x(start_i)
+        do i = start_i + 1, finish_i
+            y(i) = c(i) * y(i - 1) + x(i)
+        end do
+    end if
+    !$omp end parallel
+
+    deallocate(block_A, block_B)
+end subroutine scan_affine_decay_fp64

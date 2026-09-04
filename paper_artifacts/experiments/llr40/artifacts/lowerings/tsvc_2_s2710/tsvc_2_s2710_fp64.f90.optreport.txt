@@ -1,0 +1,13 @@
+tsvc_2_s2710_fp64.f90:13:13: missed: couldn't vectorize loop
+tsvc_2_s2710_fp64.f90:14:12: missed: not vectorized: no vectype for stmt: _43 = (*a_37(D))[i_l0_70];
+ scalar_type: real(kind=8)
+tsvc_2_s2710_fp64.f90:13:13: missed: couldn't vectorize loop
+tsvc_2_s2710_fp64.f90:14:12: missed: not vectorized: no vectype for stmt: _14 = (*a_37(D))[i_l0_83];
+ scalar_type: real(kind=8)
+tsvc_2_s2710_fp64.f90:2:1: missed: statement clobbers memory: __builtin_GOMP_parallel (tsvc_2_s2710_fp64._loopfn.0, &.paral_data_store.36, 12, 0);
+tsvc_2_s2710_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s2710_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s2710_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s2710_fp64.f90:14:12: missed: couldn't vectorize loop
+tsvc_2_s2710_fp64.f90:14:12: missed: not vectorized: no vectype for stmt: _23 = (*a.29_9)[ivtmp_19];
+ scalar_type: real(kind=8)

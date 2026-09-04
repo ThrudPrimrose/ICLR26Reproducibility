@@ -1,0 +1,7 @@
+tsvc_2_s3110_fp64.f90:17:13: missed: couldn't vectorize loop
+tsvc_2_s3110_fp64.f90:19:16: missed: not vectorized: complicated access pattern.
+tsvc_2_s3110_fp64.f90:18:17: missed: couldn't vectorize loop
+tsvc_2_s3110_fp64.f90:19:16: missed: not vectorized: unsupported use in stmt.
+tsvc_2_s3110_fp64.f90:2:1: missed: splitting region at dont-vectorize loop 4 entry at bb15
+tsvc_2_s3110_fp64.f90:2:30: missed: splitting region at loop 5 exit at bb21
+tsvc_2_s3110_fp64.f90:18:17: missed: splitting region at dominance boundary bb9

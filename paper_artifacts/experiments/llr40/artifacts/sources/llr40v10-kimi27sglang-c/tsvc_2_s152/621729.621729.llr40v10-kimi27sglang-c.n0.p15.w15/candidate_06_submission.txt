@@ -1,0 +1,94 @@
+#include <stdint.h>
+#include <immintrin.h>
+
+static void s152_serial(double *restrict a, double *restrict b,
+                        const double *restrict c, const double *restrict d,
+                        const double *restrict e, int64_t n) {
+#pragma GCC ivdep
+    for (int64_t i = 0; i < n; ++i) {
+        double t = d[i] * e[i];
+        b[i] = t;
+        a[i] += t * c[i];
+    }
+}
+
+void tsvc_2_s152_fp64(double *restrict a, double *restrict b,
+                      const double *restrict c, const double *restrict d,
+                      const double *restrict e, const int64_t LEN_1D) {
+    const int64_t n = LEN_1D;
+    if (n < 8192) {
+        s152_serial(a, b, c, d, e, n);
+        return;
+    }
+
+    if ((((uintptr_t)a | (uintptr_t)b | (uintptr_t)c |
+          (uintptr_t)d | (uintptr_t)e) & 63) == 0) {
+        const int64_t n32 = n & ~31;
+#pragma omp parallel for schedule(static)
+        for (int64_t i = 0; i < n32; i += 32) {
+            __m512d d0 = _mm512_load_pd(&d[i+0]);
+            __m512d e0 = _mm512_load_pd(&e[i+0]);
+            __m512d t0 = _mm512_mul_pd(d0, e0);
+            __m512d a0 = _mm512_load_pd(&a[i+0]);
+            __m512d c0 = _mm512_load_pd(&c[i+0]);
+            _mm512_stream_pd(&b[i+0], t0);
+            _mm512_stream_pd(&a[i+0], _mm512_fmadd_pd(t0, c0, a0));
+
+            __m512d d1 = _mm512_load_pd(&d[i+8]);
+            __m512d e1 = _mm512_load_pd(&e[i+8]);
+            __m512d t1 = _mm512_mul_pd(d1, e1);
+            __m512d a1 = _mm512_load_pd(&a[i+8]);
+            __m512d c1 = _mm512_load_pd(&c[i+8]);
+            _mm512_stream_pd(&b[i+8], t1);
+            _mm512_stream_pd(&a[i+8], _mm512_fmadd_pd(t1, c1, a1));
+
+            __m512d d2 = _mm512_load_pd(&d[i+16]);
+            __m512d e2 = _mm512_load_pd(&e[i+16]);
+            __m512d t2 = _mm512_mul_pd(d2, e2);
+            __m512d a2 = _mm512_load_pd(&a[i+16]);
+            __m512d c2 = _mm512_load_pd(&c[i+16]);
+            _mm512_stream_pd(&b[i+16], t2);
+            _mm512_stream_pd(&a[i+16], _mm512_fmadd_pd(t2, c2, a2));
+
+            __m512d d3 = _mm512_load_pd(&d[i+24]);
+            __m512d e3 = _mm512_load_pd(&e[i+24]);
+            __m512d t3 = _mm512_mul_pd(d3, e3);
+            __m512d a3 = _mm512_load_pd(&a[i+24]);
+            __m512d c3 = _mm512_load_pd(&c[i+24]);
+            _mm512_stream_pd(&b[i+24], t3);
+            _mm512_stream_pd(&a[i+24], _mm512_fmadd_pd(t3, c3, a3));
+        }
+        _mm_sfence();
+        for (int64_t i = n32; i < n; ++i) {
+            double t = d[i] * e[i];
+            b[i] = t;
+            a[i] += t * c[i];
+        }
+    } else {
+        const int64_t n8 = n & ~7;
+#pragma omp parallel for schedule(static)
+        for (int64_t i = 0; i < n8; i += 8) {
+            double t0 = d[i+0] * e[i+0];
+            double t1 = d[i+1] * e[i+1];
+            double t2 = d[i+2] * e[i+2];
+            double t3 = d[i+3] * e[i+3];
+            double t4 = d[i+4] * e[i+4];
+            double t5 = d[i+5] * e[i+5];
+            double t6 = d[i+6] * e[i+6];
+            double t7 = d[i+7] * e[i+7];
+            b[i+0] = t0; a[i+0] += t0 * c[i+0];
+            b[i+1] = t1; a[i+1] += t1 * c[i+1];
+            b[i+2] = t2; a[i+2] += t2 * c[i+2];
+            b[i+3] = t3; a[i+3] += t3 * c[i+3];
+            b[i+4] = t4; a[i+4] += t4 * c[i+4];
+            b[i+5] = t5; a[i+5] += t5 * c[i+5];
+            b[i+6] = t6; a[i+6] += t6 * c[i+6];
+            b[i+7] = t7; a[i+7] += t7 * c[i+7];
+        }
+        for (int64_t i = n8; i < n; ++i) {
+            double t = d[i] * e[i];
+            b[i] = t;
+            a[i] += t * c[i];
+        }
+    }
+}

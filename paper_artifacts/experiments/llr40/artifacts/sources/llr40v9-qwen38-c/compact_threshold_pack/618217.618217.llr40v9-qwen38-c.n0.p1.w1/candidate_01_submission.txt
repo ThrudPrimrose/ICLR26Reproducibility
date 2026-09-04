@@ -1,0 +1,91 @@
+/* compact_threshold_pack -- stream compaction, AVX-512 + OpenMP.
+ *
+ * Two passes:
+ *   pass 1: per-thread vectorized count of src[i] > 0.
+ *   pass 2: per-thread, each 16-element block keeps a running total `run`
+ *           (survivors before the block); in-block offsets come from
+ *           popcount(m & ((1<<l)-1)) (AVX-512 VPOPCNTDQ), so the store
+ *           indices need no shuffles, and survivors are written with
+ *           masked 64-bit scatters.
+ */
+#include <stdint.h>
+#include <immintrin.h>
+#include <omp.h>
+
+void compact_threshold_pack_fp64(int64_t *restrict out_count,
+                                 double *restrict packed,
+                                 const double *restrict src,
+                                 const double *restrict weight,
+                                 const int64_t LEN_1D) {
+  if (LEN_1D <= 0) {
+    out_count[0] = 0;
+    return;
+  }
+
+  int nt = omp_get_max_threads();
+  if (nt < 1) nt = 1;
+  if (nt > 128) nt = 128;
+  static int64_t counts[128];
+
+  __m512d zero = _mm512_setzero_pd();
+  const __m512i lowmask = _mm512_setr_epi64(0, 1, 3, 7, 15, 31, 63, 127);
+
+  #pragma omp parallel num_threads(nt)
+  {
+    int tid = omp_get_thread_num();
+    int64_t lo = (LEN_1D * (int64_t)tid) / nt;
+    int64_t hi = (LEN_1D * (int64_t)(tid + 1)) / nt;
+    const double *s = src + lo;
+    int64_t n = hi - lo;
+
+    /* ---- pass 1: count survivors ---- */
+    int64_t cnt = 0;
+    {
+      int64_t i = 0;
+      for (; i + 16 <= n; i += 16) {
+        __mmask8 m1 = _mm512_cmp_pd_mask(_mm512_loadu_pd(s + i), zero, _CMP_GT_OQ);
+        __mmask8 m2 = _mm512_cmp_pd_mask(_mm512_loadu_pd(s + i + 8), zero, _CMP_GT_OQ);
+        cnt += (int64_t)__builtin_popcount(m1) + (int64_t)__builtin_popcount(m2);
+      }
+      for (; i < n; i++) cnt += (s[i] > 0.0);
+    }
+    counts[tid] = cnt;
+
+    #pragma omp barrier
+    int64_t base = 0;
+    for (int t = 0; t < tid; t++) base += counts[t];
+
+    /* ---- pass 2: write survivors at global scan positions ---- */
+    {
+      const double *w = weight + lo;
+      int64_t run = base;
+      int64_t i = 0;
+      for (; i + 16 <= n; i += 16) {
+        __m512d sA = _mm512_loadu_pd(s + i);
+        __m512d sB = _mm512_loadu_pd(s + i + 8);
+        __mmask8 mA = _mm512_cmp_pd_mask(sA, zero, _CMP_GT_OQ);
+        __mmask8 mB = _mm512_cmp_pd_mask(sB, zero, _CMP_GT_OQ);
+        __m512d wA = _mm512_loadu_pd(w + i);
+        __m512d wB = _mm512_loadu_pd(w + i + 8);
+        __m512i eA =
+            _mm512_popcnt_epi64(_mm512_and_si512(_mm512_set1_epi64((int64_t)mA), lowmask));
+        __m512i eB =
+            _mm512_popcnt_epi64(_mm512_and_si512(_mm512_set1_epi64((int64_t)mB), lowmask));
+        __m512i iA = _mm512_add_epi64(eA, _mm512_set1_epi64(run));
+        __m512i iB = _mm512_add_epi64(eB, _mm512_set1_epi64(run + __builtin_popcount(mA)));
+        _mm512_mask_i64scatter_pd(packed, mA, iA, _mm512_mul_pd(sA, wA), 8);
+        _mm512_mask_i64scatter_pd(packed, mB, iB, _mm512_mul_pd(sB, wB), 8);
+        run += (int64_t)__builtin_popcount(mA) + (int64_t)__builtin_popcount(mB);
+      }
+      for (; i < n; i++)
+        if (s[i] > 0.0) {
+          packed[run] = s[i] * w[i];
+          run++;
+        }
+    }
+  }
+
+  int64_t total = 0;
+  for (int t = 0; t < nt; t++) total += counts[t];
+  out_count[0] = total;
+}

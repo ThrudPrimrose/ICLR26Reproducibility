@@ -1,0 +1,11 @@
+#include <stdint.h>
+#include <stddef.h>
+
+void tsvc_2_s115_fp64(double *restrict a, const double *restrict aa, const int64_t LEN_2D) {
+  for (int64_t j = 0; j < LEN_2D; j++) {
+    const double aj = a[j];
+    const double *restrict row = aa + (size_t)j * LEN_2D;
+    for (int64_t i = j + 1; i < LEN_2D; i++)
+      a[i] -= row[i] * aj;
+  }
+}

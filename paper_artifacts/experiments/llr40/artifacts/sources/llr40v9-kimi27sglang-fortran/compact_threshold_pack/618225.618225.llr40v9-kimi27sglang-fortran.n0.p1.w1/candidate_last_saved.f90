@@ -1,0 +1,80 @@
+subroutine compact_threshold_pack_fp64(out_count, packed, src, weight, LEN_1D, workspace, workspace_size) &
+     bind(C, name="compact_threshold_pack_fp64")
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), intent(out) :: out_count
+  real(c_double), intent(out) :: packed(*)
+  real(c_double), intent(in) :: src(*)
+  real(c_double), intent(in) :: weight(*)
+  integer(c_int64_t), value, intent(in) :: LEN_1D
+  type(c_ptr), value, intent(in) :: workspace
+  integer(c_int64_t), value, intent(in) :: workspace_size
+  integer(c_int64_t), parameter :: BLK = 16384
+  integer(c_int64_t) :: n, nb, i, ib, start, finish, cnt, base, j
+  integer(c_int64_t), pointer :: off(:)
+
+  n = LEN_1D
+  if (n <= 0) then
+     out_count = 0
+     return
+  end if
+
+  nb = (n + BLK - 1) / BLK
+
+  if (n < 65536 .or. workspace_size < 8 * nb .or. .not. c_associated(workspace)) then
+     cnt = 0
+     do i = 1, n
+        if (src(i) > 0.0_c_double) then
+           cnt = cnt + 1
+           packed(cnt) = src(i) * weight(i)
+        end if
+     end do
+     out_count = cnt
+     return
+  end if
+
+  call c_f_pointer(workspace, off, [nb])
+
+  !$omp parallel private(ib, start, finish, i, cnt, base, j)
+
+  !$omp do schedule(guided, 8)
+  do ib = 1, nb
+     start = (ib - 1) * BLK + 1
+     finish = min(ib * BLK, n)
+     off(ib) = count(src(start:finish) > 0.0_c_double, kind=c_int64_t)
+  end do
+  !$omp end do
+
+  !$omp barrier
+
+  !$omp single
+  do ib = 2, nb
+     off(ib) = off(ib) + off(ib - 1)
+  end do
+  !$omp end single
+
+  !$omp barrier
+
+  !$omp do schedule(guided, 8)
+  do ib = 1, nb
+     start = (ib - 1) * BLK + 1
+     finish = min(ib * BLK, n)
+     if (ib == 1) then
+        base = 0
+     else
+        base = off(ib - 1)
+     end if
+     j = 0
+     do i = start, finish
+        if (src(i) > 0.0_c_double) then
+           packed(base + j + 1) = src(i) * weight(i)
+           j = j + 1
+        end if
+     end do
+  end do
+  !$omp end do
+
+  !$omp end parallel
+
+  out_count = off(nb)
+end subroutine compact_threshold_pack_fp64

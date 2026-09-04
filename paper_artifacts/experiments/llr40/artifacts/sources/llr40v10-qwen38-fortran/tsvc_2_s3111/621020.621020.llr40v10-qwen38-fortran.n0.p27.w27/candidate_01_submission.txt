@@ -1,0 +1,16 @@
+! TSVC s3111: sum of positive elements of a -> b(1)
+subroutine tsvc_2_s3111_fp64(a, b, len_1d) bind(c, name='tsvc_2_s3111_fp64')
+  use iso_c_binding, only: c_double, c_int64_t
+  implicit none
+  real(c_double), intent(in)    :: a(*)
+  real(c_double), intent(out)   :: b(*)
+  integer(c_int64_t), value, intent(in) :: len_1d
+  real(c_double) :: s
+  integer(c_int64_t) :: i
+
+  s = 0.0d0
+  do i = 1, len_1d
+     if (a(i) > 0.0d0) s = s + a(i)
+  end do
+  b(1) = s
+end subroutine tsvc_2_s3111_fp64

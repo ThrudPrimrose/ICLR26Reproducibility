@@ -1,0 +1,222 @@
+#include <stdint.h>
+#include <math.h>
+#include <float.h>
+#include <immintrin.h>
+#include <omp.h>
+#include <limits.h>
+
+typedef struct {
+    double value;
+    int64_t index;
+} maxloc_t;
+
+static inline maxloc_t maxloc_init(void) {
+    maxloc_t m;
+    m.value = -DBL_MAX;
+    m.index = INT64_MAX;
+    return m;
+}
+
+static inline maxloc_t maxloc_combine(maxloc_t a, maxloc_t b) {
+    if (b.value > a.value || (b.value == a.value && b.index < a.index))
+        return b;
+    return a;
+}
+
+__attribute__((always_inline)) static inline maxloc_t argmax_chunk(const double *restrict a,
+                                    int64_t lo, int64_t hi) {
+    double cur_val = a[lo];
+    int64_t cur_idx = lo;
+    int64_t i = lo + 1;
+
+#if defined(__AVX512F__)
+    /* 4x unrolled AVX-512 scan: process 32 elements per outer iteration
+       with four independent accumulators to break the loop-carried chain. */
+    if (hi - i >= 32) {
+        __m512d vmax0 = _mm512_set1_pd(cur_val);
+        __m512d vmax1 = _mm512_set1_pd(cur_val);
+        __m512d vmax2 = _mm512_set1_pd(cur_val);
+        __m512d vmax3 = _mm512_set1_pd(cur_val);
+        __m512i vidx0 = _mm512_set1_epi64(cur_idx);
+        __m512i vidx1 = _mm512_set1_epi64(cur_idx);
+        __m512i vidx2 = _mm512_set1_epi64(cur_idx);
+        __m512i vidx3 = _mm512_set1_epi64(cur_idx);
+
+        __m512i base0 = _mm512_set_epi64(i + 7, i + 6, i + 5, i + 4,
+                                         i + 3, i + 2, i + 1, i);
+        const __m512i off8  = _mm512_set1_epi64(8);
+        const __m512i off16 = _mm512_set1_epi64(16);
+        const __m512i off24 = _mm512_set1_epi64(24);
+        const __m512i inc32 = _mm512_set1_epi64(32);
+        __m512i base1 = _mm512_add_epi64(base0, off8);
+        __m512i base2 = _mm512_add_epi64(base0, off16);
+        __m512i base3 = _mm512_add_epi64(base0, off24);
+
+        for (; i + 31 < hi; i += 32) {
+            __m512d v0 = _mm512_loadu_pd(a + i);
+            __m512d v1 = _mm512_loadu_pd(a + i + 8);
+            __m512d v2 = _mm512_loadu_pd(a + i + 16);
+            __m512d v3 = _mm512_loadu_pd(a + i + 24);
+
+            __mmask8 m0 = _mm512_cmp_pd_mask(v0, vmax0, _CMP_GT_OQ);
+            __mmask8 m1 = _mm512_cmp_pd_mask(v1, vmax1, _CMP_GT_OQ);
+            __mmask8 m2 = _mm512_cmp_pd_mask(v2, vmax2, _CMP_GT_OQ);
+            __mmask8 m3 = _mm512_cmp_pd_mask(v3, vmax3, _CMP_GT_OQ);
+
+            vmax0 = _mm512_mask_blend_pd(m0, vmax0, v0);
+            vmax1 = _mm512_mask_blend_pd(m1, vmax1, v1);
+            vmax2 = _mm512_mask_blend_pd(m2, vmax2, v2);
+            vmax3 = _mm512_mask_blend_pd(m3, vmax3, v3);
+
+            vidx0 = _mm512_mask_blend_epi64(m0, vidx0, base0);
+            vidx1 = _mm512_mask_blend_epi64(m1, vidx1, base1);
+            vidx2 = _mm512_mask_blend_epi64(m2, vidx2, base2);
+            vidx3 = _mm512_mask_blend_epi64(m3, vidx3, base3);
+
+            base0 = _mm512_add_epi64(base0, inc32);
+            base1 = _mm512_add_epi64(base1, inc32);
+            base2 = _mm512_add_epi64(base2, inc32);
+            base3 = _mm512_add_epi64(base3, inc32);
+        }
+
+        _Alignas(64) double vals[32];
+        _Alignas(64) int64_t idxs[32];
+        _mm512_store_pd(vals + 0,  vmax0);
+        _mm512_store_pd(vals + 8,  vmax1);
+        _mm512_store_pd(vals + 16, vmax2);
+        _mm512_store_pd(vals + 24, vmax3);
+        _mm512_store_epi64(idxs + 0,  vidx0);
+        _mm512_store_epi64(idxs + 8,  vidx1);
+        _mm512_store_epi64(idxs + 16, vidx2);
+        _mm512_store_epi64(idxs + 24, vidx3);
+
+        for (int k = 0; k < 32; ++k) {
+            double v = vals[k];
+            int64_t idx = idxs[k];
+            if (v > cur_val || (v == cur_val && idx < cur_idx)) {
+                cur_val = v;
+                cur_idx = idx;
+            }
+        }
+    }
+
+    /* residual 8-wide vectors */
+    if (hi - i >= 8) {
+        __m512d vmax = _mm512_set1_pd(cur_val);
+        __m512i vidx = _mm512_set1_epi64(cur_idx);
+        __m512i base = _mm512_set_epi64(i + 7, i + 6, i + 5, i + 4,
+                                        i + 3, i + 2, i + 1, i);
+        const __m512i inc8 = _mm512_set1_epi64(8);
+        for (; i + 7 < hi; i += 8) {
+            __m512d va = _mm512_loadu_pd(a + i);
+            __mmask8 m = _mm512_cmp_pd_mask(va, vmax, _CMP_GT_OQ);
+            vmax = _mm512_mask_blend_pd(m, vmax, va);
+            vidx = _mm512_mask_blend_epi64(m, vidx, base);
+            base = _mm512_add_epi64(base, inc8);
+        }
+        _Alignas(64) double vals[8];
+        _Alignas(64) int64_t idxs[8];
+        _mm512_store_pd(vals, vmax);
+        _mm512_store_epi64(idxs, vidx);
+        for (int k = 0; k < 8; ++k) {
+            double v = vals[k];
+            int64_t idx = idxs[k];
+            if (v > cur_val || (v == cur_val && idx < cur_idx)) {
+                cur_val = v;
+                cur_idx = idx;
+            }
+        }
+    }
+#endif
+
+    for (; i < hi; ++i) {
+        double ai = a[i];
+        if (ai > cur_val) {
+            cur_val = ai;
+            cur_idx = i;
+        }
+    }
+
+    maxloc_t res;
+    res.value = cur_val;
+    res.index = cur_idx;
+    return res;
+}
+
+#if defined(__AVX512F__)
+static maxloc_t argmax_parallel(const double *restrict a, int64_t LEN_1D) {
+    const int nthreads = omp_get_max_threads();
+    maxloc_t locals[64];
+    const int64_t chunk = (LEN_1D + nthreads - 1) / nthreads;
+
+    #pragma omp parallel for schedule(static, 1)
+    for (int64_t t = 0; t < nthreads; ++t) {
+        int64_t lo = t * chunk;
+        int64_t hi = lo + chunk;
+        if (hi > LEN_1D) hi = LEN_1D;
+        if (lo < hi)
+            locals[t] = argmax_chunk(a, lo, hi);
+        else
+            locals[t] = maxloc_init();
+    }
+
+    maxloc_t global = locals[0];
+    for (int t = 1; t < nthreads; ++t)
+        global = maxloc_combine(global, locals[t]);
+    return global;
+}
+#endif
+
+void argmax_with_index_fp64(const double *restrict a,
+                            int64_t *restrict out_index,
+                            double *restrict out_value,
+                            const int64_t LEN_1D) {
+    if (LEN_1D <= 0) {
+        *out_value = 0.0;
+        *out_index = 0;
+        return;
+    }
+    if (LEN_1D == 1) {
+        *out_value = a[0];
+        *out_index = 0;
+        return;
+    }
+
+    if (LEN_1D <= 256) {
+        double cur_val = a[0];
+        int64_t cur_idx = 0;
+        for (int64_t i = 1; i < LEN_1D; ++i) {
+            double ai = a[i];
+            if (ai > cur_val) {
+                cur_val = ai;
+                cur_idx = i;
+            }
+        }
+        *out_value = cur_val;
+        *out_index = cur_idx;
+        return;
+    }
+
+    if (__builtin_isnan(a[0])) {
+        *out_value = a[0];
+        *out_index = 0;
+        return;
+    }
+
+#if defined(__AVX512F__)
+    if (LEN_1D <= 65536) {
+        maxloc_t r = argmax_chunk(a, 0, LEN_1D);
+        *out_value = r.value;
+        *out_index = r.index;
+        return;
+    }
+
+    maxloc_t r = argmax_parallel(a, LEN_1D);
+    *out_value = r.value;
+    *out_index = r.index;
+#else
+    maxloc_t r = argmax_chunk(a, 0, LEN_1D);
+    *out_value = r.value;
+    *out_index = r.index;
+#endif
+}

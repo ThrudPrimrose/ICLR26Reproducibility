@@ -1,0 +1,14 @@
+subroutine tsvc_2_s3112_fp64(a, b, len_1d) bind(C, name='tsvc_2_s3112_fp64')
+  implicit none
+  real(kind=8), intent(in)    :: a(*)
+  real(kind=8), intent(out)   :: b(*)
+  integer(kind=8), value      :: len_1d
+  integer(kind=8) :: i
+  real(kind=8) :: sum
+
+  sum = 0.0d0
+  do i = 1, len_1d
+     sum = sum + a(i)
+     b(i) = sum
+  end do
+end subroutine tsvc_2_s3112_fp64

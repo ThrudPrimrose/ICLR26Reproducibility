@@ -1,0 +1,48 @@
+fuse_diamond_fp64.f90:20:13: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:20:13: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:17:13: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:17:13: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:14:13: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:14:13: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:11:13: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:11:13: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:8:23: missed: statement clobbers memory: _29 = __builtin_malloc (_3);
+fuse_diamond_fp64.f90:9:23: missed: statement clobbers memory: _31 = __builtin_malloc (_3);
+fuse_diamond_fp64.f90:10:23: missed: statement clobbers memory: _33 = __builtin_malloc (_3);
+fuse_diamond_fp64.f90:2:1: missed: statement clobbers memory: __builtin_GOMP_parallel (fuse_diamond_fp64._loopfn.3, &.paral_data_store.43, 12, 0);
+fuse_diamond_fp64.f90:2:1: missed: statement clobbers memory: __builtin_GOMP_parallel (fuse_diamond_fp64._loopfn.2, &.paral_data_store.38, 12, 0);
+fuse_diamond_fp64.f90:2:1: missed: statement clobbers memory: __builtin_GOMP_parallel (fuse_diamond_fp64._loopfn.1, &.paral_data_store.34, 12, 0);
+fuse_diamond_fp64.f90:2:1: missed: statement clobbers memory: __builtin_GOMP_parallel (fuse_diamond_fp64._loopfn.0, &.paral_data_store.30, 12, 0);
+fuse_diamond_fp64.f90:10:23: missed: statement clobbers memory: __builtin_free (_33);
+fuse_diamond_fp64.f90:9:23: missed: statement clobbers memory: __builtin_free (_31);
+fuse_diamond_fp64.f90:8:23: missed: statement clobbers memory: __builtin_free (_29);
+fuse_diamond_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:12:55: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:12:55: optimized:  loop versioned for vectorization because of possible aliasing
+fuse_diamond_fp64.f90:12:55: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:11:13: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:11:13: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:11:13: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:15:54: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:15:54: optimized:  loop versioned for vectorization because of possible aliasing
+fuse_diamond_fp64.f90:15:54: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:14:13: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:14:13: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:14:13: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:18:54: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:18:54: optimized:  loop versioned for vectorization because of possible aliasing
+fuse_diamond_fp64.f90:18:54: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:17:13: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:17:13: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:17:13: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:21:57: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:21:57: optimized:  loop versioned for vectorization because of possible aliasing
+fuse_diamond_fp64.f90:21:57: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.f90:20:13: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:20:13: missed: not vectorized: vectorization is not profitable.
+fuse_diamond_fp64.f90:20:13: missed: not vectorized: vectorization is not profitable.

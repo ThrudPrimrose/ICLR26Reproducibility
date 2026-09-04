@@ -1,0 +1,5 @@
+tsvc_2_s275_fp32.c:172:31: missed: couldn't vectorize loop
+tsvc_2_s275_fp32.c:172:31: missed: not vectorized: unsupported control flow in loop.
+tsvc_2_s275_fp32.c:174:35: missed: couldn't vectorize loop
+tsvc_2_s275_fp32.c:175:43: missed: not vectorized: no vectype for stmt: _11 = *_10;
+ scalar_type: float

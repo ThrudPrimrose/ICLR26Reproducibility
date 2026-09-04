@@ -1,0 +1,14 @@
+fuse_diamond_fp64.c:184:31: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.c:184:31: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.c:181:31: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.c:181:31: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.c:178:31: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.c:178:31: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.c:175:31: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.c:175:31: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_diamond_fp64.c:172:31: missed: statement clobbers memory: t_40 = malloc (_2);
+fuse_diamond_fp64.c:173:31: missed: statement clobbers memory: u_42 = malloc (_2);
+fuse_diamond_fp64.c:174:31: missed: statement clobbers memory: v_44 = malloc (_2);
+fuse_diamond_fp64.c:187:9: missed: statement clobbers memory: free (t_40);
+fuse_diamond_fp64.c:188:9: missed: statement clobbers memory: free (u_42);
+fuse_diamond_fp64.c:189:9: missed: statement clobbers memory: free (v_44);

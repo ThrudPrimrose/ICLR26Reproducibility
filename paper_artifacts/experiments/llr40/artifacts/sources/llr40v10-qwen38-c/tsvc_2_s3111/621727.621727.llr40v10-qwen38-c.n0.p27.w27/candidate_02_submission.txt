@@ -1,0 +1,26 @@
+/* TSVC s3111: sum of positive elements of a.
+ * Branchless inner loop (vectorizes); chunked OpenMP parallel reduction. */
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s3111_fp64(const double *restrict a, double *restrict b, const int64_t LEN_1D) {
+  const int64_t n = LEN_1D;
+  double sum = 0.0;
+  #pragma omp parallel reduction(+:sum)
+  {
+    const int tid = omp_get_thread_num();
+    const int nt  = omp_get_num_threads();
+    const int64_t chunk = (n + nt - 1) / nt;
+    int64_t lo = (int64_t)tid * chunk;
+    int64_t hi = lo + chunk;
+    if (hi > n) hi = n;
+    const double *p = a + lo;
+    const int64_t m = hi - lo;
+    double s = 0.0;
+    for (int64_t i = 0; i < m; ++i) {
+      s += (p[i] > 0.0) * p[i];
+    }
+    sum += s;
+  }
+  b[0] = sum;
+}

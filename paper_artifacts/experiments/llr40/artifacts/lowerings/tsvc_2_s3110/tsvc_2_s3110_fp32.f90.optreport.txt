@@ -1,0 +1,17 @@
+tsvc_2_s3110_fp32.f90:21:25:
+
+   21 |                 xindex = i_l0
+      |                         1
+Warning: Possible change of value in conversion from INTEGER(8) to REAL(4) at (1) [-Wconversion]
+tsvc_2_s3110_fp32.f90:22:25:
+
+   22 |                 yindex = j_l1
+      |                         1
+Warning: Possible change of value in conversion from INTEGER(8) to REAL(4) at (1) [-Wconversion]
+tsvc_2_s3110_fp32.f90:17:13: missed: couldn't vectorize loop
+tsvc_2_s3110_fp32.f90:19:16: missed: not vectorized: complicated access pattern.
+tsvc_2_s3110_fp32.f90:18:17: missed: couldn't vectorize loop
+tsvc_2_s3110_fp32.f90:19:16: missed: not vectorized: unsupported use in stmt.
+tsvc_2_s3110_fp32.f90:2:1: missed: splitting region at dont-vectorize loop 4 entry at bb15
+tsvc_2_s3110_fp32.f90:2:30: missed: splitting region at loop 5 exit at bb21
+tsvc_2_s3110_fp32.f90:18:17: missed: splitting region at dominance boundary bb9

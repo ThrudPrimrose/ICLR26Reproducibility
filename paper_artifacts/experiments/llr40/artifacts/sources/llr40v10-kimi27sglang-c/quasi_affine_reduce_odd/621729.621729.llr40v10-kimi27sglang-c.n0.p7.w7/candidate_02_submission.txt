@@ -1,0 +1,62 @@
+#include <stdint.h>
+#include <immintrin.h>
+#include <omp.h>
+
+void quasi_affine_reduce_odd_fp64(const double *restrict a, double *restrict out, const int64_t LEN_1D) {
+    const int64_t n = LEN_1D / 2;  // number of odd indices in [1, LEN_1D)
+    double acc = 0.0;
+
+    if (n <= 4096) {
+        // Serial SIMD path
+        int64_t main_end = (n / 8) * 8;
+        if (main_end == n && n > 0) main_end -= 8;
+        __m512d acc_vec = _mm512_setzero_pd();
+
+        for (int64_t j = 0; j < main_end; j += 8) {
+            const double *base = a + 1 + 2 * j;
+            __m512d v0 = _mm512_loadu_pd(base);
+            __m512d v1 = _mm512_loadu_pd(base + 8);
+            __m512d odd = _mm512_unpacklo_pd(v0, v1);
+            acc_vec = _mm512_add_pd(acc_vec, odd);
+        }
+
+        acc = _mm512_reduce_add_pd(acc_vec);
+
+        for (int64_t j = main_end; j < n; ++j) {
+            acc += a[1 + 2 * j];
+        }
+    } else {
+        // Parallel SIMD path
+        #pragma omp parallel
+        {
+            const int nthreads = omp_get_num_threads();
+            const int tid = omp_get_thread_num();
+            const int64_t chunk = (n + nthreads - 1) / nthreads;
+            const int64_t start = tid * chunk;
+            const int64_t end = (start + chunk < n) ? start + chunk : n;
+
+            __m512d acc_vec = _mm512_setzero_pd();
+            int64_t local_n = end - start;
+            int64_t main_end_local = (local_n / 8) * 8;
+            if (main_end_local == local_n && local_n > 0) main_end_local -= 8;
+
+            for (int64_t j = start; j < start + main_end_local; j += 8) {
+                const double *base = a + 1 + 2 * j;
+                __m512d v0 = _mm512_loadu_pd(base);
+                __m512d v1 = _mm512_loadu_pd(base + 8);
+                __m512d odd = _mm512_unpacklo_pd(v0, v1);
+                acc_vec = _mm512_add_pd(acc_vec, odd);
+            }
+
+            double tacc = _mm512_reduce_add_pd(acc_vec);
+            for (int64_t j = start + main_end_local; j < end; ++j) {
+                tacc += a[1 + 2 * j];
+            }
+
+            #pragma omp atomic
+            acc += tacc;
+        }
+    }
+
+    out[0] = acc;
+}

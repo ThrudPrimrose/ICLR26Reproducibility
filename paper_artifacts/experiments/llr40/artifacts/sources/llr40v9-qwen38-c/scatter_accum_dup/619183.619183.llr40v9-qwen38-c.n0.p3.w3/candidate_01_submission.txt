@@ -1,0 +1,47 @@
+#include <stdint.h>
+#include <omp.h>
+
+/* Atomic bins[j] += v for a single 8-byte double, via 64-bit CAS loop.
+   Works on 8-byte-aligned double* (individual array elements). */
+static inline void sad_dadd(double *p, double v)
+{
+    __asm__ volatile(
+        ".__sad%=: movq (%[p]), %%rax\n\t"
+        "     movq      %%rax, %%xmm0\n\t"
+        "     addsd     %[v], %%xmm0\n\t"
+        "     movq      %%xmm0, %%rdx\n\t"
+        "     lock cmpxchgq %%rdx, (%[p])\n\t"
+        "     jnz       .__sad%=\n\t"
+        :
+        : [v] "xm"(v), [p] "r"(p)
+        : "rax", "rdx", "xmm0", "memory", "cc"
+    );
+}
+
+void scatter_accum_dup_fp64(double *bins, int32_t *ip, double *src,
+                            int64_t len_1d, uint8_t *workspace,
+                            int64_t workspace_size)
+{
+    (void)workspace;
+    (void)workspace_size;
+#pragma omp parallel
+    {
+        int64_t nt  = omp_get_num_threads();
+        int64_t tid = omp_get_thread_num();
+        int64_t chunk = (len_1d + nt - 1) / nt;
+        int64_t beg = tid * chunk;
+        int64_t end = beg + chunk;
+        if (end > len_1d) end = len_1d;
+        int64_t i = beg;
+        int64_t lim = beg + ((end - beg) & ~3);
+        for (; i < lim; i += 4) {
+            int32_t j0 = ip[i], j1 = ip[i+1], j2 = ip[i+2], j3 = ip[i+3];
+            sad_dadd(&bins[j0], src[i]);
+            sad_dadd(&bins[j1], src[i+1]);
+            sad_dadd(&bins[j2], src[i+2]);
+            sad_dadd(&bins[j3], src[i+3]);
+        }
+        for (; i < end; i++)
+            sad_dadd(&bins[ip[i]], src[i]);
+    }
+}

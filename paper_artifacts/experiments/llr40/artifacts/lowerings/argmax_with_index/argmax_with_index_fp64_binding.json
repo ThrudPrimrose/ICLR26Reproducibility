@@ -1,0 +1,41 @@
+{
+  "kernel": "argmax_with_index_fp64",
+  "abi": "c",
+  "args": [
+    {
+      "name": "a",
+      "kind": "ptr_double",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "out_index",
+      "kind": "ptr_int64",
+      "shape": [
+        "1"
+      ]
+    },
+    {
+      "name": "out_value",
+      "kind": "ptr_double",
+      "shape": [
+        "1"
+      ]
+    },
+    {
+      "name": "LEN_1D",
+      "kind": "int64"
+    }
+  ],
+  "symbols": {
+    "c": "argmax_with_index_fp64",
+    "cpp": "argmax_with_index_fp64",
+    "fortran": "argmax_with_index_fp64"
+  },
+  "sources": {
+    "c": "argmax_with_index_fp64.c",
+    "cpp": "argmax_with_index_fp64.cpp",
+    "fortran": "argmax_with_index_fp64.f90"
+  }
+}

@@ -1,0 +1,141 @@
+#include <stdint.h>
+#include <math.h>
+#include <float.h>
+#include <immintrin.h>
+#include <omp.h>
+#include <limits.h>
+
+typedef struct {
+    double value;
+    int64_t index;
+} maxloc_t;
+
+static inline maxloc_t maxloc_init(void) {
+    maxloc_t m;
+    m.value = -DBL_MAX;
+    m.index = INT64_MAX;
+    return m;
+}
+
+static inline maxloc_t maxloc_combine(maxloc_t a, maxloc_t b) {
+    if (b.value > a.value || (b.value == a.value && b.index < a.index))
+        return b;
+    return a;
+}
+
+__attribute__((always_inline)) static inline maxloc_t argmax_chunk(const double *restrict a,
+                                    int64_t lo, int64_t hi) {
+    double cur_val = a[lo];
+    int64_t cur_idx = lo;
+    int64_t i = lo + 1;
+
+#if defined(__AVX512F__)
+    if (hi - i >= 8) {
+        __m512d vmax = _mm512_set1_pd(cur_val);
+        __m512i vidx = _mm512_set1_epi64(cur_idx);
+        __m512i base = _mm512_set_epi64(i + 7, i + 6, i + 5, i + 4,
+                                        i + 3, i + 2, i + 1, i);
+        const __m512i inc8 = _mm512_set1_epi64(8);
+
+        for (; i + 7 < hi; i += 8) {
+            __m512d va = _mm512_loadu_pd(a + i);
+            __mmask8 m = _mm512_cmp_pd_mask(va, vmax, _CMP_GT_OQ);
+            vmax = _mm512_mask_blend_pd(m, vmax, va);
+            vidx = _mm512_mask_blend_epi64(m, vidx, base);
+            base = _mm512_add_epi64(base, inc8);
+        }
+
+        _Alignas(64) double vals[8];
+        _Alignas(64) int64_t idxs[8];
+        _mm512_store_pd(vals, vmax);
+        _mm512_store_epi64(idxs, vidx);
+
+        for (int k = 0; k < 8; ++k) {
+            double v = vals[k];
+            int64_t idx = idxs[k];
+            if (v > cur_val || (v == cur_val && idx < cur_idx)) {
+                cur_val = v;
+                cur_idx = idx;
+            }
+        }
+    }
+#endif
+
+    for (; i < hi; ++i) {
+        double ai = a[i];
+        if (ai > cur_val) {
+            cur_val = ai;
+            cur_idx = i;
+        }
+    }
+
+    maxloc_t res;
+    res.value = cur_val;
+    res.index = cur_idx;
+    return res;
+}
+
+#if defined(__AVX512F__)
+static maxloc_t argmax_parallel(const double *restrict a, int64_t LEN_1D) {
+    maxloc_t locals[64];
+
+    #pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        int nt = omp_get_num_threads();
+        int64_t chunk = (LEN_1D + nt - 1) / nt;
+        int64_t lo = (int64_t)tid * chunk;
+        int64_t hi = lo + chunk;
+        if (hi > LEN_1D) hi = LEN_1D;
+        if (lo < hi)
+            locals[tid] = argmax_chunk(a, lo, hi);
+        else
+            locals[tid] = maxloc_init();
+    }
+
+    maxloc_t global = locals[0];
+    int nthreads = omp_get_max_threads();
+    for (int t = 1; t < nthreads; ++t)
+        global = maxloc_combine(global, locals[t]);
+    return global;
+}
+#endif
+
+void argmax_with_index_fp64(const double *restrict a,
+                            int64_t *restrict out_index,
+                            double *restrict out_value,
+                            const int64_t LEN_1D) {
+    if (LEN_1D <= 0) {
+        *out_value = 0.0;
+        *out_index = 0;
+        return;
+    }
+    if (LEN_1D == 1) {
+        *out_value = a[0];
+        *out_index = 0;
+        return;
+    }
+
+    if (__builtin_isnan(a[0])) {
+        *out_value = a[0];
+        *out_index = 0;
+        return;
+    }
+
+#if defined(__AVX512F__)
+    if (LEN_1D <= 65536) {
+        maxloc_t r = argmax_chunk(a, 0, LEN_1D);
+        *out_value = r.value;
+        *out_index = r.index;
+        return;
+    }
+
+    maxloc_t r = argmax_parallel(a, LEN_1D);
+    *out_value = r.value;
+    *out_index = r.index;
+#else
+    maxloc_t r = argmax_chunk(a, 0, LEN_1D);
+    *out_value = r.value;
+    *out_index = r.index;
+#endif
+}

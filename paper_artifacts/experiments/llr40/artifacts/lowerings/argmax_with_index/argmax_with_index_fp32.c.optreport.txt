@@ -1,0 +1,2 @@
+argmax_with_index_fp32.c:176:31: missed: couldn't vectorize loop
+argmax_with_index_fp32.c:177:14: missed: not vectorized: unsupported use in stmt.

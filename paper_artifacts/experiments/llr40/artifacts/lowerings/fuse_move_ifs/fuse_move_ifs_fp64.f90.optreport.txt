@@ -1,0 +1,33 @@
+fuse_move_ifs_fp64.f90:20:17: missed: couldn't vectorize loop
+fuse_move_ifs_fp64.f90:22:88: missed: not vectorized: complicated access pattern.
+fuse_move_ifs_fp64.f90:21:21: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_move_ifs_fp64.f90:21:21: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_move_ifs_fp64.f90:12:13: missed: couldn't vectorize loop
+fuse_move_ifs_fp64.f90:12:13: missed: not vectorized: unsupported control flow in loop.
+fuse_move_ifs_fp64.f90:14:21: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_move_ifs_fp64.f90:14:21: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_move_ifs_fp64.f90:2:1: missed: statement clobbers memory: __builtin_GOMP_parallel (fuse_move_ifs_fp64._loopfn.1, &.paral_data_store.44, 12, 0);
+fuse_move_ifs_fp64.f90:2:1: missed: statement clobbers memory: __builtin_GOMP_parallel (fuse_move_ifs_fp64._loopfn.0, &.paral_data_store.38, 12, 0);
+fuse_move_ifs_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_move_ifs_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_move_ifs_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_move_ifs_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_move_ifs_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_move_ifs_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_move_ifs_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_move_ifs_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_move_ifs_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+fuse_move_ifs_fp64.f90:15:88: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_move_ifs_fp64.f90:15:88: optimized:  loop versioned for vectorization because of possible aliasing
+fuse_move_ifs_fp64.f90:15:88: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_move_ifs_fp64.f90:14:21: missed: not vectorized: vectorization is not profitable.
+fuse_move_ifs_fp64.f90:14:21: missed: not vectorized: vectorization is not profitable.
+fuse_move_ifs_fp64.f90:14:21: missed: not vectorized: vectorization is not profitable.
+fuse_move_ifs_fp64.f90:22:88: missed: couldn't vectorize loop
+fuse_move_ifs_fp64.f90:22:88: missed: not vectorized: complicated access pattern.
+fuse_move_ifs_fp64.f90:21:21: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+fuse_move_ifs_fp64.f90:21:21: optimized:  loop versioned for vectorization because of possible aliasing
+fuse_move_ifs_fp64.f90:21:21: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+fuse_move_ifs_fp64.f90:20:17: missed: not vectorized: vectorization is not profitable.
+fuse_move_ifs_fp64.f90:20:17: missed: not vectorized: vectorization is not profitable.
+fuse_move_ifs_fp64.f90:20:17: missed: not vectorized: vectorization is not profitable.

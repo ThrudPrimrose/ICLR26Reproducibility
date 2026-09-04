@@ -1,0 +1,35 @@
+# HPCAgent-Bench benchmark manifest -- adding a benchmark: see README.md.
+name: 3D Tensor Permutation
+kind: microkernel
+level: 1
+parameters:
+  S:
+    N: 128
+  M:
+    N: 576
+  L:
+    N: 606
+  XL:
+    N: 645
+init:
+  input_args:
+  - N
+  output_args:
+  - A
+  - B
+  func_name: initialize
+  arrays:
+    A:
+      shape: (N, N, N)
+    B:
+      shape: (N, N, N)
+array_args:
+- A
+- B
+output_args:
+- B
+taxonomy:
+  track: scientific_computing
+  subtrack: permute
+  dwarf: dense_linear_algebra
+  domain: Physics

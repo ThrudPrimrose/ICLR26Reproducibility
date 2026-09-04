@@ -1,0 +1,28 @@
+# HPCAgent-Bench benchmark manifest -- adding a benchmark: see README.md.
+name: TSVC reroll_gather
+kind: microkernel
+level: 1
+parameters:
+  S:
+    NBLK: 73
+  M:
+    NBLK: 4714285
+  L:
+    NBLK: 7796387
+  XL:
+    NBLK: 12893503
+init:
+  arrays:
+    a: (7 * NBLK,)
+    b: (7 * NBLK,)
+    ip:
+      shape: (7 * NBLK,)
+      dtype: int64
+      index_array: true
+output_args:
+- a
+taxonomy:
+  track: loop_level_reasoning
+  domain: classical compiler optimizations
+loop_level_reasoning:
+  source: tsvc_2_5

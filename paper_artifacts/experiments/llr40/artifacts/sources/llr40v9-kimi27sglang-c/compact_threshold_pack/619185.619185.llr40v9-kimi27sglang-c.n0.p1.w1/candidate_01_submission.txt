@@ -1,0 +1,77 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <omp.h>
+
+void compact_threshold_pack_fp64(int64_t *restrict out_count,
+                                   double *restrict packed,
+                                   const double *restrict src,
+                                   const double *restrict weight,
+                                   const int64_t LEN_1D,
+                                   uint8_t *restrict workspace,
+                                   const int64_t workspace_bytes)
+{
+    if (LEN_1D <= 0) {
+        out_count[0] = 0;
+        return;
+    }
+
+    const int nt = omp_get_max_threads();
+    const int64_t need = (int64_t)(nt + 1) * sizeof(int64_t);
+    int64_t *restrict counts;
+    if (workspace != NULL && workspace_bytes >= need) {
+        counts = (int64_t *restrict)workspace;
+    } else {
+        counts = (int64_t *)malloc((size_t)need);
+        if (counts == NULL) {
+            out_count[0] = 0;
+            return;
+        }
+    }
+
+    const int64_t chunk = (LEN_1D + nt - 1) / nt;
+
+    #pragma omp parallel
+    {
+        const int tid = omp_get_thread_num();
+        const int64_t lo = (int64_t)tid * chunk;
+        int64_t hi = lo + chunk;
+        if (hi > LEN_1D) hi = LEN_1D;
+
+        int64_t c = 0;
+        for (int64_t i = lo; i < hi; ++i) {
+            if (src[i] > 0.0) {
+                ++c;
+            }
+        }
+        counts[tid] = c;
+    }
+
+    int64_t offset = 0;
+    for (int i = 0; i < nt; ++i) {
+        const int64_t c = counts[i];
+        counts[i] = offset;
+        offset += c;
+    }
+    counts[nt] = offset;
+
+    #pragma omp parallel
+    {
+        const int tid = omp_get_thread_num();
+        const int64_t lo = (int64_t)tid * chunk;
+        int64_t hi = lo + chunk;
+        if (hi > LEN_1D) hi = LEN_1D;
+
+        int64_t pos = counts[tid];
+        for (int64_t i = lo; i < hi; ++i) {
+            const double v = src[i];
+            if (v > 0.0) {
+                packed[pos++] = v * weight[i];
+            }
+        }
+    }
+
+    out_count[0] = offset;
+    if ((uint8_t *)counts != workspace) {
+        free(counts);
+    }
+}

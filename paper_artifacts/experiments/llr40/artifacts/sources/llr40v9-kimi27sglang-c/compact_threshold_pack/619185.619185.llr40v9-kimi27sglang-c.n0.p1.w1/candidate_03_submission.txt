@@ -1,0 +1,97 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <omp.h>
+#include <immintrin.h>
+
+void compact_threshold_pack_fp64(int64_t *restrict out_count,
+                                   double *restrict packed,
+                                   const double *restrict src,
+                                   const double *restrict weight,
+                                   const int64_t LEN_1D,
+                                   uint8_t *restrict workspace,
+                                   const int64_t workspace_bytes)
+{
+    if (LEN_1D <= 0) {
+        out_count[0] = 0;
+        return;
+    }
+
+    const int nt = omp_get_max_threads();
+    const int64_t need = (int64_t)(nt + 1) * sizeof(int64_t);
+    int64_t *restrict counts;
+    if (workspace != NULL && workspace_bytes >= need) {
+        counts = (int64_t *restrict)workspace;
+    } else {
+        counts = (int64_t *)malloc((size_t)need);
+        if (counts == NULL) {
+            out_count[0] = 0;
+            return;
+        }
+    }
+
+    const int64_t chunk = (LEN_1D + nt - 1) / nt;
+    int64_t offset = 0;
+    const __m512d zero = _mm512_setzero_pd();
+
+    #pragma omp parallel
+    {
+        const int tid = omp_get_thread_num();
+        const int64_t lo = (int64_t)tid * chunk;
+        int64_t hi = lo + chunk;
+        if (hi > LEN_1D) hi = LEN_1D;
+
+        int64_t c = 0;
+        int64_t i = lo;
+        const int64_t hi_vec_c = hi - (hi - lo) % 8;
+        for (; i < hi_vec_c; i += 8) {
+            __m512d v = _mm512_loadu_pd(src + i);
+            __mmask8 m = _mm512_cmp_pd_mask(v, zero, _CMP_GT_OQ);
+            c += (int64_t)__builtin_popcount((unsigned)m);
+        }
+        for (; i < hi; ++i) {
+            if (src[i] > 0.0) ++c;
+        }
+        counts[tid] = c;
+
+        #pragma omp barrier
+        #pragma omp masked
+        {
+            offset = 0;
+            for (int j = 0; j < nt; ++j) {
+                const int64_t cc = counts[j];
+                counts[j] = offset;
+                offset += cc;
+            }
+            counts[nt] = offset;
+        }
+        #pragma omp barrier
+
+        double tmp[8] __attribute__((aligned(64)));
+        int64_t pos = counts[tid];
+        i = lo;
+        const int64_t hi_vec_p = hi - (hi - lo) % 8;
+        for (; i < hi_vec_p; i += 8) {
+            __m512d s = _mm512_loadu_pd(src + i);
+            __m512d w = _mm512_loadu_pd(weight + i);
+            __mmask8 m = _mm512_cmp_pd_mask(s, zero, _CMP_GT_OQ);
+            __m512d p = _mm512_mul_pd(s, w);
+            __m512d comp = _mm512_maskz_compress_pd(m, p);
+            int k = __builtin_popcount((unsigned)m);
+            _mm512_store_pd(tmp, comp);
+            memcpy(packed + pos, tmp, (size_t)k * sizeof(double));
+            pos += k;
+        }
+        for (; i < hi; ++i) {
+            const double v = src[i];
+            if (v > 0.0) {
+                packed[pos++] = v * weight[i];
+            }
+        }
+    }
+
+    out_count[0] = offset;
+    if ((uint8_t *)counts != workspace) {
+        free(counts);
+    }
+}

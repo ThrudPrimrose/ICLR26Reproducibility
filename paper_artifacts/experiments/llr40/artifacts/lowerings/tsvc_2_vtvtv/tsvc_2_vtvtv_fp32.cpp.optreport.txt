@@ -1,0 +1,2 @@
+tsvc_2_vtvtv_fp32.cpp:161:31: optimized: loop vectorized using 64 byte vectors and unroll factor 16
+tsvc_2_vtvtv_fp32.cpp:161:31: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 16

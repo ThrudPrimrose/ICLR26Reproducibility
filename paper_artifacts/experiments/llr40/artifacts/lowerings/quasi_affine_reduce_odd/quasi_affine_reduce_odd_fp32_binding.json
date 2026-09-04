@@ -1,0 +1,34 @@
+{
+  "kernel": "quasi_affine_reduce_odd_fp32",
+  "abi": "c",
+  "args": [
+    {
+      "name": "a",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "out",
+      "kind": "ptr_float",
+      "shape": [
+        "1"
+      ]
+    },
+    {
+      "name": "LEN_1D",
+      "kind": "int64"
+    }
+  ],
+  "symbols": {
+    "c": "quasi_affine_reduce_odd_fp32",
+    "cpp": "quasi_affine_reduce_odd_fp32",
+    "fortran": "quasi_affine_reduce_odd_fp32"
+  },
+  "sources": {
+    "c": "quasi_affine_reduce_odd_fp32.c",
+    "cpp": "quasi_affine_reduce_odd_fp32.cpp",
+    "fortran": "quasi_affine_reduce_odd_fp32.f90"
+  }
+}

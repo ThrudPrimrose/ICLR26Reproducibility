@@ -1,0 +1,5 @@
+tsvc_2_s231_fp32.c:173:33: missed: couldn't vectorize loop
+tsvc_2_s231_fp32.c:173:33: missed: not vectorized: unsupported outerloop form.
+tsvc_2_s231_fp32.c:173:33: missed: couldn't vectorize loop
+tsvc_2_s231_fp32.c:174:41: missed: not vectorized: no vectype for stmt: _7 = *_6;
+ scalar_type: float

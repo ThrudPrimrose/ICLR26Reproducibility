@@ -1,0 +1,29 @@
+/* Optimized implementation of the TSVC tsvc_2_s275 kernel.
+   The reference computes, for each column i, a recurrence over rows j:
+     aa[j,i] = aa[j-1,i] + bb[j,i] * cc[j,i]
+   if the initial element aa[0,i] > 0.
+   This version parallelizes over columns with OpenMP and reduces memory traffic by
+   keeping the previous value in a register.
+   The function signature matches the reference.
+*/
+
+#include <stdint.h>
+
+void tsvc_2_s275_fp64(double *restrict aa, const double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+    #pragma omp parallel for schedule(static)
+    for (int64_t i = 0; i < LEN_2D; ++i) {
+        double a0 = aa[i];
+        if (a0 > 0.0) {
+            int64_t idx = i;
+            double prev = a0;
+            for (int64_t j = 1; j < LEN_2D; ++j) {
+                idx += LEN_2D;
+                double prod = bb[idx] * cc[idx];
+                double cur = prev + prod;
+                aa[idx] = cur;
+                prev = cur;
+            }
+        }
+    }
+}
+

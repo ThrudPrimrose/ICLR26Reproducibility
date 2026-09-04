@@ -1,0 +1,361 @@
+module ctp_state
+  use, intrinsic :: iso_c_binding
+  implicit none
+  logical :: decided = .false.
+  logical :: topo_read = .false.
+  integer :: t_nnodes = 0
+  integer :: t_nids(0:15) = 0
+  integer(c_int) :: t_masks(0:31, 0:15) = 0
+  logical :: warmed = .false.
+  integer :: orig_nt = -1
+  integer :: dec_node = -1
+  integer :: dec_ncpu = 0
+  integer(c_int) :: dec_mask(0:31) = 0
+end module ctp_state
+
+subroutine compact_threshold_pack_fp64(out_count, packed, src, weight, LEN_1D) bind(C, name="compact_threshold_pack_fp64")
+  use, intrinsic :: iso_c_binding
+  use omp_lib
+  use ctp_state
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D
+  integer(c_int64_t), intent(inout) :: out_count(1)
+  real(c_double), intent(inout) :: packed(LEN_1D)
+  real(c_double), intent(in) :: src(LEN_1D)
+  real(c_double), intent(in) :: weight(LEN_1D)
+
+  integer :: nt, ntw, t, nnodes, node, ncpu_node, k, j
+  integer :: nids(0:15), acnt, nodecnt, mycpu, mynode
+  integer(c_int64_t) :: i, n, lo, hi, base, run
+  integer(c_int64_t) :: part(0:2048)
+  character(len=512) :: line
+  character(len=96) :: path
+  integer :: io
+  integer(c_int) :: masks(0:31, 0:15) = 0
+  integer(c_int) :: allowed(0:31) = 0
+  integer(c_int) :: pmask(0:31) = 0
+
+  interface
+    function setaff_c(pid, sz, mask) bind(C, name="sched_setaffinity")
+      import :: c_int, c_size_t
+      integer(c_int), value :: pid
+      integer(c_size_t), value :: sz
+      integer(c_int), intent(in) :: mask(0:31)
+      integer(c_int) :: setaff_c
+    end function setaff_c
+    function getaff_c(pid, sz, mask) bind(C, name="sched_getaffinity")
+      import :: c_int, c_size_t
+      integer(c_int), value :: pid
+      integer(c_size_t), value :: sz
+      integer(c_int), intent(out) :: mask(0:31)
+      integer(c_int) :: getaff_c
+    end function getaff_c
+    function getcpu_c() bind(C, name="sched_getcpu")
+      import :: c_int
+      integer(c_int) :: getcpu_c
+    end function getcpu_c
+  end interface
+
+  nt = omp_get_max_threads()
+  if (nt < 1) nt = 1
+  if (orig_nt < 0) orig_nt = nt
+
+  if (nt == 1 .or. LEN_1D < 16384 * int(nt, 8)) then
+    n = 0
+    do i = 1, LEN_1D
+      if (src(i) > 0.0d0) then
+        packed(n + 1) = src(i) * weight(i)
+        n = n + 1
+      end if
+    end do
+    out_count(1) = n
+    return
+  end if
+
+  ! ---------------- NUMA: run on the node that owns the buffers ----------------
+  ! The buffers were just (deep-)copied by the main thread, so their pages are
+  ! homed on the NUMA node of the CPU that is calling this routine. If the
+  ! process is allowed to use (almost) that whole node, pin there.
+  node = -1
+  ncpu_node = 0
+  if (.not. topo_read) then
+    ! NUMA topology is static: read /sys once per process
+    nnodes = 0
+    if (read_sysfile('/sys/devices/system/node/online', line, io)) then
+      nnodes = parse_ids(line, nids)
+      do k = 1, nnodes
+        write(path, '(A,I0,A)') '/sys/devices/system/node/node', nids(k), '/cpulist'
+        if (read_sysfile(trim(path), line, io)) then
+          call parse_cpulist(line, t_masks(0:31, k), ncpu_node)
+        else
+          ncpu_node = 0
+        end if
+      end do
+    end if
+    if (nnodes >= 1 .and. nnodes <= 15) then
+      t_nnodes = nnodes
+      do k = 1, nnodes
+        t_nids(k) = nids(k)
+      end do
+      topo_read = .true.
+    end if
+  end if
+  nnodes = t_nnodes
+  do k = 1, nnodes
+    do j = 0, 31
+      masks(j, k) = t_masks(j, k)
+    end do
+  end do
+  if (nnodes >= 2 .and. nnodes <= 8 .and. getaff_c(0_c_int, 128_c_size_t, allowed) == 0) then
+    if (.not. decided) then
+      mycpu = getcpu_c()
+      mynode = 0
+      do k = 1, nnodes
+        if (mycpu >= 0 .and. btest(masks(mycpu / 32, k), mod(mycpu, 32))) mynode = k
+      end do
+      if (mynode >= 1) then
+        do j = 0, 31
+          pmask(j) = iand(masks(j, mynode), allowed(j))
+        end do
+        acnt = ncpu_node_count(pmask)
+        nodecnt = ncpu_node_count(masks(0:31, mynode))
+        ! pin only when the allowed set really covers the local node: a small
+        ! intersection means the rank spans several nodes (or is tiny), where a
+        ! process-wide pin would oversubscribe a few CPUs.
+        if (acnt >= 16 .and. 2 * acnt >= nodecnt) then
+          dec_node = t_nids(mynode)
+          dec_ncpu = acnt
+          do j = 0, 31
+            dec_mask(j) = pmask(j)
+          end do
+        else
+          dec_node = -1
+        end if
+      else
+        dec_node = -1
+      end if
+      decided = .true.
+    end if
+    if (dec_node >= 0) then
+      if (setaff_c(0_c_int, 128_c_size_t, dec_mask) == 0) then
+        node = dec_node
+        ncpu_node = dec_ncpu
+        ! use the whole pinned node (one thread per CPU, SMT included).
+        ! First call only: bring the pool up at physical-core count --
+        ! this call's write pass runs at that size anyway, and the
+        ! remaining threads join lazily on the second parallel region.
+        nt = ncpu_node
+        if (.not. warmed .and. ncpu_node >= 16) nt = (ncpu_node + 1) / 2
+        call omp_set_num_threads(nt)
+      else
+        node = -1
+        dec_node = -1
+      end if
+    else
+      call omp_set_num_threads(orig_nt)
+    end if
+  end if
+
+  ! ---------------- two-pass compaction ----------------
+  ! Pass 1 (count): all pinned CPUs, SMT included -- latency-bound scan.
+  part(0) = 0
+  !$omp parallel private(t, lo, hi, i, run)
+  t = omp_get_thread_num()
+  lo = (LEN_1D * t) / nt + 1
+  hi = (LEN_1D * (t + 1)) / nt
+  run = 0
+  !$omp simd
+  do i = lo, hi
+    run = run + merge(1_8, 0_8, src(i) > 0.0d0)
+  end do
+  part(t + 1) = run
+  !$omp end parallel
+  do t = 2, nt
+    part(t) = part(t) + part(t - 1)
+  end do
+  ! Pass 2 (write): physical cores only when pinned -- the scattered
+  ! read-modify-write stores contend for the memory controller when the
+  ! SMT siblings join in, so half the threads stream faster than all of them.
+  ntw = nt
+  if (dec_node >= 0) ntw = (ncpu_node + 1) / 2
+  if (ntw /= nt) call omp_set_num_threads(ntw)
+  !$omp parallel private(t, lo, hi, i, run, base)
+  t = omp_get_thread_num()
+  lo = (LEN_1D * t) / ntw + 1
+  hi = (LEN_1D * (t + 1)) / ntw
+  base = part(t)
+  run = 0
+  do i = lo, hi
+    if (src(i) > 0.0d0) then
+      run = run + 1
+      packed(base + run) = src(i) * weight(i)
+    end if
+  end do
+  !$omp end parallel
+
+  out_count(1) = part(nt)
+  warmed = .true.
+
+contains
+
+  pure function ncpu_node_count_iand(a, b)
+    integer(c_int), intent(in) :: a(0:31), b(0:31)
+    integer :: ncpu_node_count_iand
+    integer :: k, bb, w
+    ncpu_node_count_iand = 0
+    do k = 0, 31
+      w = iand(a(k), b(k))
+      do bb = 0, 31
+        if (btest(w, bb)) ncpu_node_count_iand = ncpu_node_count_iand + 1
+      end do
+    end do
+  end function ncpu_node_count_iand
+
+  pure function ncpu_node_count(mask)
+    integer(c_int), intent(in) :: mask(0:31)
+    integer :: ncpu_node_count
+    integer :: k, b
+    ncpu_node_count = 0
+    do k = 0, 31
+      do b = 0, 31
+        if (btest(mask(k), b)) ncpu_node_count = ncpu_node_count + 1
+      end do
+    end do
+  end function ncpu_node_count
+
+  function parse_ids(line, nids)
+    character(len=*), intent(in) :: line
+    integer, intent(out) :: nids(0:15)
+    integer :: parse_ids
+    integer :: i, ch, cur, lo2, hi2
+    logical :: rangeflag, indigit
+    parse_ids = 0
+    cur = 0
+    lo2 = 0
+    hi2 = 0
+    rangeflag = .false.
+    indigit = .false.
+    do i = 1, len_trim(line)
+      ch = iachar(line(i:i))
+      if (ch >= 48 .and. ch <= 57) then
+        if (.not. indigit) then
+          cur = 0
+          lo2 = 0
+          hi2 = 0
+          indigit = .true.
+        end if
+        cur = cur * 10 + (ch - 48)
+        if (rangeflag) then
+          hi2 = cur
+        else
+          lo2 = cur
+        end if
+      else
+        if (ch == 45) then
+          lo2 = cur
+          cur = 0
+          hi2 = 0
+          rangeflag = .true.
+        else if (ch == 44) then
+          if (indigit) call put_id(lo2, hi2, nids, parse_ids)
+          cur = 0
+          lo2 = 0
+          hi2 = 0
+          rangeflag = .false.
+          indigit = .false.
+        end if
+      end if
+    end do
+    if (indigit) call put_id(lo2, hi2, nids, parse_ids)
+  end function parse_ids
+
+  subroutine put_id(lo2, hi2, nids, cnt)
+    integer, intent(in) :: lo2, hi2
+    integer, intent(inout) :: nids(0:15), cnt
+    integer :: j
+    do j = lo2, hi2
+      if (cnt < 15) then
+        cnt = cnt + 1
+        nids(cnt) = j
+      end if
+    end do
+  end subroutine put_id
+
+  logical function read_sysfile(path, line, io)
+    character(len=*), intent(in) :: path
+    character(len=*), intent(out) :: line
+    integer, intent(out) :: io
+    integer :: fu
+    line = ''
+    read_sysfile = .false.
+    open(newunit=fu, file=trim(path), status='old', action='read', iostat=io)
+    if (io /= 0) return
+    read(fu, '(A)', iostat=io) line
+    close(fu)
+    read_sysfile = (io == 0)
+  end function read_sysfile
+
+  pure subroutine parse_cpulist(line, mask, ncpu)
+    character(len=*), intent(in) :: line
+    integer(c_int), intent(out) :: mask(0:31)
+    integer, intent(out) :: ncpu
+    integer :: i, ch, cur, lo2, hi2, nchars
+    logical :: rangeflag, indigit
+    mask = 0
+    ncpu = 0
+    cur = 0
+    lo2 = 0
+    hi2 = 0
+    rangeflag = .false.
+    indigit = .false.
+    nchars = len_trim(line)
+    do i = 1, nchars
+      ch = iachar(line(i:i))
+      if (ch >= 48 .and. ch <= 57) then
+        if (.not. indigit) then
+          cur = 0
+          lo2 = 0
+          hi2 = 0
+          indigit = .true.
+        end if
+        cur = cur * 10 + (ch - 48)
+        if (rangeflag) then
+          hi2 = cur
+        else
+          lo2 = cur
+        end if
+      else
+        if (ch == 45) then
+          lo2 = cur
+          cur = 0
+          hi2 = 0
+          rangeflag = .true.
+        else if (ch == 44) then
+          if (indigit) call set_cpu_range(lo2, hi2, mask, ncpu)
+          cur = 0
+          lo2 = 0
+          hi2 = 0
+          rangeflag = .false.
+          indigit = .false.
+        end if
+      end if
+    end do
+    if (indigit) call set_cpu_range(lo2, hi2, mask, ncpu)
+  end subroutine parse_cpulist
+
+  pure subroutine set_cpu_range(lo2, hi2, mask, ncpu)
+    integer, intent(in) :: lo2, hi2
+    integer(c_int), intent(inout) :: mask(0:31)
+    integer, intent(inout) :: ncpu
+    integer :: j
+    do j = lo2, hi2
+      if (j >= 0 .and. j < 1024) then
+        if (.not. btest(mask(j / 32), mod(j, 32))) then
+          mask(j / 32) = ibset(mask(j / 32), mod(j, 32))
+          ncpu = ncpu + 1
+        end if
+      end if
+    end do
+  end subroutine set_cpu_range
+
+end subroutine compact_threshold_pack_fp64

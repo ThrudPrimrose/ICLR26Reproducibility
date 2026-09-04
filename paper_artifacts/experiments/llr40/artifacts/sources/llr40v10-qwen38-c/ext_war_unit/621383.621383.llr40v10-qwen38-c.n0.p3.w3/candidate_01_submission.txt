@@ -1,0 +1,86 @@
+/* TSVC ext_war_unit:  a[i] = a[i+1] + b[i]  for i in [0, LEN_1D-2), in place.
+ *
+ * The loop carries no true (RAW) dependence: iteration i reads a[i+1] and
+ * writes a[i]; a[i+1] is only written later, by iteration i+1, which needs no
+ * old value of a[i+1]. The only loop-carried hazard is WAR: the read of a[j]
+ * (iteration j-1) must observe the original value before iteration j stores
+ * a[j]. That hazard crosses a parallel partition at exactly one element per
+ * chunk boundary -- a[e_t] for chunk [s_t, e_t), written by the next chunk.
+ * Preloading every boundary into a register before a barrier removes the
+ * hazard entirely: each chunk then computes in place, ascending, with
+ * in-chunk program order providing the read-before-write ordering.
+ *
+ * Total memory traffic: one read of a, one read of b, one write of a per
+ * element -- 24 B/elem, the information-theoretic minimum for this kernel.
+ * AVX-512 body: the shifted stream a[i+1..i+8] is one unaligned 64 B load
+ * (never touching a[e], whose value lives in `boundary`); the sub-8 remainder
+ * falls back to scalar, using `boundary` for the final element.
+ */
+#include <stdint.h>
+#include <omp.h>
+
+#if defined(__AVX512F__)
+#include <immintrin.h>
+#define HAVE_AVX512 1
+#elif defined(__AVX2__)
+#include <immintrin.h>
+#define HAVE_AVX2 1
+#endif
+
+/* In-place compute of a[i] = a[i+1] + b[i] for i in [s, e).
+ * Every a[j] with j in (s, e) is still the ORIGINAL value on entry; a[e]
+ * (original) is supplied as `boundary`. Safe for s == e (no work). */
+static void chunk_compute(double *restrict a, const double *restrict b,
+                          int64_t s, int64_t e, double boundary)
+{
+    int64_t i = s;
+#if HAVE_AVX512
+    /* vector step: lanes j <- a[i+1+j] (j in 0..7), read before write */
+    for (; i + 9 <= e; i += 8) {
+        __m512d vsh = _mm512_loadu_pd(a + i + 1);
+        __m512d vb  = _mm512_loadu_pd(b + i);
+        _mm512_storeu_pd(a + i, _mm512_add_pd(vsh, vb));
+    }
+#elif HAVE_AVX2
+    for (; i + 5 <= e; i += 4) {
+        __m256d vsh = _mm256_loadu_pd(a + i + 1);
+        __m256d vb  = _mm256_loadu_pd(b + i);
+        _mm256_storeu_pd(a + i, _mm256_add_pd(vsh, vb));
+    }
+#endif
+    for (; i < e; ++i) {
+        double src = (i + 1 < e) ? a[i + 1] : boundary;
+        a[i] = src + b[i];
+    }
+}
+
+void ext_war_unit_fp64(double *restrict a, const double *restrict b,
+                       const int64_t LEN_1D,
+                       void *restrict workspace, int64_t workspace_size)
+{
+    (void)workspace;
+    (void)workspace_size;
+    const int64_t n = LEN_1D;
+    if (n < 2)
+        return;
+    const int64_t niters = n - 1;
+
+    int T = omp_get_max_threads();
+    if (T > niters)
+        T = (int)niters;
+    if (T <= 1) {
+        chunk_compute(a, b, 0, niters, a[n - 1]);
+        return;
+    }
+
+    #pragma omp parallel num_threads(T)
+    {
+        const int t = omp_get_thread_num();
+        const int64_t s = (int64_t)t * niters / T;
+        const int64_t e = (int64_t)(t + 1) * niters / T;
+        /* original a[e]: read now, before ANY thread stores anything */
+        const double boundary = a[e];
+        #pragma omp barrier
+        chunk_compute(a, b, s, e, boundary);
+    }
+}

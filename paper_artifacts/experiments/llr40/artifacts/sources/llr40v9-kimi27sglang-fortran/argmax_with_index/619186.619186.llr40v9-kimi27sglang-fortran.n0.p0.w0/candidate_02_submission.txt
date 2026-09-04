@@ -1,0 +1,34 @@
+subroutine argmax_with_index_fp64(a, out_index, out_value, len_1d) bind(c, name='argmax_with_index_fp64')
+  use iso_c_binding, only: c_double, c_int64_t
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_1d
+  real(c_double), intent(in) :: a(len_1d)
+  integer(c_int64_t), intent(out) :: out_index(1)
+  real(c_double), intent(out) :: out_value(1)
+
+  type :: maxloc_pair
+    real(c_double) :: val
+    integer(c_int64_t) :: idx
+  end type maxloc_pair
+
+  type(maxloc_pair) :: best
+  integer(c_int64_t) :: i
+
+!$omp declare reduction(maxloc: maxloc_pair: &
+!$omp   omp_out = merge(omp_in, omp_out, omp_in%val > omp_out%val .or. &
+!$omp                   (omp_in%val == omp_out%val .and. omp_in%idx < omp_out%idx))) &
+!$omp   initializer(omp_priv = maxloc_pair(-huge(1.0_c_double), 1_c_int64_t))
+
+  best = maxloc_pair(-huge(1.0_c_double), 1_c_int64_t)
+
+!$omp parallel do simd reduction(maxloc: best)
+  do i = 1, len_1d
+    if (a(i) > best%val) then
+      best%val = a(i)
+      best%idx = i
+    end if
+  end do
+
+  out_value(1) = best%val
+  out_index(1) = best%idx
+end subroutine argmax_with_index_fp64

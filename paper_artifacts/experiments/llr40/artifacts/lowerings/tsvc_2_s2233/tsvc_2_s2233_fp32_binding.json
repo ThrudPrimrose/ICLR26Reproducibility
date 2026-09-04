@@ -1,0 +1,44 @@
+{
+  "kernel": "tsvc_2_s2233_fp32",
+  "abi": "c",
+  "args": [
+    {
+      "name": "aa",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_2D",
+        "LEN_2D"
+      ]
+    },
+    {
+      "name": "bb",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_2D",
+        "LEN_2D"
+      ]
+    },
+    {
+      "name": "cc",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_2D",
+        "LEN_2D"
+      ]
+    },
+    {
+      "name": "LEN_2D",
+      "kind": "int64"
+    }
+  ],
+  "symbols": {
+    "c": "tsvc_2_s2233_fp32",
+    "cpp": "tsvc_2_s2233_fp32",
+    "fortran": "tsvc_2_s2233_fp32"
+  },
+  "sources": {
+    "c": "tsvc_2_s2233_fp32.c",
+    "cpp": "tsvc_2_s2233_fp32.cpp",
+    "fortran": "tsvc_2_s2233_fp32.f90"
+  }
+}

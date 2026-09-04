@@ -1,0 +1,70 @@
+/* Segmented dot product over a ragged CSR-style structure.
+ *
+ * out[s] = sum_{e in [row_ptr[s], row_ptr[s+1])} val[e] * w[e]
+ *
+ * Parallelization: segments are independent; each thread owns the segments whose
+ * start position row_ptr[s] falls in its share of the element axis.  Since the
+ * row pointers partition [0, total) and the work is proportional to element
+ * count, this balances the lognormal segment-length distribution without any
+ * scheduling overhead or atomics.  Every segment (including empty ones) is
+ * written exactly once, so `out` need not be pre-zeroed.
+ */
+#include <stdint.h>
+#include <omp.h>
+
+static inline double dot_seg(const double *restrict v, const double *restrict w, int64_t n)
+{
+    double acc = 0.0;
+    #pragma omp simd reduction(+:acc)
+    for (int64_t i = 0; i < n; i++)
+        acc += v[i] * w[i];
+    return acc;
+}
+
+/* first index s in [0, NSEG) with row_ptr[s] >= x (row_ptr non-decreasing) */
+static inline int64_t lb_seg(const int64_t *restrict rp, int64_t nseg, int64_t x)
+{
+    int64_t lo = 0, hi = nseg;
+    while (hi - lo > 1) {
+        int64_t mid = (lo + hi) >> 1;
+        if (rp[mid] >= x) hi = mid;
+        else lo = mid;
+    }
+    return lo;
+}
+
+void segment_reduce_ragged_fp64(double *restrict val, int64_t *restrict row_ptr,
+                                double *restrict w, double *restrict out, int64_t NSEG,
+                                uint8_t *restrict workspace, int64_t ws_bytes)
+{
+    (void)workspace;
+    (void)ws_bytes;
+    if (NSEG <= 0)
+        return;
+    const int64_t *restrict rp = row_ptr;
+    const int64_t total = rp[NSEG];
+    if (total <= 0) {
+        for (int64_t s = 0; s < NSEG; s++)
+            out[s] = 0.0;
+        return;
+    }
+
+    const int64_t nt = omp_get_max_threads();
+    if (nt < 2 || total < 262144) {
+        for (int64_t s = 0; s < NSEG; s++)
+            out[s] = dot_seg(val + rp[s], w + rp[s], rp[s + 1] - rp[s]);
+        return;
+    }
+
+    #pragma omp parallel num_threads((int)nt)
+    {
+        const int64_t t = omp_get_thread_num();
+        const int64_t T = omp_get_num_threads();
+        const int64_t lo = total * t / T;
+        const int64_t hi = total * (t + 1) / T;
+        const int64_t s0 = lb_seg(rp, NSEG, lo);
+        const int64_t s1 = (t == T - 1) ? NSEG : lb_seg(rp, NSEG, hi);
+        for (int64_t s = s0; s < s1; s++)
+            out[s] = dot_seg(val + rp[s], w + rp[s], rp[s + 1] - rp[s]);
+    }
+}

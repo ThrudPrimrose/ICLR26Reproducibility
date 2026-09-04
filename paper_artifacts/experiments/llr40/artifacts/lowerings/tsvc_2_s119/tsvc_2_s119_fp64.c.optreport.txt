@@ -1,0 +1,5 @@
+tsvc_2_s119_fp64.c:172:31: missed: couldn't vectorize loop
+tsvc_2_s119_fp64.c:174:41: missed: not vectorized: complicated access pattern.
+tsvc_2_s119_fp64.c:173:33: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+tsvc_2_s119_fp64.c:173:33: optimized:  loop versioned for vectorization because of possible aliasing
+tsvc_2_s119_fp64.c:173:33: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8

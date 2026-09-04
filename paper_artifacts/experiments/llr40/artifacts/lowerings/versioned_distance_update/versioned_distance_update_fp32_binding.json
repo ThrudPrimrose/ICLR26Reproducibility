@@ -1,0 +1,45 @@
+{
+  "kernel": "versioned_distance_update_fp32",
+  "abi": "c",
+  "args": [
+    {
+      "name": "a",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "b",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "c",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "K",
+      "kind": "int64"
+    },
+    {
+      "name": "LEN_1D",
+      "kind": "int64"
+    }
+  ],
+  "symbols": {
+    "c": "versioned_distance_update_fp32",
+    "cpp": "versioned_distance_update_fp32",
+    "fortran": "versioned_distance_update_fp32"
+  },
+  "sources": {
+    "c": "versioned_distance_update_fp32.c",
+    "cpp": "versioned_distance_update_fp32.cpp",
+    "fortran": "versioned_distance_update_fp32.f90"
+  }
+}

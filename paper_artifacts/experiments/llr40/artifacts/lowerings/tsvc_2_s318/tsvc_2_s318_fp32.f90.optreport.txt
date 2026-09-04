@@ -1,0 +1,9 @@
+tsvc_2_s318_fp32.f90:20:20:
+
+   20 |             index = i_l0
+      |                    1
+Warning: Possible change of value in conversion from INTEGER(8) to REAL(4) at (1) [-Wconversion]
+tsvc_2_s318_fp32.f90:17:13: missed: couldn't vectorize loop
+tsvc_2_s318_fp32.f90:2:1: missed: not vectorized: unsupported use in stmt.
+tsvc_2_s318_fp32.f90:17:13: missed: couldn't vectorize loop
+tsvc_2_s318_fp32.f90:2:1: missed: not vectorized: unsupported use in stmt.

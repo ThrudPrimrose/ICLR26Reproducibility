@@ -1,0 +1,20 @@
+tsvc_2_s2275_fp32.f90:14:13: missed: couldn't vectorize loop
+tsvc_2_s2275_fp32.f90:17:26: missed: not vectorized: not suitable for strided load _59 = (*aa_28(D))[_60];
+tsvc_2_s2275_fp32.f90:15:17: missed: couldn't vectorize loop
+tsvc_2_s2275_fp32.f90:17:26: missed: not vectorized: no vectype for stmt: _59 = (*aa_28(D))[_60];
+ scalar_type: real(kind=4)
+tsvc_2_s2275_fp32.f90:2:1: missed: statement clobbers memory: __builtin_GOMP_parallel (tsvc_2_s2275_fp32._loopfn.0, &.paral_data_store.53, 12, 0);
+tsvc_2_s2275_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s2275_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s2275_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s2275_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s2275_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s2275_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s2275_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s2275_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s2275_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s2275_fp32.f90:17:26: missed: couldn't vectorize loop
+tsvc_2_s2275_fp32.f90:17:26: missed: not vectorized: not suitable for strided load _33 = (*aa.44_12)[_32];
+tsvc_2_s2275_fp32.f90:15:17: missed: couldn't vectorize loop
+tsvc_2_s2275_fp32.f90:17:26: missed: not vectorized: no vectype for stmt: _33 = (*aa.44_12)[_32];
+ scalar_type: real(kind=4)

@@ -1,0 +1,26 @@
+#include <stdint.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+
+  /* aa update: original loop order was i outer, j inner.
+   * Dependency is along j for each fixed i, so i was parallelizable but
+   * accesses were strided.  Interchange so j is outer and i is inner:
+   * aa[j,i] depends only on aa[j-1,i] (previous row), so row j can be
+   * computed once row j-1 is done.  Inner loop over i touches contiguous
+   * memory and is fully vectorizable. */
+  for (int64_t j = 8; j < LEN_2D; ++j) {
+    #pragma omp simd
+    for (int64_t i = 8; i < LEN_2D; ++i) {
+      aa[j * LEN_2D + i] = aa[(j - 1) * LEN_2D + i] + cc[j * LEN_2D + i];
+    }
+  }
+
+  /* bb update: original order i outer, j inner.  Dependency is along i,
+   * so j inner is fully vectorizable with contiguous row-major access. */
+  for (int64_t i = 8; i < LEN_2D; ++i) {
+    #pragma omp simd
+    for (int64_t j = 8; j < LEN_2D; ++j) {
+      bb[i * LEN_2D + j] = bb[(i - 1) * LEN_2D + j] + cc[i * LEN_2D + j];
+    }
+  }
+}

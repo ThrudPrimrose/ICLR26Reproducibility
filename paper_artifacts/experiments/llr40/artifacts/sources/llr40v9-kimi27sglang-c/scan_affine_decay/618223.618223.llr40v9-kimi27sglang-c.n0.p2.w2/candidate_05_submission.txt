@@ -1,0 +1,88 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <emmintrin.h>
+#include <omp.h>
+
+void scan_affine_decay_fp64(const double *restrict c,
+                            const double *restrict x,
+                            double *restrict y,
+                            const int64_t LEN_1D)
+{
+    if (LEN_1D <= 1) return;
+
+    const int64_t n = LEN_1D;
+    const int64_t block_size = 65536;
+    const int64_t nb = (n + block_size - 1) / block_size;
+
+    double *restrict blockC = (double *)malloc((size_t)nb * sizeof(double));
+    double *restrict blockS = (double *)malloc((size_t)nb * sizeof(double));
+    double *restrict prefix = (double *)malloc(((size_t)nb + 1) * sizeof(double));
+    if (!blockC || !blockS || !prefix) {
+        free(blockC); free(blockS); free(prefix);
+        return;
+    }
+
+    #pragma omp parallel
+    {
+        #pragma omp for schedule(dynamic, 16)
+        for (int64_t b = 0; b < nb; ++b) {
+            const int64_t l = b * block_size;
+            const int64_t r = (l + block_size < n) ? l + block_size : n;
+            double prod = 1.0;
+            double sum  = 0.0;
+            for (int64_t i = l; i < r; ++i) {
+                const double ci = c[i];
+                prod *= ci;
+                sum  = sum * ci + x[i];
+            }
+            blockC[b] = prod;
+            blockS[b] = sum;
+        }
+
+        #pragma omp single
+        {
+            prefix[0] = 0.0;
+            for (int64_t b = 0; b < nb; ++b) {
+                const double cb = blockC[b];
+                const double sb = blockS[b];
+                const double p  = prefix[b];
+                prefix[b + 1] = cb * p + sb;
+            }
+        }
+
+        #pragma omp for schedule(dynamic, 16) nowait
+        for (int64_t b = 0; b < nb; ++b) {
+            const int64_t l = b * block_size;
+            const int64_t r = (l + block_size < n) ? l + block_size : n;
+            double prev = prefix[b];
+            int64_t i = l;
+            for (; i < r && (((intptr_t)&y[i]) & 15); ++i) {
+                prev = c[i] * prev + x[i];
+                _mm_store_sd(&y[i], _mm_set_sd(prev));
+            }
+            for (; i + 1 < r; i += 2) {
+                const double p0 = c[i]     * prev + x[i];
+                const double p1 = c[i + 1] * p0   + x[i + 1];
+                _mm_stream_pd(&y[i], _mm_set_pd(p1, p0));
+                prev = p1;
+            }
+            if (i < r) {
+                prev = c[i] * prev + x[i];
+                _mm_store_sd(&y[i], _mm_set_sd(prev));
+            }
+        }
+    }
+    _mm_sfence();
+
+    free(blockC);
+    free(blockS);
+    free(prefix);
+}
+
+void scan_affine_decay(const double *restrict c,
+                       const double *restrict x,
+                       double *restrict y,
+                       const int64_t LEN_1D)
+{
+    scan_affine_decay_fp64(c, x, y, LEN_1D);
+}

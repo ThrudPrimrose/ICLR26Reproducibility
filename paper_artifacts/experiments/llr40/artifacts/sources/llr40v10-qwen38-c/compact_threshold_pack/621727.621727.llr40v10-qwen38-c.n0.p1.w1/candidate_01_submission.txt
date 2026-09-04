@@ -1,0 +1,20 @@
+#include <stdint.h>
+
+void compact_threshold_pack_fp64(int64_t *restrict out_count,
+                                 double *restrict packed,
+                                 const double *restrict src,
+                                 const double *restrict weight,
+                                 const int64_t LEN_1D,
+                                 uint8_t *restrict workspace,
+                                 const int64_t workspace_size) {
+    (void)workspace;
+    (void)workspace_size;
+    int64_t n = 0;
+    for (int64_t i = 0; i < LEN_1D; ++i) {
+        if (src[i] > 0.0) {
+            packed[n] = src[i] * weight[i];
+            n += 1;
+        }
+    }
+    *out_count = n;
+}

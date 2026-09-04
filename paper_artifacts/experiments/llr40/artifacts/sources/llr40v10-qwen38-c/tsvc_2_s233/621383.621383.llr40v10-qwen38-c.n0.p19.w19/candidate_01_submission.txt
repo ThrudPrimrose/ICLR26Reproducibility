@@ -1,0 +1,65 @@
+/* TSVC tsvc_2 s233 optimized.
+ *
+ * The reference computes two independent 2-D prefix structures:
+ *   aa[j][i] = running column sum of cc (per column i, over j)
+ *   bb[j][i] = running row sum of cc     (per row j, over i)
+ * with a[7][i] / b[j][7] as the seeds (rows/cols 0..7 untouched).
+ *
+ * Bit-exact restructure into two OpenMP-parallel loops:
+ *  - part A: batch of 16 columns per chunk; j outer -> 128B contiguous
+ *    per j; one independent scalar chain per column.
+ *  - part B: batch of 8 rows per chunk; i outer -> 8 independent chains.
+ * Both keep the exact reference addition order per element.
+ */
+#include <stdint.h>
+#include <omp.h>
+
+static void part_aa(double *restrict aa, const double *restrict cc, const int64_t N)
+{
+    const int64_t M = N - 8;
+    #pragma omp parallel for schedule(static)
+    for (int64_t i0 = 0; i0 < M; i0 += 16) {
+        int64_t m = M - i0;
+        if (m > 16) m = 16;
+        int64_t col = i0 + 8;
+        double acc[16];
+        for (int64_t k = 0; k < m; ++k)
+            acc[k] = aa[7 * N + col + k];
+        for (int64_t j = 8; j < N; ++j) {
+            const double *c = cc + j * N + col;
+            double *a = aa + j * N + col;
+            for (int64_t k = 0; k < m; ++k) {
+                acc[k] += c[k];
+                a[k] = acc[k];
+            }
+        }
+    }
+}
+
+static void part_bb(double *restrict bb, const double *restrict cc, const int64_t N)
+{
+    const int64_t M = N - 8;
+    #pragma omp parallel for schedule(static)
+    for (int64_t j0 = 0; j0 < M; j0 += 8) {
+        int64_t m = M - j0;
+        if (m > 8) m = 8;
+        int64_t row = j0 + 8;
+        double acc[8];
+        for (int64_t k = 0; k < m; ++k)
+            acc[k] = bb[(row + k) * N + 7];
+        for (int64_t i = 8; i < N; ++i) {
+            for (int64_t k = 0; k < m; ++k) {
+                int64_t off = (row + k) * N + i;
+                acc[k] += cc[off];
+                bb[off] = acc[k];
+            }
+        }
+    }
+}
+
+void tsvc_2_s233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D)
+{
+    if (LEN_2D <= 8) return;
+    part_aa(aa, cc, LEN_2D);
+    part_bb(bb, cc, LEN_2D);
+}

@@ -1,0 +1,7 @@
+argmax_with_index_fp64.f90:20:25:
+
+   20 |     out_index((0) + 1) = (idx) + 1
+      |                         1
+Warning: Possible change of value in conversion from REAL(8) to INTEGER(8) at (1) [-Wconversion]
+argmax_with_index_fp64.f90:13:13: missed: couldn't vectorize loop
+argmax_with_index_fp64.f90:2:1: missed: not vectorized: unsupported use in stmt.

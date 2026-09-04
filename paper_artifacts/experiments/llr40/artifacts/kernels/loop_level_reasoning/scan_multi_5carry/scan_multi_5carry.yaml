@@ -1,0 +1,24 @@
+# HPCAgent-Bench benchmark manifest -- adding a benchmark: see README.md.
+name: TSVC scan_multi_5carry
+kind: microkernel
+level: 1
+parameters:
+  S:
+    LEN_1D: 513
+  M:
+    LEN_1D: 19000000
+  L:
+    LEN_1D: 31455573
+  XL:
+    LEN_1D: 52076478
+init:
+  arrays:
+    acc: (5,LEN_1D)
+    delta: (5,LEN_1D)
+output_args:
+- acc
+taxonomy:
+  track: loop_level_reasoning
+  domain: classical compiler optimizations
+loop_level_reasoning:
+  source: tsvc_2_5

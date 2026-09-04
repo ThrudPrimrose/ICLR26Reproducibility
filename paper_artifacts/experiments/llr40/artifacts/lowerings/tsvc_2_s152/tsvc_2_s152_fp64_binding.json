@@ -1,0 +1,55 @@
+{
+  "kernel": "tsvc_2_s152_fp64",
+  "abi": "c",
+  "args": [
+    {
+      "name": "a",
+      "kind": "ptr_double",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "b",
+      "kind": "ptr_double",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "c",
+      "kind": "ptr_double",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "d",
+      "kind": "ptr_double",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "e",
+      "kind": "ptr_double",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "LEN_1D",
+      "kind": "int64"
+    }
+  ],
+  "symbols": {
+    "c": "tsvc_2_s152_fp64",
+    "cpp": "tsvc_2_s152_fp64",
+    "fortran": "tsvc_2_s152_fp64"
+  },
+  "sources": {
+    "c": "tsvc_2_s152_fp64.c",
+    "cpp": "tsvc_2_s152_fp64.cpp",
+    "fortran": "tsvc_2_s152_fp64.f90"
+  }
+}

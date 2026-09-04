@@ -1,0 +1,48 @@
+{
+  "kernel": "compact_threshold_pack_fp32",
+  "abi": "c",
+  "args": [
+    {
+      "name": "out_count",
+      "kind": "ptr_int64",
+      "shape": [
+        "1"
+      ]
+    },
+    {
+      "name": "packed",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "src",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "weight",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "LEN_1D",
+      "kind": "int64"
+    }
+  ],
+  "symbols": {
+    "c": "compact_threshold_pack_fp32",
+    "cpp": "compact_threshold_pack_fp32",
+    "fortran": "compact_threshold_pack_fp32"
+  },
+  "sources": {
+    "c": "compact_threshold_pack_fp32.c",
+    "cpp": "compact_threshold_pack_fp32.cpp",
+    "fortran": "compact_threshold_pack_fp32.f90"
+  }
+}

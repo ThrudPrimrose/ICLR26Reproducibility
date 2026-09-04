@@ -1,0 +1,102 @@
+#include <stdint.h>
+#include <omp.h>
+#include <stdlib.h>
+
+/*
+ * s231: aa[j][i] = aa[j-1][i] + bb[j][i]  (row-major, j=1..N-1, all i)
+ * = a scan (prefix sum) along the row (j) axis, independent per column i.
+ *
+ * Parallel: chunked 2-pass parallel prefix sum over rows (T = nthreads chunks).
+ *   Pass 1 (parallel): local scan per chunk (seeded from base-row snapshot)
+ *                      + per-chunk elementwise row-sum.
+ *   Sequential: exclusive prefix over chunk-sums -> per-chunk offset.
+ *   Pass 2 (parallel): add per-chunk offset to each row.
+ * Scratch is a persistent static buffer (avoid per-call malloc/munmap).
+ */
+void tsvc_2_s231_fp64(double *restrict aa, const double *restrict bb, const int64_t LEN_2D) {
+  const int64_t N = LEN_2D;
+  if (N <= 1) return;
+
+  int T = omp_get_max_threads();
+  if (T < 1) T = 1;
+  if (T > N - 1) T = (int)(N - 1);
+  const int64_t base = (N - 1) / T;
+
+  static double *baseval = NULL, *csum = NULL, *off = NULL;
+  static int64_t cached_N = 0, cached_T = 0;
+  if (N != cached_N || T != cached_T) {
+    free(baseval); free(csum); free(off);
+    baseval = (double *)malloc((size_t)T * (size_t)N * sizeof(double));
+    csum    = (double *)malloc((size_t)T * (size_t)N * sizeof(double));
+    off     = (double *)malloc((size_t)T * (size_t)N * sizeof(double));
+    cached_N = N; cached_T = T;
+  }
+
+  // snapshot base rows (row just before each chunk's range) -- still original now
+  #pragma omp parallel for schedule(static, 1)
+  for (int c = 0; c < T; ++c) {
+    int64_t s = 1 + c * base;
+    int64_t b = s - 1;
+    double *bv = baseval + (size_t)c * N;
+    const double *src = aa + b * N;
+    for (int64_t i = 0; i < N; ++i) bv[i] = src[i];
+  }
+
+  // Pass 1: local scan per chunk (with prefetch) + per-chunk row sum
+  #pragma omp parallel for schedule(static, 1)
+  for (int c = 0; c < T; ++c) {
+    int64_t s = 1 + c * base;
+    int64_t e = (c == T - 1) ? (N - 1) : (s + base - 1);
+    const double *bv = baseval + (size_t)c * N;
+    double *cs = csum + (size_t)c * N;
+    { // seed first row
+      const double *bbrow = bb + s * N;
+      double *aarow = aa + s * N;
+      for (int64_t i = 0; i < N; ++i) aarow[i] = bv[i] + bbrow[i];
+    }
+    for (int64_t j = s + 1; j <= e; ++j) {
+      if (j + 3 < N) {
+        __builtin_prefetch(bb + (j + 1) * N, 0, 1);
+        __builtin_prefetch(bb + (j + 2) * N, 0, 1);
+        __builtin_prefetch(bb + (j + 3) * N, 0, 1);
+      }
+      const double *bbrow = bb + j * N;
+      double *aarow = aa + j * N;
+      const double *prev = aa + (j - 1) * N;
+      for (int64_t i = 0; i < N; ++i) aarow[i] = prev[i] + bbrow[i];
+    }
+    { // chunk sum = aa[e] - base
+      const double *last = aa + e * N;
+      for (int64_t i = 0; i < N; ++i) cs[i] = last[i] - bv[i];
+    }
+  }
+
+  // Sequential exclusive prefix over chunk sums (vectorized over i, c outer)
+  {
+    const double *row0 = aa; // aa[0] unchanged
+    // pre_row = running prefix of chunk sums; start 0
+    static double *pre_row = NULL;
+    static int64_t pre_row_N = 0;
+    if (N != pre_row_N) { free(pre_row); pre_row = (double*)malloc((size_t)N*8); pre_row_N = N; }
+    for (int64_t i = 0; i < N; ++i) pre_row[i] = 0.0;
+    for (int c = 0; c < T; ++c) {
+      double *of = off + (size_t)c * N;
+      const double *bv = baseval + (size_t)c * N;
+      double *cs = csum + (size_t)c * N;
+      for (int64_t i = 0; i < N; ++i) of[i] = row0[i] - bv[i] + pre_row[i];
+      for (int64_t i = 0; i < N; ++i) pre_row[i] += cs[i];
+    }
+  }
+
+  // Pass 2: add per-chunk offset to each row
+  #pragma omp parallel for schedule(static, 1)
+  for (int c = 0; c < T; ++c) {
+    int64_t s = 1 + c * base;
+    int64_t e = (c == T - 1) ? (N - 1) : (s + base - 1);
+    const double *of = off + (size_t)c * N;
+    for (int64_t j = s; j <= e; ++j) {
+      double *aarow = aa + j * N;
+      for (int64_t i = 0; i < N; ++i) aarow[i] += of[i];
+    }
+  }
+}

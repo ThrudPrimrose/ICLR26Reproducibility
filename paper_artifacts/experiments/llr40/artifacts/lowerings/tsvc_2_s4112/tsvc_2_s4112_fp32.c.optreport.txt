@@ -1,0 +1,1 @@
+tsvc_2_s4112_fp32.c:172:31: optimized: loop vectorized using 16 byte vectors and unroll factor 4

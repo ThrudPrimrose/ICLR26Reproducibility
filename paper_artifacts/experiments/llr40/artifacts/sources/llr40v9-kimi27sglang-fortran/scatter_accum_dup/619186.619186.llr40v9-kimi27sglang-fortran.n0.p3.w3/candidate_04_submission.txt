@@ -1,0 +1,50 @@
+subroutine scatter_accum_dup_fp64(bins, ip, src, LEN_1D) bind(C, name='scatter_accum_dup_fp64')
+  use, intrinsic :: iso_c_binding, only: c_double, c_int64_t, c_int
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D
+  real(c_double), intent(inout) :: bins(*)
+  integer(c_int), intent(in) :: ip(*)
+  real(c_double), intent(in) :: src(*)
+  integer(c_int64_t) :: i, rem
+  integer(c_int) :: idx0, idx1, idx2, idx3
+
+  if (LEN_1D <= 0) return
+
+  if (LEN_1D < 1024_c_int64_t) then
+    do i = 1, LEN_1D
+      idx0 = ip(i)
+      bins(idx0) = bins(idx0) + src(i)
+    end do
+    return
+  end if
+
+  rem = iand(LEN_1D, 3_c_int64_t)
+
+  !$omp parallel do private(i, idx0, idx1, idx2, idx3) schedule(static)
+  do i = 1, LEN_1D - rem, 4
+    idx0 = ip(i)
+    idx1 = ip(i + 1)
+    idx2 = ip(i + 2)
+    idx3 = ip(i + 3)
+    !$omp atomic update
+    bins(idx0) = bins(idx0) + src(i)
+    !$omp end atomic
+    !$omp atomic update
+    bins(idx1) = bins(idx1) + src(i + 1)
+    !$omp end atomic
+    !$omp atomic update
+    bins(idx2) = bins(idx2) + src(i + 2)
+    !$omp end atomic
+    !$omp atomic update
+    bins(idx3) = bins(idx3) + src(i + 3)
+    !$omp end atomic
+  end do
+  !$omp end parallel do
+
+  if (rem > 0) then
+    do i = LEN_1D - rem + 1, LEN_1D
+      idx0 = ip(i)
+      bins(idx0) = bins(idx0) + src(i)
+    end do
+  end if
+end subroutine scatter_accum_dup_fp64

@@ -1,0 +1,30 @@
+# HPCAgent-Bench benchmark manifest -- adding a benchmark: see README.md.
+name: Canonicalize unrolled_dense
+kind: microkernel
+level: 1
+parameters:
+  S:
+    NBLK: 4
+  M:
+    NBLK: 31250000
+  L:
+    NBLK: 45102521
+  XL:
+    NBLK: 65095598
+init:
+  output_args:
+  - alpha
+  - a
+  - b
+  scalars:
+    alpha: 1.0
+  arrays:
+    a: (4 * NBLK,)
+    b: (4 * NBLK,)
+output_args:
+- a
+taxonomy:
+  track: loop_level_reasoning
+  domain: classical compiler optimizations
+loop_level_reasoning:
+  source: canonicalization

@@ -1,0 +1,41 @@
+{
+  "kernel": "scan_affine_decay_fp32",
+  "abi": "c",
+  "args": [
+    {
+      "name": "c",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "x",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "y",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "LEN_1D",
+      "kind": "int64"
+    }
+  ],
+  "symbols": {
+    "c": "scan_affine_decay_fp32",
+    "cpp": "scan_affine_decay_fp32",
+    "fortran": "scan_affine_decay_fp32"
+  },
+  "sources": {
+    "c": "scan_affine_decay_fp32.c",
+    "cpp": "scan_affine_decay_fp32.cpp",
+    "fortran": "scan_affine_decay_fp32.f90"
+  }
+}

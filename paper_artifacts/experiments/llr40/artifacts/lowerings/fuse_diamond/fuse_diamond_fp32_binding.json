@@ -1,0 +1,34 @@
+{
+  "kernel": "fuse_diamond_fp32",
+  "abi": "c",
+  "args": [
+    {
+      "name": "a",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "out",
+      "kind": "ptr_float",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "LEN_1D",
+      "kind": "int64"
+    }
+  ],
+  "symbols": {
+    "c": "fuse_diamond_fp32",
+    "cpp": "fuse_diamond_fp32",
+    "fortran": "fuse_diamond_fp32"
+  },
+  "sources": {
+    "c": "fuse_diamond_fp32.c",
+    "cpp": "fuse_diamond_fp32.cpp",
+    "fortran": "fuse_diamond_fp32.f90"
+  }
+}

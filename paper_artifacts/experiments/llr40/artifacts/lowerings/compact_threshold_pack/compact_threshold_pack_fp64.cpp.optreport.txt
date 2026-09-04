@@ -1,0 +1,2 @@
+compact_threshold_pack_fp64.cpp:163:31: missed: couldn't vectorize loop
+compact_threshold_pack_fp64.cpp:160:6: missed: not vectorized: unsupported use in stmt.

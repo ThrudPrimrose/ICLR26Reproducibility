@@ -1,0 +1,21 @@
+module tsvc_2_s235
+  use iso_c_binding, only: c_int64_t, c_double
+  use iso_fortran_env, only: int64, real64
+  implicit none
+contains
+  subroutine tsvc_2_s235_fp64(a, aa, b, bb, c, LEN_2D) bind(c, name='tsvc_2_s235_fp64')
+    integer(c_int64_t), intent(in), value :: LEN_2D
+    real(c_double), intent(inout) :: a(LEN_2D), aa(LEN_2D, LEN_2D)
+    real(c_double), intent(in) :: b(LEN_2D), bb(LEN_2D, LEN_2D), c(LEN_2D)
+    integer(int64) :: i, j
+
+    !$omp parallel do private(i, j)
+    do i = 1, LEN_2D
+      a(i) = a(i) + b(i) * c(i)
+      do j = 2, LEN_2D
+        aa(i, j) = aa(i, j-1) + bb(i, j) * a(i)
+      end do
+    end do
+    !$omp end parallel do
+  end subroutine tsvc_2_s235_fp64
+end module tsvc_2_s235

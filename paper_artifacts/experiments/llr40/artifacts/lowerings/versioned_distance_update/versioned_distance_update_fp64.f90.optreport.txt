@@ -1,0 +1,4 @@
+versioned_distance_update_fp64.f90:11:13: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+versioned_distance_update_fp64.f90:11:13: optimized:  loop versioned for vectorization because of possible aliasing
+versioned_distance_update_fp64.f90:11:13: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+versioned_distance_update_fp64.f90:12:97: optimized: basic block part vectorized using 16 byte vectors

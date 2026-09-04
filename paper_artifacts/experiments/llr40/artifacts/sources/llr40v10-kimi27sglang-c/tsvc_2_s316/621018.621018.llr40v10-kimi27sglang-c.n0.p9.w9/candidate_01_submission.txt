@@ -1,0 +1,24 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s316_fp64(const double *restrict a, double *restrict result, const int64_t LEN_1D) {
+    double x = a[0];
+    if (LEN_1D <= 1) {
+        result[0] = x;
+        return;
+    }
+
+    if (LEN_1D > 4096) {
+        #pragma omp parallel for reduction(min:x) schedule(static)
+        for (int64_t i = 1; i < LEN_1D; ++i) {
+            x = (x < a[i]) ? x : a[i];
+        }
+    } else {
+        #pragma omp simd reduction(min:x)
+        for (int64_t i = 1; i < LEN_1D; ++i) {
+            x = (x < a[i]) ? x : a[i];
+        }
+    }
+
+    result[0] = x;
+}

@@ -1,0 +1,41 @@
+{
+  "kernel": "scatter_accum_dup_fp64",
+  "abi": "c",
+  "args": [
+    {
+      "name": "bins",
+      "kind": "ptr_double",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "ip",
+      "kind": "ptr_int32",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "src",
+      "kind": "ptr_double",
+      "shape": [
+        "LEN_1D"
+      ]
+    },
+    {
+      "name": "LEN_1D",
+      "kind": "int64"
+    }
+  ],
+  "symbols": {
+    "c": "scatter_accum_dup_fp64",
+    "cpp": "scatter_accum_dup_fp64",
+    "fortran": "scatter_accum_dup_fp64"
+  },
+  "sources": {
+    "c": "scatter_accum_dup_fp64.c",
+    "cpp": "scatter_accum_dup_fp64.cpp",
+    "fortran": "scatter_accum_dup_fp64.f90"
+  }
+}

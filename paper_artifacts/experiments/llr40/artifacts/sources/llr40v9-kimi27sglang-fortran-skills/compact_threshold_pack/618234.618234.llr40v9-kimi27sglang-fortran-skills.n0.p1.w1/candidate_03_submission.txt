@@ -1,0 +1,50 @@
+subroutine compact_threshold_pack_fp64(out_count, packed, src, weight, n, workspace, workspace_size) bind(C, name="compact_threshold_pack_fp64")
+  use iso_c_binding, only: c_double, c_int64_t, c_int8_t
+  implicit none
+  integer(c_int64_t), value, intent(in) :: n, workspace_size
+  integer(c_int64_t), intent(out) :: out_count(1)
+  real(c_double), intent(out) :: packed(n)
+  real(c_double), intent(in) :: src(n), weight(n)
+  integer(c_int8_t), intent(inout) :: workspace(workspace_size)
+
+  integer(c_int64_t), parameter :: BS = 65536
+  integer(c_int64_t) :: nblocks, b, lo, hi, c, total, i
+  integer(c_int64_t), allocatable :: cnt(:), off(:)
+
+  nblocks = (n + BS - 1) / BS
+  allocate(cnt(0:nblocks-1), off(0:nblocks))
+  cnt = 0
+  off = 0
+
+  !$omp parallel do schedule(static) private(b, lo, hi)
+  do b = 0, nblocks - 1
+    lo = b * BS + 1
+    hi = min(n, (b + 1) * BS)
+    cnt(b) = int(count(src(lo:hi) > 0.0d0), c_int64_t)
+  end do
+  !$omp end parallel do
+
+  total = 0
+  do b = 0, nblocks - 1
+    off(b) = total
+    total = total + cnt(b)
+  end do
+  off(nblocks) = total
+
+  !$omp parallel do schedule(dynamic, 1) private(b, lo, hi, c)
+  do b = 0, nblocks - 1
+    lo = b * BS + 1
+    hi = min(n, (b + 1) * BS)
+    c = off(b)
+    do i = lo, hi
+      if (src(i) > 0.0d0) then
+        c = c + 1
+        packed(c) = src(i) * weight(i)
+      end if
+    end do
+  end do
+  !$omp end parallel do
+
+  out_count(1) = total
+  deallocate(cnt, off)
+end subroutine compact_threshold_pack_fp64

@@ -1,0 +1,31 @@
+#include <stdint.h>
+#include <stdio.h>
+#include <immintrin.h>
+
+void wf_diff_skew_fp64(double *restrict a, const int64_t LEN_2D) {
+    fprintf(stdout, "LEN_2D=%ld\n", (long)LEN_2D); fflush(stdout);
+    const int64_t n = LEN_2D - 1;
+    if (n <= 0) return;
+    const int64_t stride = LEN_2D;
+    for (int64_t i = 1; i < LEN_2D; ++i) {
+        double *restrict cur = a + i * stride;
+        const double *restrict prev = a + (i - 1) * stride;
+        int64_t j = 0;
+        for (; j + 8 <= n; j += 8) {
+            __m512d c = _mm512_loadu_pd(cur + j);
+            __m512d p0 = _mm512_loadu_pd(prev + j);
+            __m512d p1 = _mm512_loadu_pd(prev + j + 1);
+            c = _mm512_add_pd(c, _mm512_add_pd(p0, p1));
+            _mm512_storeu_pd(cur + j, c);
+        }
+        if (j < n) {
+            int64_t rem = n - j;
+            __mmask8 mask = (__mmask8)((1ULL << rem) - 1ULL);
+            __m512d c = _mm512_maskz_loadu_pd(mask, cur + j);
+            __m512d p0 = _mm512_maskz_loadu_pd(mask, prev + j);
+            __m512d p1 = _mm512_maskz_loadu_pd(mask, prev + j + 1);
+            c = _mm512_add_pd(c, _mm512_add_pd(p0, p1));
+            _mm512_mask_storeu_pd(cur + j, mask, c);
+        }
+    }
+}

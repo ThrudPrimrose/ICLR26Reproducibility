@@ -1,0 +1,100 @@
+#include <stdint.h>
+#include <omp.h>
+#include <stdlib.h>
+
+/*
+ * s231: aa[j][i] = aa[j-1][i] + bb[j][i]  (row-major, j=1..N-1, all i)
+ * This is a scan (prefix sum) along the row (j) dimension, independent per column i.
+ *
+ * Parallel strategy: chunked 2-pass parallel prefix sum over rows.
+ *  - Split rows 1..N-1 into T contiguous chunks (one per thread).
+ *  - Pass 1 (parallel over chunks): each thread does a LOCAL scan of its rows,
+ *    seeded from a snapshot of its base row (the row just before its range).
+ *    Also compute the per-chunk row-sum (elementwise) = sum of bb rows in chunk.
+ *  - Sequential: exclusive prefix over the T chunk-sums (vectorized over i),
+ *    form offset_c = aa[0] - base_c + prefix_c.
+ *  - Pass 2 (parallel over chunks): each thread adds offset_c to its rows.
+ *
+ * Result: aa[j][i] = aa[0][i] + sum_{k=1..j} bb[k][i].  Bit-exact (same additions, same order).
+ */
+void tsvc_2_s231_fp64(double *restrict aa, const double *restrict bb, const int64_t LEN_2D) {
+  const int64_t N = LEN_2D;
+  if (N <= 1) return;
+
+  int T = omp_get_max_threads();
+  if (T < 1) T = 1;
+  if (T > N - 1) T = (int)(N - 1);
+
+  // chunk row ranges: chunk c covers rows [s_c, e_c], s_0=1, e_{T-1}=N-1
+  const int64_t base = (N - 1) / T;         // rows per chunk (approx)
+  // scratch
+  double *baseval = (double *)malloc((size_t)T * (size_t)N * sizeof(double)); // base row per chunk
+  double *csum    = (double *)malloc((size_t)T * (size_t)N * sizeof(double)); // per-chunk sum
+  double *off     = (double *)malloc((size_t)T * (size_t)N * sizeof(double)); // per-chunk offset
+
+  // snapshot base rows (row just before each chunk's range). All still original now.
+  #pragma omp parallel for schedule(static, 1)
+  for (int c = 0; c < T; ++c) {
+    int64_t s = 1 + c * base;
+    int64_t b = s - 1;                    // base row (0 for c==0)
+    if (c == 0) {
+      double *bv = baseval;
+      const double *src = aa;
+      for (int64_t i = 0; i < N; ++i) bv[i] = src[i];
+    } else {
+      double *bv = baseval + (size_t)c * N;
+      const double *src = aa + b * N;
+      for (int64_t i = 0; i < N; ++i) bv[i] = src[i];
+    }
+  }
+
+  // Pass 1: local scan per chunk + per-chunk row sum
+  #pragma omp parallel for schedule(static, 1)
+  for (int c = 0; c < T; ++c) {
+    int64_t s = 1 + c * base;
+    int64_t e = (c == T - 1) ? (N - 1) : (s + base - 1);
+    const double *bv = baseval + (size_t)c * N;
+    double *cs = csum + (size_t)c * N;
+    // seed first row
+    const double *bbrow = bb + s * N;
+    double *aarow = aa + s * N;
+    for (int64_t i = 0; i < N; ++i) aarow[i] = bv[i] + bbrow[i];
+    // continue scan
+    for (int64_t j = s + 1; j <= e; ++j) {
+      const double *bbrow2 = bb + j * N;
+      double *aarow2 = aa + j * N;
+      const double *prev = aa + (j - 1) * N;
+      for (int64_t i = 0; i < N; ++i) aarow2[i] = prev[i] + bbrow2[i];
+    }
+    // chunk sum = aa[e] - base
+    const double *last = aa + e * N;
+    for (int64_t i = 0; i < N; ++i) cs[i] = last[i] - bv[i];
+  }
+
+  // Sequential exclusive prefix over chunk sums (vectorized over i)
+  {
+    const double *row0 = aa; // aa[0] unchanged
+    for (int64_t i = 0; i < N; ++i) {
+      double pre = 0.0;
+      for (int c = 0; c < T; ++c) {
+        double *of = off + (size_t)c * N;
+        of[i] = row0[i] - baseval[(size_t)c * N + i] + pre;
+        pre += csum[(size_t)c * N + i];
+      }
+    }
+  }
+
+  // Pass 2: add offset to each chunk's rows
+  #pragma omp parallel for schedule(static, 1)
+  for (int c = 0; c < T; ++c) {
+    int64_t s = 1 + c * base;
+    int64_t e = (c == T - 1) ? (N - 1) : (s + base - 1);
+    const double *of = off + (size_t)c * N;
+    for (int64_t j = s; j <= e; ++j) {
+      double *aarow = aa + j * N;
+      for (int64_t i = 0; i < N; ++i) aarow[i] += of[i];
+    }
+  }
+
+  free(baseval); free(csum); free(off);
+}

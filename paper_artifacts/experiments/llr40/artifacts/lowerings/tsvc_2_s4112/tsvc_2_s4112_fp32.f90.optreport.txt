@@ -1,0 +1,9 @@
+tsvc_2_s4112_fp32.f90:10:13: optimized: loop vectorized using 32 byte vectors and unroll factor 8
+tsvc_2_s4112_fp32.f90:10:13: optimized: epilogue loop vectorized using 16 byte vectors and unroll factor 4
+tsvc_2_s4112_fp32.f90:2:1: missed: statement clobbers memory: __builtin_GOMP_parallel (tsvc_2_s4112_fp32._loopfn.0, &.paral_data_store.21, 12, 0);
+tsvc_2_s4112_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s4112_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s4112_fp32.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_s4112_fp32.f90:11:91: missed: couldn't vectorize loop
+tsvc_2_s4112_fp32.f90:11:91: missed: not vectorized: no vectype for stmt: _20 = (*a.17_4)[ivtmp_16];
+ scalar_type: real(kind=4)

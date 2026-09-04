@@ -1,0 +1,12 @@
+tsvc_2_vtvtv_fp64.f90:10:13: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+tsvc_2_vtvtv_fp64.f90:10:13: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+tsvc_2_vtvtv_fp64.f90:2:1: missed: statement clobbers memory: __builtin_GOMP_parallel (tsvc_2_vtvtv_fp64._loopfn.0, &.paral_data_store.21, 12, 0);
+tsvc_2_vtvtv_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_vtvtv_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_vtvtv_fp64.f90:2:1: missed: not vectorized: vectorization is not profitable.
+tsvc_2_vtvtv_fp64.f90:11:73: optimized: loop vectorized using 64 byte vectors and unroll factor 8
+tsvc_2_vtvtv_fp64.f90:11:73: optimized:  loop versioned for vectorization because of possible aliasing
+tsvc_2_vtvtv_fp64.f90:11:73: optimized: epilogue loop vectorized using masked 64 byte vectors and unroll factor 8
+tsvc_2_vtvtv_fp64.f90:10:13: missed: not vectorized: vectorization is not profitable.
+tsvc_2_vtvtv_fp64.f90:10:13: missed: not vectorized: vectorization is not profitable.
+tsvc_2_vtvtv_fp64.f90:10:13: missed: not vectorized: vectorization is not profitable.

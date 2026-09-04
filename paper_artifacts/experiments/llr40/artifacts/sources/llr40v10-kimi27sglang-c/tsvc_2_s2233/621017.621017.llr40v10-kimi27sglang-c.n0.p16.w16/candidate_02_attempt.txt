@@ -1,0 +1,40 @@
+#include <stdint.h>
+
+enum { BS = 1024 };
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+
+  const int64_t row7 = 7 * LEN_2D;
+
+  // Fuse the two recurrences, tile the inner dimension, and keep running sums in registers/L1
+  // so that aa[k-1] and bb[k-1] are not re-read from memory.
+  #pragma omp parallel for schedule(static)
+  for (int64_t mb = 8; mb < LEN_2D; mb += BS) {
+    const int64_t me = (mb + BS < LEN_2D) ? mb + BS : LEN_2D;
+    const int64_t n = me - mb;
+
+    double running_aa[BS];
+    double running_bb[BS];
+
+    for (int64_t t = 0; t < n; ++t) {
+      running_aa[t] = aa[row7 + mb + t];
+      running_bb[t] = bb[row7 + mb + t];
+    }
+
+    for (int64_t k = 8; k < LEN_2D; ++k) {
+      const double *restrict const cc_k = cc + k * LEN_2D + mb;
+      double *restrict const aa_k = aa + k * LEN_2D + mb;
+      double *restrict const bb_k = bb + k * LEN_2D + mb;
+
+      #pragma omp simd
+      for (int64_t t = 0; t < n; ++t) {
+        double s_a = running_aa[t] + cc_k[t];
+        double s_b = running_bb[t] + cc_k[t];
+        running_aa[t] = s_a;
+        running_bb[t] = s_b;
+        aa_k[t] = s_a;
+        bb_k[t] = s_b;
+      }
+    }
+  }
+}

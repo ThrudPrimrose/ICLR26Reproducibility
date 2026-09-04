@@ -1,0 +1,11 @@
+tsvc_2_s3110_fp32.c: In function 'tsvc_2_s3110_fp32':
+tsvc_2_s3110_fp32.c:177:15: warning: variable 'tmp2' set but not used [-Wunused-but-set-variable=]
+  177 |         float tmp2;
+      |               ^~~~
+tsvc_2_s3110_fp32.c:181:31: missed: couldn't vectorize loop
+tsvc_2_s3110_fp32.c:183:20: missed: not vectorized: complicated access pattern.
+tsvc_2_s3110_fp32.c:182:33: missed: couldn't vectorize loop
+tsvc_2_s3110_fp32.c:183:16: missed: not vectorized: unsupported use in stmt.
+tsvc_2_s3110_fp32.c:171:6: missed: splitting region at dont-vectorize loop 4 entry at bb15
+tsvc_2_s3110_fp32.c:181:31: missed: splitting region at loop 5 exit at bb21
+tsvc_2_s3110_fp32.c:182:33: missed: splitting region at dominance boundary bb9

@@ -1,0 +1,21 @@
+#include <stdint.h>
+
+/* TSVC tsvc_2 s1232: for each column j, aa[i,j] = bb[i,j] + cc[i,j] for i in [j*VLEN, LEN_2D).
+ * Region: row i gets columns j in [0, min(LEN_2D, i/VLEN + 1)). Restructure to row-major
+ * so the inner loop is contiguous -> vectorizes; parallelize across rows. */
+
+void tsvc_2_s1232_fp64(double *restrict aa, const double *restrict bb, const double *restrict cc,
+                       const int64_t LEN_2D, const int64_t VLEN) {
+  const int64_t N = LEN_2D;
+  #pragma omp parallel for schedule(static)
+  for (int64_t i = N - 1; i >= 0; --i) {
+    int64_t nj = i / VLEN + 1;
+    if (nj > N) nj = N;
+    double *ra = aa + i * N;
+    const double *rb = bb + i * N;
+    const double *rc = cc + i * N;
+    for (int64_t j = 0; j < nj; ++j) {
+      ra[j] = rb[j] + rc[j];
+    }
+  }
+}

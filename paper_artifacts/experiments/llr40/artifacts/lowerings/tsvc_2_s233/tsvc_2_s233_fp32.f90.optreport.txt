@@ -1,0 +1,8 @@
+tsvc_2_s233_fp32.f90:10:13: missed: couldn't vectorize loop
+tsvc_2_s233_fp32.f90:10:13: missed: not vectorized: loop nest containing two or more consecutive inner loops cannot be vectorized
+tsvc_2_s233_fp32.f90:14:17: missed: couldn't vectorize loop
+tsvc_2_s233_fp32.f90:15:104: missed: not vectorized: no vectype for stmt: _17 = (*bb_36(D))[_16];
+ scalar_type: real(kind=4)
+tsvc_2_s233_fp32.f90:11:17: missed: couldn't vectorize loop
+tsvc_2_s233_fp32.f90:12:104: missed: not vectorized: no vectype for stmt: _5 = (*aa_33(D))[_4];
+ scalar_type: real(kind=4)

@@ -1,0 +1,1 @@
+ext_break_capture_fp32.c:176:31: optimized: loop vectorized using 64 byte vectors and unroll factor 16

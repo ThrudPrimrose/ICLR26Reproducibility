@@ -1,0 +1,66 @@
+#include <stdint.h>
+#include <omp.h>
+
+#define PAD 8  /* 8 * 8 = 64 bytes per entry */
+
+void compact_threshold_pack_fp64(int64_t *restrict out_count,
+                                 double *restrict packed,
+                                 const double *restrict src,
+                                 const double *restrict weight,
+                                 int64_t LEN_1D,
+                                 uint8_t *restrict workspace,
+                                 int64_t workspace_size) {
+    (void)workspace_size;
+
+    const int64_t seq_threshold = 4096;
+    if (LEN_1D < seq_threshold) {
+        int64_t n = 0;
+        for (int64_t i = 0; i < LEN_1D; ++i) {
+            if (src[i] > 0.0) {
+                packed[n++] = src[i] * weight[i];
+            }
+        }
+        out_count[0] = n;
+        return;
+    }
+
+    int64_t *offsets = (int64_t *)(void *)workspace;
+
+#pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        int nt = omp_get_num_threads();
+        int64_t chunk = (LEN_1D + nt - 1) / nt;
+        int64_t start = (int64_t)tid * chunk;
+        int64_t end = start + chunk;
+        if (end > LEN_1D) end = LEN_1D;
+
+        int64_t local_count = 0;
+        for (int64_t i = start; i < end; ++i) {
+            if (src[i] > 0.0) {
+                ++local_count;
+            }
+        }
+        offsets[tid * PAD] = local_count;
+
+#pragma omp barrier
+#pragma omp single
+        {
+            int64_t sum = 0;
+            for (int i = 0; i < nt; ++i) {
+                int64_t c = offsets[i * PAD];
+                offsets[i * PAD] = sum;
+                sum += c;
+            }
+            offsets[nt * PAD] = sum;
+            out_count[0] = sum;
+        }
+
+        int64_t out_pos = offsets[tid * PAD];
+        for (int64_t i = start; i < end; ++i) {
+            if (src[i] > 0.0) {
+                packed[out_pos++] = src[i] * weight[i];
+            }
+        }
+    }
+}

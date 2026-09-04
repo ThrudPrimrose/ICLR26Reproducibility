@@ -1,0 +1,16 @@
+subroutine scan_affine_decay_fp64(c, x, y, len_1d, workspace, workspace_size) bind(C, name="scan_affine_decay_fp64")
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_1d
+  real(c_double), intent(in) :: c(len_1d)
+  real(c_double), intent(in) :: x(len_1d)
+  real(c_double), intent(inout) :: y(len_1d)
+  integer(c_int64_t), value, intent(in) :: workspace_size
+  integer(c_int8_t), intent(inout) :: workspace(workspace_size)
+
+  integer :: i, n
+  n = len_1d
+  do i = 2, n
+    y(i) = c(i) * y(i - 1) + x(i)
+  end do
+end subroutine scan_affine_decay_fp64

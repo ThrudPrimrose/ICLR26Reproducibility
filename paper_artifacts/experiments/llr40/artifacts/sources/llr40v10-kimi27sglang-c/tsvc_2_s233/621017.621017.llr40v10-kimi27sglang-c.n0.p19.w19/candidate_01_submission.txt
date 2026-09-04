@@ -1,0 +1,30 @@
+#include <stdint.h>
+
+#ifndef AA_BLOCK
+#define AA_BLOCK 256
+#endif
+
+void tsvc_2_s233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+
+    // aa recurrence: aa[j,i] depends on aa[j-1,i] (same column)
+    // Process columns in blocks; each block is contiguous in memory and the inner i loop vectorizes.
+    #pragma omp parallel for schedule(static)
+    for (int64_t ib = 8; ib < LEN_2D; ib += AA_BLOCK) {
+        int64_t iend = ib + AA_BLOCK < LEN_2D ? ib + AA_BLOCK : LEN_2D;
+        for (int64_t j = 8; j < LEN_2D; ++j) {
+            #pragma omp simd
+            for (int64_t i = ib; i < iend; ++i) {
+                aa[j * LEN_2D + i] = aa[(j - 1) * LEN_2D + i] + cc[j * LEN_2D + i];
+            }
+        }
+    }
+
+    // bb recurrence: bb[j,i] depends on bb[j,i-1] (same row)
+    // Each row is independent; process rows in parallel with sequential recurrence along contiguous columns.
+    #pragma omp parallel for schedule(static)
+    for (int64_t j = 8; j < LEN_2D; ++j) {
+        for (int64_t i = 8; i < LEN_2D; ++i) {
+            bb[j * LEN_2D + i] = bb[j * LEN_2D + (i - 1)] + cc[j * LEN_2D + i];
+        }
+    }
+}

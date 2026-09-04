@@ -1,0 +1,16 @@
+subroutine tsvc_2_s115_fp64(a, aa, LEN_2D) bind(c)
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_2D
+  real(c_double), intent(inout) :: a(0:LEN_2D-1)
+  real(c_double), intent(in) :: aa(0:LEN_2D-1, 0:LEN_2D-1)
+  integer(c_int64_t) :: i, j
+  real(c_double) :: aj
+
+  do j = 0, LEN_2D-1
+    aj = a(j)
+    do i = j+1, LEN_2D-1
+      a(i) = a(i) - aa(i, j) * aj
+    end do
+  end do
+end subroutine tsvc_2_s115_fp64

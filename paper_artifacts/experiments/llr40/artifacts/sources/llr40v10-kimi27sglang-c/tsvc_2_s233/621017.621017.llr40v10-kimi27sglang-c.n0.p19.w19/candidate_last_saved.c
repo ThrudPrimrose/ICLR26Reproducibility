@@ -1,0 +1,68 @@
+#include <stdint.h>
+
+#ifndef AA_BLOCK
+#define AA_BLOCK 128
+#endif
+
+#ifndef PAR_THRESHOLD
+#define PAR_THRESHOLD 64
+#endif
+
+static inline void fused_seq(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+    for (int64_t j = 8; j < LEN_2D; ++j) {
+        const double * __restrict__ aa_prev = &aa[(j - 1) * LEN_2D + 8];
+        const double * __restrict__ cc_row = &cc[j * LEN_2D + 8];
+        double * __restrict__ aa_row = &aa[j * LEN_2D + 8];
+        double * __restrict__ bb_row = &bb[j * LEN_2D + 8];
+        int64_t n = LEN_2D - 8;
+        #pragma omp simd
+        for (int64_t i = 0; i < n; ++i) {
+            aa_row[i] = aa_prev[i] + cc_row[i];
+        }
+        double prev = bb_row[-1];
+        for (int64_t i = 0; i < n; ++i) {
+            prev += cc_row[i];
+            bb_row[i] = prev;
+        }
+    }
+}
+
+void tsvc_2_s233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+
+    if (LEN_2D <= 8) return;
+
+    if (LEN_2D - 8 < PAR_THRESHOLD) {
+        fused_seq(aa, bb, cc, LEN_2D);
+    } else {
+        #pragma omp parallel
+        {
+            #pragma omp for schedule(static) nowait
+            for (int64_t ib = 8; ib < LEN_2D; ib += AA_BLOCK) {
+                int64_t iend = ib + AA_BLOCK < LEN_2D ? ib + AA_BLOCK : LEN_2D;
+                const double * __restrict__ aa_prev = &aa[7 * LEN_2D + ib];
+                const double * __restrict__ cc_base = &cc[8 * LEN_2D + ib];
+                double * __restrict__ aa_base = &aa[8 * LEN_2D + ib];
+                for (int64_t j = 8; j < LEN_2D; ++j) {
+                    const double * __restrict__ cc_row = cc_base + (j - 8) * LEN_2D;
+                    const double * __restrict__ aa_prev_row = aa_prev + (j - 8) * LEN_2D;
+                    double * __restrict__ aa_row = aa_base + (j - 8) * LEN_2D;
+                    #pragma omp simd
+                    for (int64_t k = 0; k < iend - ib; ++k) {
+                        aa_row[k] = aa_prev_row[k] + cc_row[k];
+                    }
+                }
+            }
+
+            #pragma omp for schedule(static) nowait
+            for (int64_t j = 8; j < LEN_2D; ++j) {
+                const double * __restrict__ cc_row = &cc[j * LEN_2D + 8];
+                double * __restrict__ bb_row = &bb[j * LEN_2D + 8];
+                double prev = bb_row[-1];
+                for (int64_t i = 0; i < LEN_2D - 8; ++i) {
+                    prev += cc_row[i];
+                    bb_row[i] = prev;
+                }
+            }
+        }
+    }
+}

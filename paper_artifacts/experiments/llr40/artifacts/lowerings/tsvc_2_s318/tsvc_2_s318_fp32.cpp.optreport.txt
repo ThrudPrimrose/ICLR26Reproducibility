@@ -1,0 +1,4 @@
+tsvc_2_s318_fp32.cpp:169:31: missed: couldn't vectorize loop
+tsvc_2_s318_fp32.cpp:160:6: missed: not vectorized: unsupported use in stmt.
+tsvc_2_s318_fp32.cpp:169:31: missed: couldn't vectorize loop
+tsvc_2_s318_fp32.cpp:160:6: missed: not vectorized: unsupported use in stmt.

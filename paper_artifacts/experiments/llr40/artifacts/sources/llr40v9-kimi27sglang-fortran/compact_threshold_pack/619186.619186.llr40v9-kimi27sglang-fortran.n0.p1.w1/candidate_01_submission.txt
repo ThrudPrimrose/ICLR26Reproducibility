@@ -1,0 +1,66 @@
+subroutine compact_threshold_pack_fp64(out_count, packed, src, weight, LEN_1D) bind(C, name="compact_threshold_pack_fp64")
+    use, intrinsic :: iso_c_binding
+    use omp_lib
+    implicit none
+    integer(c_int64_t), value, intent(in) :: LEN_1D
+    integer(c_int64_t), intent(inout) :: out_count(1)
+    real(c_double), intent(inout) :: packed(LEN_1D)
+    real(c_double), intent(in) :: src(LEN_1D)
+    real(c_double), intent(in) :: weight(LEN_1D)
+
+    integer(c_int64_t), parameter :: CHUNK_SIZE = 16384
+    integer(c_int64_t) :: num_chunks, c, i, start, end_idx, total, offset
+    integer(c_int64_t), allocatable :: counts(:), offsets(:)
+    integer(c_int64_t) :: cnt
+
+    if (LEN_1D <= 0) then
+        out_count(1) = 0
+        return
+    end if
+
+    num_chunks = (LEN_1D + CHUNK_SIZE - 1) / CHUNK_SIZE
+
+    allocate(counts(num_chunks))
+    allocate(offsets(num_chunks))
+
+    ! Phase 1: count survivors per chunk in parallel
+    !$omp parallel do private(c, i, start, end_idx, cnt) schedule(static)
+    do c = 1, num_chunks
+        start = (c - 1) * CHUNK_SIZE + 1
+        end_idx = min(c * CHUNK_SIZE, LEN_1D)
+        cnt = 0
+        !$omp simd reduction(+:cnt)
+        do i = start, end_idx
+            if (src(i) > 0.0_c_double) cnt = cnt + 1
+        end do
+        counts(c) = cnt
+    end do
+    !$omp end parallel do
+
+    ! Phase 2: prefix sum over chunks (single-threaded, negligible)
+    total = 0
+    do c = 1, num_chunks
+        offsets(c) = total
+        total = total + counts(c)
+    end do
+
+    ! Phase 3: write survivors in parallel
+    !$omp parallel do private(c, i, start, end_idx, offset) schedule(static)
+    do c = 1, num_chunks
+        start = (c - 1) * CHUNK_SIZE + 1
+        end_idx = min(c * CHUNK_SIZE, LEN_1D)
+        offset = offsets(c)
+        do i = start, end_idx
+            if (src(i) > 0.0_c_double) then
+                packed(offset + 1) = src(i) * weight(i)
+                offset = offset + 1
+            end if
+        end do
+    end do
+    !$omp end parallel do
+
+    out_count(1) = total
+
+    deallocate(counts)
+    deallocate(offsets)
+end subroutine compact_threshold_pack_fp64
