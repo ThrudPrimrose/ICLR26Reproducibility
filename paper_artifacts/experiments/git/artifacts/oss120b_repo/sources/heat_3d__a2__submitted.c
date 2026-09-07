@@ -169,74 +169,33 @@ static inline int64_t __npb_int_pow(int64_t base, int64_t exp) {
 }
 
 void heat_3d_fp64(double *restrict A, double *restrict B, const int64_t N, const int64_t TSTEPS, const double alpha) {
-#if 0
-        double *Ac = (double *)malloc((size_t)((((N - 1) - 1)) * (((N - 1) - 1)) * (((N - 1) - 1))) * sizeof(double));
-        double *Bc = (double *)malloc((size_t)((((N - 1) - 1)) * (((N - 1) - 1)) * (((N - 1) - 1))) * sizeof(double));
-        for (int64_t t = 1; t < (TSTEPS + 1); ++t) {
-          for (int64_t __w0 = 0; __w0 < ((N - 1) - 1); ++__w0) {
-            for (int64_t __w1 = 0; __w1 < ((N - 1) - 1); ++__w1) {
-              for (int64_t __w2 = 0; __w2 < ((N - 1) - 1); ++__w2) {
-                Ac[((__w0)*(((N - 1) - 1)) + (__w1))*(((N - 1) - 1)) + (__w2)] = A[(((__w0 + 1))*(N) + ((__w1 + 1)))*(N) + ((__w2 + 1))];
-              }
-            }
-          }
-          for (int64_t si0 = 1; si0 < (N - 1); ++si0) {
-            for (int64_t si1 = 1; si1 < (N - 1); ++si1) {
-              for (int64_t si2 = 1; si2 < (N - 1); ++si2) {
-                B[((si0)*(N) + (si1))*(N) + (si2)] = ((((alpha * ((A[(((si0 + 1))*(N) + (si1))*(N) + (si2)] - (2.0 * Ac[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))])) + A[(((si0 - 1))*(N) + (si1))*(N) + (si2)])) + (alpha * ((A[((si0)*(N) + ((si1 + 1)))*(N) + (si2)] - (2.0 * Ac[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))])) + A[((si0)*(N) + ((si1 - 1)))*(N) + (si2)]))) + (alpha * ((A[((si0)*(N) + (si1))*(N) + ((si2 + 1))] - (2.0 * Ac[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))])) + A[((si0)*(N) + (si1))*(N) + ((si2 - 1))]))) + Ac[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))]);
-              }
-            }
-          }
-          for (int64_t __w0 = 0; __w0 < ((N - 1) - 1); ++__w0) {
-            for (int64_t __w1 = 0; __w1 < ((N - 1) - 1); ++__w1) {
-              for (int64_t __w2 = 0; __w2 < ((N - 1) - 1); ++__w2) {
-                Bc[((__w0)*(((N - 1) - 1)) + (__w1))*(((N - 1) - 1)) + (__w2)] = B[(((__w0 + 1))*(N) + ((__w1 + 1)))*(N) + ((__w2 + 1))];
-              }
-            }
-          }
-          for (int64_t si0 = 1; si0 < (N - 1); ++si0) {
-            for (int64_t si1 = 1; si1 < (N - 1); ++si1) {
-              for (int64_t si2 = 1; si2 < (N - 1); ++si2) {
-                A[((si0)*(N) + (si1))*(N) + (si2)] = ((((alpha * ((B[(((si0 + 1))*(N) + (si1))*(N) + (si2)] - (2.0 * Bc[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))])) + B[(((si0 - 1))*(N) + (si1))*(N) + (si2)])) + (alpha * ((B[((si0)*(N) + ((si1 + 1)))*(N) + (si2)] - (2.0 * Bc[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))])) + B[((si0)*(N) + ((si1 - 1)))*(N) + (si2)]))) + (alpha * ((B[((si0)*(N) + (si1))*(N) + ((si2 + 1))] - (2.0 * Bc[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))])) + B[((si0)*(N) + (si1))*(N) + ((si2 - 1))]))) + Bc[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))]);
-              }
-            }
-          }
-        }
-        free(Ac);
-#endif
-        // Optimized implementation
         const int64_t N2 = N * N;
-        #pragma omp parallel
-        {
-            for (int64_t t = 0; t < TSTEPS; ++t) {
-                // Update B from A
-                #pragma omp for collapse(3) schedule(static)
-                for (int64_t i = 1; i < N - 1; ++i) {
-                    for (int64_t j = 1; j < N - 1; ++j) {
-                        const int64_t base = i * N2 + j * N;
-                        for (int64_t k = 1; k < N - 1; ++k) {
-                            const size_t idx = (size_t)base + (size_t)k;
-                            const double c = A[idx];
-                            B[idx] = alpha * (A[idx + N2] - 2.0 * c + A[idx - N2])
-                                   + alpha * (A[idx + N]  - 2.0 * c + A[idx - N])
-                                   + alpha * (A[idx + 1]  - 2.0 * c + A[idx - 1])
-                                   + c;
-                        }
+        for (int64_t t = 1; t <= TSTEPS; ++t) {
+            // Update B using values from A
+            #pragma omp parallel for collapse(3) schedule(static)
+            for (int64_t i = 1; i < N - 1; ++i) {
+                for (int64_t j = 1; j < N - 1; ++j) {
+                    for (int64_t k = 1; k < N - 1; ++k) {
+                        double c = A[i * N2 + j * N + k];
+                        double val = alpha * (A[(i + 1) * N2 + j * N + k] - 2.0 * c + A[(i - 1) * N2 + j * N + k]);
+                        val += alpha * (A[i * N2 + (j + 1) * N + k] - 2.0 * c + A[i * N2 + (j - 1) * N + k]);
+                        val += alpha * (A[i * N2 + j * N + (k + 1)] - 2.0 * c + A[i * N2 + j * N + (k - 1)]);
+                        val += c;
+                        B[i * N2 + j * N + k] = val;
                     }
                 }
-                // Update A from B
-                #pragma omp for collapse(3) schedule(static)
-                for (int64_t i = 1; i < N - 1; ++i) {
-                    for (int64_t j = 1; j < N - 1; ++j) {
-                        const int64_t base = i * N2 + j * N;
-                        for (int64_t k = 1; k < N - 1; ++k) {
-                            const size_t idx = (size_t)base + (size_t)k;
-                            const double c = B[idx];
-                            A[idx] = alpha * (B[idx + N2] - 2.0 * c + B[idx - N2])
-                                   + alpha * (B[idx + N]  - 2.0 * c + B[idx - N])
-                                   + alpha * (B[idx + 1]  - 2.0 * c + B[idx - 1])
-                                   + c;
-                        }
+            }
+            // Update A using values from B
+            #pragma omp parallel for collapse(3) schedule(static)
+            for (int64_t i = 1; i < N - 1; ++i) {
+                for (int64_t j = 1; j < N - 1; ++j) {
+                    for (int64_t k = 1; k < N - 1; ++k) {
+                        double c = B[i * N2 + j * N + k];
+                        double val = alpha * (B[(i + 1) * N2 + j * N + k] - 2.0 * c + B[(i - 1) * N2 + j * N + k]);
+                        val += alpha * (B[i * N2 + (j + 1) * N + k] - 2.0 * c + B[i * N2 + (j - 1) * N + k]);
+                        val += alpha * (B[i * N2 + j * N + (k + 1)] - 2.0 * c + B[i * N2 + j * N + (k - 1)]);
+                        val += c;
+                        A[i * N2 + j * N + k] = val;
                     }
                 }
             }

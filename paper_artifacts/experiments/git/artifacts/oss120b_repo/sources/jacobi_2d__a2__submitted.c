@@ -4,14 +4,15 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
-/* #include <math.h> */
-/* #include <complex.h> */
-#include <omp.h>
+#include <math.h>
+#include <complex.h>
 /* ``z.conjugate()`` -- named helper so the C and C++ preludes
  * offer the same spelling. C has the standard one: ``conj``
  * from <complex.h>. The C++ prelude, which has no <complex.h>,
  * writes its own. */
-/* static inline double _Complex __npb_conj(double _Complex z) { return conj(z); } */
+static inline double _Complex __npb_conj(double _Complex z) {
+    return conj(z);
+}
 /* M_PI / M_E etc. are POSIX/GNU extensions -- ensure they
  * are defined even on strict-C builds (glibc 2.27+ /
  * BSDs / MSVC). */
@@ -168,24 +169,33 @@ static inline int64_t __npb_int_pow(int64_t base, int64_t exp) {
 }
 
 void jacobi_2d_fp64(double *restrict A, double *restrict B, const int64_t N, const int64_t TSTEPS) {
-    omp_set_num_threads(4);
-        #pragma omp parallel
-        {
-            for (int64_t t = 0; t < TSTEPS; ++t) {
-          #pragma omp for schedule(static)
-          for (int64_t si0 = 1; si0 < (N - 1); ++si0) {
-            #pragma omp simd
-            for (int64_t si1 = 1; si1 < (N - 1); ++si1) {
-              B[(si0)*(N) + (si1)] = (0.2 * ((((A[(si0)*(N) + (si1)] + A[(si0)*(N) + ((si1 - 1))]) + A[(si0)*(N) + ((si1 + 1))]) + A[((si0 + 1))*(N) + (si1)]) + A[((si0 - 1))*(N) + (si1)]));
+    const double coeff = 0.2;
+    const int64_t Nminus1 = N - 1;
+    #pragma omp parallel
+    {
+        for (int64_t t = 0; t < TSTEPS; ++t) {
+            #pragma omp for schedule(static)
+            for (int64_t i = 1; i < Nminus1; ++i) {
+                double *restrict a_row = A + i * N;
+                double *restrict a_up = A + (i - 1) * N;
+                double *restrict a_down = A + (i + 1) * N;
+                double *restrict b_row = B + i * N;
+                #pragma omp simd
+                for (int64_t j = 1; j < Nminus1; ++j) {
+                    b_row[j] = coeff * (a_row[j] + a_row[j-1] + a_row[j+1] + a_up[j] + a_down[j]);
+                }
             }
-          }
-          #pragma omp for schedule(static)
-          for (int64_t si0 = 1; si0 < (N - 1); ++si0) {
-            #pragma omp simd
-            for (int64_t si1 = 1; si1 < (N - 1); ++si1) {
-              A[(si0)*(N) + (si1)] = (0.2 * ((((B[(si0)*(N) + (si1)] + B[(si0)*(N) + ((si1 - 1))]) + B[(si0)*(N) + ((si1 + 1))]) + B[((si0 + 1))*(N) + (si1)]) + B[((si0 - 1))*(N) + (si1)]));
-            }
-          }
+            #pragma omp for schedule(static)
+            for (int64_t i = 1; i < Nminus1; ++i) {
+                double *restrict b_row = B + i * N;
+                double *restrict b_up = B + (i - 1) * N;
+                double *restrict b_down = B + (i + 1) * N;
+                double *restrict a_row = A + i * N;
+                #pragma omp simd
+                for (int64_t j = 1; j < Nminus1; ++j) {
+                    a_row[j] = coeff * (b_row[j] + b_row[j-1] + b_row[j+1] + b_up[j] + b_down[j]);
+                }
             }
         }
+    }
 }

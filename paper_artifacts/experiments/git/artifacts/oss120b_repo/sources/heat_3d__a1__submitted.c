@@ -168,46 +168,83 @@ static inline int64_t __npb_int_pow(int64_t base, int64_t exp) {
     return result;
 }
 
+#if 0
 void heat_3d_fp64(double *restrict A, double *restrict B, const int64_t N, const int64_t TSTEPS, const double alpha) {
-        const double coeff0 = 1.0 - 6.0 * alpha;
-        const double coeff1 = alpha;
-        const int64_t Nm1 = N - 1;
-        const int64_t N2 = N * N;
-        for (int64_t t = 0; t < TSTEPS; ++t) {
-            #pragma omp parallel for schedule(static)
-            for (int64_t i = 1; i < Nm1; ++i) {
-                for (int64_t j = 1; j < Nm1; ++j) {
-                    for (int64_t k = 1; k < Nm1; ++k) {
-                        int64_t idx = i * N2 + j * N + k;
-                        double a_center = A[idx];
-                        double neighbor_sum =
-                            A[(i+1) * N2 + j * N + k] +
-                            A[(i-1) * N2 + j * N + k] +
-                            A[i * N2 + (j+1) * N + k] +
-                            A[i * N2 + (j-1) * N + k] +
-                            A[i * N2 + j * N + (k+1)] +
-                            A[i * N2 + j * N + (k-1)];
-                        B[idx] = coeff0 * a_center + coeff1 * neighbor_sum;
-                    }
-                }
+        double *Ac = (double *)malloc((size_t)((((N - 1) - 1)) * (((N - 1) - 1)) * (((N - 1) - 1))) * sizeof(double));
+        double *Bc = (double *)malloc((size_t)((((N - 1) - 1)) * (((N - 1) - 1)) * (((N - 1) - 1))) * sizeof(double));
+        for (int64_t t = 1; t < (TSTEPS + 1); ++t) {
+          for (int64_t __w0 = 0; __w0 < ((N - 1) - 1); ++__w0) {
+            for (int64_t __w1 = 0; __w1 < ((N - 1) - 1); ++__w1) {
+              for (int64_t __w2 = 0; __w2 < ((N - 1) - 1); ++__w2) {
+                Ac[((__w0)*(((N - 1) - 1)) + (__w1))*(((N - 1) - 1)) + (__w2)] = A[(((__w0 + 1))*(N) + ((__w1 + 1)))*(N) + ((__w2 + 1))];
+              }
             }
+          }
+          for (int64_t si0 = 1; si0 < (N - 1); ++si0) {
+            for (int64_t si1 = 1; si1 < (N - 1); ++si1) {
+              for (int64_t si2 = 1; si2 < (N - 1); ++si2) {
+                B[((si0)*(N) + (si1))*(N) + (si2)] = ((((alpha * ((A[(((si0 + 1))*(N) + (si1))*(N) + (si2)] - (2.0 * Ac[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))])) + A[(((si0 - 1))*(N) + (si1))*(N) + (si2)])) + (alpha * ((A[((si0)*(N) + ((si1 + 1)))*(N) + (si2)] - (2.0 * Ac[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))])) + A[((si0)*(N) + ((si1 - 1)))*(N) + (si2)]))) + (alpha * ((A[((si0)*(N) + (si1))*(N) + ((si2 + 1))] - (2.0 * Ac[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))])) + A[((si0)*(N) + (si1))*(N) + ((si2 - 1))]))) + Ac[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))]);
+              }
+            }
+          }
+          for (int64_t __w0 = 0; __w0 < ((N - 1) - 1); ++__w0) {
+            for (int64_t __w1 = 0; __w1 < ((N - 1) - 1); ++__w1) {
+              for (int64_t __w2 = 0; __w2 < ((N - 1) - 1); ++__w2) {
+                Bc[((__w0)*(((N - 1) - 1)) + (__w1))*(((N - 1) - 1)) + (__w2)] = B[(((__w0 + 1))*(N) + ((__w1 + 1)))*(N) + ((__w2 + 1))];
+              }
+            }
+          }
+          for (int64_t si0 = 1; si0 < (N - 1); ++si0) {
+            for (int64_t si1 = 1; si1 < (N - 1); ++si1) {
+              for (int64_t si2 = 1; si2 < (N - 1); ++si2) {
+                A[((si0)*(N) + (si1))*(N) + (si2)] = ((((alpha * ((B[(((si0 + 1))*(N) + (si1))*(N) + (si2)] - (2.0 * Bc[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))])) + B[(((si0 - 1))*(N) + (si1))*(N) + (si2)])) + (alpha * ((B[((si0)*(N) + ((si1 + 1)))*(N) + (si2)] - (2.0 * Bc[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))])) + B[((si0)*(N) + ((si1 - 1)))*(N) + (si2)]))) + (alpha * ((B[((si0)*(N) + (si1))*(N) + ((si2 + 1))] - (2.0 * Bc[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))])) + B[((si0)*(N) + (si1))*(N) + ((si2 - 1))]))) + Bc[(((si0 - 1))*(((N - 1) - 1)) + ((si1 - 1)))*(((N - 1) - 1)) + ((si2 - 1))]);
+              }
+            }
+          }
+        }
+        free(Ac);
+        free(Bc);
+}
+#endif
 
-            #pragma omp parallel for schedule(static)
-            for (int64_t i = 1; i < Nm1; ++i) {
-                for (int64_t j = 1; j < Nm1; ++j) {
-                    for (int64_t k = 1; k < Nm1; ++k) {
-                        int64_t idx = i * N2 + j * N + k;
-                        double b_center = B[idx];
-                        double neighbor_sum =
-                            B[(i+1) * N2 + j * N + k] +
-                            B[(i-1) * N2 + j * N + k] +
-                            B[i * N2 + (j+1) * N + k] +
-                            B[i * N2 + (j-1) * N + k] +
-                            B[i * N2 + j * N + (k+1)] +
-                            B[i * N2 + j * N + (k-1)];
-                        A[idx] = coeff0 * b_center + coeff1 * neighbor_sum;
-                    }
+// Optimized implementation of heat_3d using stencil without temporary copies.
+#include <omp.h>
+void heat_3d_fp64(double *restrict A, double *restrict B, const int64_t N, const int64_t TSTEPS, const double alpha) {
+    const int64_t N2 = N * N;
+    for (int64_t t = 1; t <= TSTEPS; ++t) {
+        // Update B from A
+        #pragma omp parallel for collapse(2) schedule(static)
+        for (int64_t i = 1; i < N - 1; ++i) {
+            for (int64_t j = 1; j < N - 1; ++j) {
+                int64_t base = i * N2 + j * N;
+                #pragma omp simd
+                for (int64_t k = 1; k < N - 1; ++k) {
+                    int64_t idx = base + k;
+                    double a_center = A[idx];
+                    double lap = (A[idx + N2] + A[idx - N2] +
+                                  A[idx + N]  + A[idx - N]  +
+                                  A[idx + 1]  + A[idx - 1] -
+                                  6.0 * a_center);
+                    B[idx] = a_center + alpha * lap;
                 }
             }
         }
+        // Update A from B
+        #pragma omp parallel for collapse(2) schedule(static)
+        for (int64_t i = 1; i < N - 1; ++i) {
+            for (int64_t j = 1; j < N - 1; ++j) {
+                int64_t base = i * N2 + j * N;
+                #pragma omp simd
+                for (int64_t k = 1; k < N - 1; ++k) {
+                    int64_t idx = base + k;
+                    double b_center = B[idx];
+                    double lap = (B[idx + N2] + B[idx - N2] +
+                                  B[idx + N]  + B[idx - N]  +
+                                  B[idx + 1]  + B[idx - 1] -
+                                  6.0 * b_center);
+                    A[idx] = b_center + alpha * lap;
+                }
+            }
+        }
+    }
 }

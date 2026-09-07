@@ -1,5 +1,6 @@
 // hpcagent_bench-autogen -- generated from jacobi_2d_numpy.py; edit the numpy reference and regenerate, or delete this line to keep local edits as a hand override.
 #define _USE_MATH_DEFINES
+#include <omp.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -169,21 +170,18 @@ static inline int64_t __npb_int_pow(int64_t base, int64_t exp) {
 }
 
 void jacobi_2d_fp64(double *restrict A, double *restrict B, const int64_t N, const int64_t TSTEPS) {
-    #pragma omp parallel
-    {
         for (int64_t t = 0; t < TSTEPS; ++t) {
-            #pragma omp for collapse(2) schedule(static)
-            for (int64_t si0 = 1; si0 < (N - 1); ++si0) {
-                for (int64_t si1 = 1; si1 < (N - 1); ++si1) {
-                    B[(si0)*(N) + (si1)] = (0.2 * ((((A[(si0)*(N) + (si1)] + A[(si0)*(N) + ((si1 - 1))]) + A[(si0)*(N) + ((si1 + 1))]) + A[((si0 + 1))*(N) + (si1)]) + A[((si0 - 1))*(N) + (si1)]));
-                }
+          #pragma omp parallel for collapse(2) schedule(static)
+          for (int64_t si0 = 1; si0 < (N - 1); ++si0) {
+            for (int64_t si1 = 1; si1 < (N - 1); ++si1) {
+              B[(si0)*(N) + (si1)] = (0.2 * ((((A[(si0)*(N) + (si1)] + A[(si0)*(N) + ((si1 - 1))]) + A[(si0)*(N) + ((si1 + 1))]) + A[((si0 + 1))*(N) + (si1)]) + A[((si0 - 1))*(N) + (si1)]));
             }
-            #pragma omp for collapse(2) schedule(static)
-            for (int64_t si0 = 1; si0 < (N - 1); ++si0) {
-                for (int64_t si1 = 1; si1 < (N - 1); ++si1) {
-                    A[(si0)*(N) + (si1)] = (0.2 * ((((B[(si0)*(N) + (si1)] + B[(si0)*(N) + ((si1 - 1))]) + B[(si0)*(N) + ((si1 + 1))]) + B[((si0 + 1))*(N) + (si1)]) + B[((si0 - 1))*(N) + (si1)]));
-                }
+          }
+          #pragma omp parallel for collapse(2) schedule(static)
+          for (int64_t si0 = 1; si0 < (N - 1); ++si0) {
+            for (int64_t si1 = 1; si1 < (N - 1); ++si1) {
+              A[(si0)*(N) + (si1)] = (0.2 * ((((B[(si0)*(N) + (si1)] + B[(si0)*(N) + ((si1 - 1))]) + B[(si0)*(N) + ((si1 + 1))]) + B[((si0 + 1))*(N) + (si1)]) + B[((si0 - 1))*(N) + (si1)]));
             }
+          }
         }
-    }
 }

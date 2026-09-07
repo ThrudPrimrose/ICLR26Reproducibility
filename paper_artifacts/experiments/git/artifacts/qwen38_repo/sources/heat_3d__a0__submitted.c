@@ -1,75 +1,86 @@
-// heat_3d_fp64 -- 3D explicit heat equation, alternating A->B->A 7-point stencil updates.
-//
-// Optimizations vs. the naive reference:
-//   1. The two interior-copy sweeps (Ac / Bc temporaries, each a full N^3 memcpy
-//      per timestep) are eliminated: the stencil reads A/B directly with the same
-//      offsets, so each timestep is exactly two stencil sweeps instead of four.
-//   2. The innermost (k) loop is auto-vectorized (AVX-512 on the target) with FMA
-//      contraction; per-point arithmetic keeps the reference's exact op ordering.
-//   3. OpenMP: the spatial sweep is parallelized over the (i,j) grid rows with the
-//      timesteps kept serial (a true recurrence). Because the per-timestep barrier
-//      cost is a fixed overhead, tiny grids are run serially -- a work-based switch
-//      picks whichever is faster on the current core count.
-
+// 2x2 (i,j) block, 4 outputs per k-loop iteration
 #include <stdint.h>
-#include <omp.h>
+#include <stdlib.h>
+#include <math.h>
 
-static inline void stencil_row(const double *restrict a, double *restrict b,
-                               int64_t Ni, int64_t N, int64_t NN, double alpha) {
-    for (int64_t k = 1; k <= Ni; ++k) {
-        double c = a[k];
-        double tx = alpha * (a[k + NN] - 2.0 * c + a[k - NN]);
-        double ty = alpha * (a[k + N] - 2.0 * c + a[k - N]);
-        double tz = alpha * (a[k + 1] - 2.0 * c + a[k - 1]);
-        b[k] = ((tx + ty) + tz) + c;
+static void
+heat_3d_half(const double *restrict src, double *restrict dst,
+             const int n, const double alpha)
+{
+    const int ni = n - 2;
+    const long long nn = (long long)n * n;
+
+    #pragma omp for schedule(static)
+    for (int i = 1; i <= ni - 1; i += 2) {
+        const double *r_im1 = src + ((long long)i - 1) * nn;
+        const double *r_0   = src + (long long)i * nn;
+        const double *r_1   = src + ((long long)i + 1) * nn;
+        const double *r_2   = src + ((long long)i + 2) * nn;
+        double *b_0 = dst + (long long)i * nn;
+        double *b_1 = dst + ((long long)i + 1) * nn;
+
+        for (int j = 1; j <= ni - 1; j += 2) {
+            const long long jn = (long long)j * n;
+            const double *l_im1 = r_im1 + jn;
+            const double *l_0   = r_0   + jn;
+            const double *l_1   = r_1   + jn;
+            const double *l_2   = r_2   + jn;
+            double *o0 = b_0 + jn;
+            double *o1 = b_1 + jn;
+            for (int k = 1; k <= ni; ++k) {
+                const double ac00 = l_0[k];
+                o0[k] = alpha * (l_1[k] - 2.0*ac00 + l_im1[k])
+                      + alpha * (l_0[k+n] - 2.0*ac00 + l_0[k-n])
+                      + alpha * (l_0[k+1] - 2.0*ac00 + l_0[k-1]) + ac00;
+
+                const double ac01 = l_0[k+n];
+                o0[k+n] = alpha * (l_1[k+n] - 2.0*ac01 + l_im1[k+n])
+                        + alpha * (l_0[k+2*n] - 2.0*ac01 + ac00)
+                        + alpha * (l_0[k+n+1] - 2.0*ac01 + l_0[k+n-1]) + ac01;
+
+                const double ac10 = l_1[k];
+                o1[k] = alpha * (l_2[k] - 2.0*ac10 + ac00)
+                      + alpha * (l_1[k+n] - 2.0*ac10 + l_1[k-n])
+                      + alpha * (l_1[k+1] - 2.0*ac10 + l_1[k-1]) + ac10;
+
+                const double ac11 = l_1[k+n];
+                o1[k+n] = alpha * (l_2[k+n] - 2.0*ac11 + ac01)
+                        + alpha * (l_1[k+2*n] - 2.0*ac11 + ac10)
+                        + alpha * (l_1[k+n+1] - 2.0*ac11 + l_1[k+n-1]) + ac11;
+            }
+        }
     }
-}
-
-static void run_serial(double *restrict A, double *restrict B,
-                       int64_t N, int64_t TSTEPS, double alpha) {
-    const int64_t Ni = N - 2;
-    const int64_t NN = N * N;
-    for (int64_t t = 1; t <= TSTEPS; ++t) {
-        for (int64_t i = 1; i <= Ni; ++i)
-            for (int64_t j = 1; j <= Ni; ++j)
-                stencil_row(A + i * NN + j * N, B + i * NN + j * N, Ni, N, NN, alpha);
-        for (int64_t i = 1; i <= Ni; ++i)
-            for (int64_t j = 1; j <= Ni; ++j)
-                stencil_row(B + i * NN + j * N, A + i * NN + j * N, Ni, N, NN, alpha);
-    }
-}
-
-static void run_parallel(double *restrict A, double *restrict B,
-                         int64_t N, int64_t TSTEPS, double alpha) {
-    const int64_t Ni = N - 2;
-    const int64_t NN = N * N;
-#pragma omp parallel
-    {
-        for (int64_t t = 1; t <= TSTEPS; ++t) {
-            // sweep 1: B[interior] = f(A)  (reads A, writes B)
-#pragma omp for schedule(static)
-            for (int64_t i = 1; i <= Ni; ++i)
-                for (int64_t j = 1; j <= Ni; ++j)
-                    stencil_row(A + i * NN + j * N, B + i * NN + j * N, Ni, N, NN, alpha);
-            // sweep 2: A[interior] = f(B)  (reads B, writes A)
-#pragma omp for schedule(static)
-            for (int64_t i = 1; i <= Ni; ++i)
-                for (int64_t j = 1; j <= Ni; ++j)
-                    stencil_row(B + i * NN + j * N, A + i * NN + j * N, Ni, N, NN, alpha);
+    // odd tail row (i = ni) if ni odd
+    if (ni & 1) {
+        const int i = ni;
+        const double *ri   = src + (long long)i * nn;
+        const double *rip1 = src + ((long long)i + 1) * nn;
+        const double *rim1 = src + ((long long)i - 1) * nn;
+        double *bi         = dst + (long long)i * nn;
+        for (int j = 1; j <= ni; ++j) {
+            const double *rj   = ri   + (long long)j * n;
+            const double *rjp  = rip1 + (long long)j * n;
+            const double *rjm  = rim1 + (long long)j * n;
+            double *o          = bi   + (long long)j * n;
+            for (int k = 1; k <= ni; ++k) {
+                const double ac = rj[k];
+                o[k] = alpha * (rjp[k] - 2.0 * ac + rjm[k])
+                     + alpha * (rj[k + n] - 2.0 * ac + rj[k - n])
+                     + alpha * (rj[k + 1] - 2.0 * ac + rj[k - 1])
+                     + ac;
+            }
         }
     }
 }
 
 void heat_3d_fp64(double *restrict A, double *restrict B,
-                  const int64_t N, const int64_t TSTEPS, const double alpha) {
-    const int64_t Ni = N - 2;
-    if (Ni <= 0 || TSTEPS <= 0) return;
-
-    // Parallelize only when the total number of point-updates is large enough to
-    // amortize the 2*TSTEPS per-timestep barriers (and we actually have >1 thread).
-    const int64_t total = 2 * TSTEPS * Ni * Ni * Ni;
-    if (omp_get_max_threads() > 1 && total >= 40 * 1000 * 1000)
-        run_parallel(A, B, N, TSTEPS, alpha);
-    else
-        run_serial(A, B, N, TSTEPS, alpha);
+                  const int64_t N, const int64_t TSTEPS, const double alpha)
+{
+    if (N < 4 || TSTEPS < 1) return;
+    const int n = (int)N;
+    #pragma omp parallel
+    for (int64_t t = 0; t < TSTEPS; ++t) {
+        heat_3d_half(A, B, n, alpha);
+        heat_3d_half(B, A, n, alpha);
+    }
 }

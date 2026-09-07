@@ -6,55 +6,78 @@ served the same kernel as a git repository with an `ISSUE.md`, a history, and th
 files. Two models, ten scientific-computing kernels, three independent agents per cell: 120 cells,
 `experiments/git/`.
 
-The headline in the arm-level table is that repository framing more than triples Qwen3.8's
-speed-up, 2.33x to 8.30x. **That number is one kernel.** This document is why it should not be
-read as a framing effect, and what the experiment does support.
+The arm-level table reports repository framing ahead in both models -- GPT-OSS-120B 3.38x to
+4.04x, Qwen3.8 6.68x to 8.63x. **Neither number is a framing effect on speed.** This document is
+why, and what the experiment does support instead.
+
+## The arm-level comparison is not a comparison
+
+The geomean of each arm is taken over the cells that arm got ACCEPTED, and the two legs do not
+accept the same cells:
+
+| model | framing | accepted cells | kernels solved |
+|---|---|---|---|
+| GPT-OSS-120B | kernel | 9 / 30 | 3 / 10 |
+| GPT-OSS-120B | repo | 24 / 30 | 9 / 10 |
+| Qwen3.8 | kernel | 16 / 30 | 9 / 10 |
+| Qwen3.8 | repo | 15 / 30 | 7 / 10 |
+
+GPT-OSS-120B's repository leg solved six kernels its kernel leg never solved at all (`addusxx_g`,
+`dfa`, `edge_laplacian`, `kmp`, `lda_xc_potential`, `warpx_boris_push`). Those six enter the
+repository geomean and cannot enter the other, because the other has nothing to put there. The
+arm-level gap is which kernels each leg reached, not how fast it made them.
 
 ## The paired view
 
-`experiments/git/data/kernels.csv` pools the three attempts into one row per kernel, and the
-per-kernel figure narrows each pair to the kernels BOTH framings solved. Restricted that way, the
-framing does essentially nothing:
+Restricted to the kernels BOTH framings solved, the framing does essentially nothing:
 
-| model | kernel | kernel framing | repo framing |
-|---|---|---|---|
-| GPT-OSS-120B | `heat_3d` | 2.45x | 2.40x |
-| GPT-OSS-120B | `jacobi_2d` | 1.89x | 2.05x |
-| Qwen3.8 | `heat_3d` | 2.50x | 2.52x |
-| Qwen3.8 | `jacobi_2d` | 2.17x | 2.17x |
+| model | shared kernels | kernel framing | repo framing | ratio |
+|---|---|---|---|---|
+| GPT-OSS-120B | 3 | 3.49x | 3.50x | 1.00x |
+| Qwen3.8 | 7 | 9.67x | 11.06x | 1.14x |
 
-Geomean over the shared set: 2.15x -> 2.22x for GPT-OSS-120B, 2.33x -> 2.34x for Qwen3.8. On
-`jacobi_2d` the two legs of the Qwen pair agree to three significant figures.
-
-The 8.30x comes from `laplacian_stencil_3d`, solved by the repository leg alone, at **104.25x**
-(572.8 ms of NumPy against 5.29 ms of gcc-compiled C). Nothing marks that cell as suspect -- it is
-a graded submission against the seed committed in the task repo, and a fused C stencil beating a
-temporaries-heavy NumPy one by two orders of magnitude is ordinary. It is a real number. It is just
-not a framing result: it is the arithmetic of putting one 104x kernel into a geomean over three.
+GPT-OSS-120B is a null to three significant figures. Qwen3.8's 1.14x is one kernel:
+`edge_laplacian` goes 23.67x to 117.47x, and `lda_xc_potential` moves the other way, 34.55x to
+14.11x. The rest agree closely -- `fdtd_2d` 1.13x against 1.13x, `warpx_boris_push` 1.93x against
+1.95x, `addusxx_g` 93.44x against 91.60x.
 
 ## What the framing does move
 
-Not speed. Two other things, and they point the same way:
+**Whether the agent finishes at all.** This is the large, consistent effect, and it is about
+SUBMISSION rather than optimization. Cell outcomes:
 
-**More submissions get through.** Cells that reached a graded submission: 8 under kernel framing,
-14 under repository framing. Both models submit more when they can see the repository. The
-acceptance count barely follows (4 -> 5 of 120), so the extra submissions are mostly extra failures.
+| model | framing | ok | no submission | incorrect | no data |
+|---|---|---|---|---|---|
+| GPT-OSS-120B | kernel | 9 | 20 | 0 | 1 |
+| GPT-OSS-120B | repo | 24 | 3 | 3 | 0 |
+| Qwen3.8 | kernel | 16 | 10 | 0 | 4 |
+| Qwen3.8 | repo | 15 | 5 | 2 | 8 |
 
-**It costs more, for one model.** Qwen3.8 spends 23.0M tokens under kernel framing and 41.8M under
-repository framing -- 1.8x for one extra solved kernel. GPT-OSS-120B goes the other way, 35.2M down
-to 28.2M. The token cost of framing is not a constant; it is a per-model interaction.
+Two thirds of GPT-OSS-120B's kernel-framing cells ended holding work they never submitted; under
+repository framing that falls to one tenth. The repository leg is not writing faster code, it is
+reaching the judge.
+
+**Token cost, per model.** GPT-OSS-120B spends 141.0M tokens under kernel framing and 58.3M under
+repository framing -- less than half, for two and a half times the accepted cells. Qwen3.8 goes
+the other way, 91.3M to 101.7M. The cost of framing is a per-model interaction, not a constant.
 
 ## The honest limit
 
-Every arm sits near the floor: 2, 2, 2 and 3 kernels solved of ten. Nine correct cells out of 120.
-At that density a single kernel moves an arm's geomean by a factor of three, which is exactly what
-happened, and no per-kernel comparison here has the power to separate a 5% framing effect from
-noise. The paired figure is the right way to look at the data BECAUSE it is so sparse: it is the
-only view in which the two legs are being asked the same question.
+Ten kernels, three attempts, one campaign. The paired sets are 3 and 7 kernels wide, which is not
+enough to separate a small framing effect on speed from noise -- and the one arm-level number that
+looks like a large effect is the selection artifact above. What the experiment establishes is a
+null on speed and a large effect on completion, and only the second is bigger than this design's
+noise.
 
-What the experiment does establish is a null and a cost: on the kernels both framings solved, the
-repository framing changed the speed-up by less than 3%, while changing the token bill by up to
-1.8x. If the repository framing is worth having, this experiment does not show it in the speed-up.
+The non-submission column is the finding worth carrying: an agent that solved a kernel and never
+submitted it scores zero, and framing changed how often that happened by a factor of six.
+
+## Provenance
+
+The rows here are the 2026-09-06 campaign. Two earlier campaigns (2026-09-01, 2026-09-04) were
+collected and then withdrawn as superseded; the 09-01 run in particular sat near the floor at two
+to three solved kernels per arm, where a single 104x cell moved an arm's geomean by a factor of
+three.
 
 ## Reproducing
 
@@ -68,3 +91,7 @@ python3 experiments/git/plot_git_kernels.py # per-kernel, the llr9 trio
 `collect_git.py` and `aggregate_git.py` are both byte-reproducible over unchanged inputs. The
 per-kernel figures are drawn by `benchlib/dumbbell.py`, the same code that draws llr8 and llr9,
 with the two legs relabelled -- so the form a reader learned on those figures carries over.
+
+`collect_git.py` writes each arm under `artifacts/<arm>/`, keyed by arm name alone. Collecting two
+campaigns into one output directory therefore has the second delete the first's saved sources; give
+each campaign its own `--out` if more than one is ever kept.
