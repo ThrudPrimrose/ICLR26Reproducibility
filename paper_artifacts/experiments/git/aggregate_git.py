@@ -45,7 +45,13 @@ LEG_OF_FRAMING = {"kernel": "0", "repo": "1"}
 
 #: The collector's full model ids -> the short keys the palette and the label table are held under,
 #: so this experiment's hues match the ones llr8 and llr9 give the same models.
-MODEL_OF = {"openai/gpt-oss-120b": "oss120b", "Qwen/Qwen3.8-27B-FP8": "qwen38"}
+MODEL_OF = {
+    "openai/gpt-oss-120b": "oss120b",
+    "Qwen/Qwen3.8-27B-FP8": "qwen38",
+    # The 2026-09-04 campaign is the first git-scicomp wave to run Kimi; the key is the one
+    # benchlib.style already holds its hue and label under, so the series matches llr8/llr9.
+    "moonshotai/Kimi-K2.7-Code": "kimi27sglang",
+}
 
 #: Every graded submission in this campaign was C. Recorded as a column rather than assumed,
 #: because the plotter labels the row with it and a silent default would mislabel a Fortran arm.
