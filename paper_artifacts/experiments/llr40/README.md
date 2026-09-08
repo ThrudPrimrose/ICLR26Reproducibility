@@ -43,6 +43,20 @@ wears the same hue here as in every figure the harness produces:
 | `figures/tokens_per_kernel.pdf` | `scripts/plot_tokens.py` (harness) | median tokens per kernel per model, log axis |
 | `figures/score_change_v10_v11.pdf` | `scripts/plot_score_change.py` (harness) | score against cost as before/after ratios, with a Pareto front |
 
+The framework figures come from the harness's OWN plot subcommands rather than a script here,
+over the framework sweep DB (not the agent campaign DBs, which carry no `results` table):
+
+| figure | command |
+|---|---|
+| `llr_cpu_framework_heatmap.*.pdf` | `cli plot -b loop_level_reasoning -p XL` |
+| `llr_cpu_framework_dist.*.pdf` | `cli plot-dist -b loop_level_reasoning -p XL` |
+
+Both run with `HPCAGENT_BENCH_PLOT_BASELINE=cc`. The default divisor is numpy, and llr-focus40 has
+a numpy XL row for 8 of its 40 kernels against a cc row for all 40 -- the references that carry a
+loop-carried dependence are Python loops, and XL is ~10^8 interpreted iterations, so those rows do
+not exist and will not. Ratios in these two figures therefore read "over single-core C". One figure
+is emitted PER MACHINE, which is why the filenames carry a CPU name.
+
 ```
 $S/venv-optarena-314/bin/python plot_per_kernel_speedup.py --campaign v11 --baseline numba
 $S/venv-optarena-314/bin/python $S/optarena/scripts/plot_tokens.py data/llr40_observations.csv \
