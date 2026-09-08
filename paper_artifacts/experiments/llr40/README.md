@@ -14,6 +14,33 @@ Five scripts produce it -- `extract_llr40.py`, `collect_lowerings.py`, `collect_
 What is COMMITTED and what is not, because the two differ and an earlier version of this file said
 otherwise (it claimed the repo root ignores `*.csv`; there is no such rule and never was):
 
+**The GPU run roots are GONE and the committed CSV is now their only copy.**
+`gpuv2-llr40-20260906` and `gpuv3-llr40-20260907` were deleted from scratch after their rows were
+committed, so 4,386 observations across twelve GPU arms exist nowhere else. `extract_llr40.py`
+rebuilds the observations from the roots it is given, which means re-running it over the surviving
+CPU roots DROPS those arms silently. Merge instead of overwriting:
+
+```
+$S/venv-optarena-314/bin/python extract_llr40.py ... --out /tmp/fresh
+$S/venv-optarena-314/bin/python merge_extractions.py \
+    data/llr40_observations.csv /tmp/fresh/llr40_observations.csv --out /tmp/fresh/merged.csv
+cp /tmp/fresh/merged.csv data/llr40_observations.csv
+```
+
+`merge_extractions.py` keeps every committed row whose arm the fresh run does not produce and
+takes the fresh rows for every arm it does, so a re-measured arm is replaced whole rather than
+duplicated.
+
+**The derived tables in `data/` are ONE SNAPSHOT BEHIND the observations.**
+`llr40_observations.csv` carries the 2026-09-08 merge (the recovered `adhoc` rows and waves 6-9,
+20,620 rows); the fifteen summary tables beside it were produced from the previous extraction and
+have not been regenerated, because `analyze_llr40.py` needs pandas and no interpreter on this
+machine has it. Re-run it wherever pandas is available before quoting a summary table:
+
+```
+$S/venv-optarena-314/bin/python analyze_llr40.py --artifact . --out analysis
+```
+
 - committed -- `data/*.csv` (the fifteen index and summary tables), `figures/`, `tables/`,
   `artifacts/`, and the scripts.
 - local only -- `data/sources/` (10,587 exported source files, ~66 MB), `timings/` (132 merged
