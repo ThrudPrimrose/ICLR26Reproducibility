@@ -27,3 +27,5 @@ for exp in llr8 llr9; do
   "$PY" "experiments/$exp/plot_${exp}_before_after.py"
 done
 
+echo "== canon figures   experiments/canon/data/canon_llr40.csv -> experiments/canon/figures/"
+"$PY" experiments/canon/plot_canon_speedup.py
