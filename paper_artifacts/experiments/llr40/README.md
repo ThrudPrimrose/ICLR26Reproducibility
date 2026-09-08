@@ -31,6 +31,33 @@ cp /tmp/fresh/merged.csv data/llr40_observations.csv
 takes the fresh rows for every arm it does, so a re-measured arm is replaced whole rather than
 duplicated.
 
+### Figures, and the scripts that draw them
+
+Three per-experiment figures, all drawn in the harness's shared style
+(`hpcagent_bench.plotstyle`) and coloured from its registry (`hpcagent_bench.palette`), so a model
+wears the same hue here as in every figure the harness produces:
+
+| figure | script | what it shows |
+|---|---|---|
+| `figures/per_kernel_speedup_by_agent.pdf` | `plot_per_kernel_speedup.py` | per-kernel `log2` speed-up per agent, 95% bootstrap intervals |
+| `figures/tokens_per_kernel.pdf` | `scripts/plot_tokens.py` (harness) | median tokens per kernel per model, log axis |
+| `figures/score_change_v10_v11.pdf` | `scripts/plot_score_change.py` (harness) | score against cost as before/after ratios, with a Pareto front |
+
+```
+$S/venv-optarena-314/bin/python plot_per_kernel_speedup.py --campaign v11 --baseline numba
+$S/venv-optarena-314/bin/python $S/optarena/scripts/plot_tokens.py data/llr40_observations.csv \
+    --experiment v11w2 --out figures/tokens_per_kernel.pdf --table data/tokens_per_kernel.csv
+$S/venv-optarena-314/bin/python $S/optarena/scripts/plot_score_change.py data/llr40_observations.csv \
+    --before llr40v10 --after v11w2 --label "v10 -> v11" \
+    --out figures/score_change_v10_v11.pdf --table data/score_change_v10_v11.csv
+```
+
+`log2` is the speed-up axis because a speed-up is a ratio: it is the only scale where a 2x win and
+a 2x loss sit the same distance from the line. Note that a submission is only ACCEPTED at or above
+the baseline, so the negative half of that axis is empty by construction -- it is a property of the
+gate, not evidence that no agent ever regressed. v9 and v10 graded against the C single-core
+lowering and v11 against numba, so the two are never drawn on one axis.
+
 - local only -- `data/sources/` (10,587 exported source files, ~66 MB), `timings/` (132 merged
   per-job judge databases), `analysis/` (the raw output directory the tables are copied FROM),
   `kernels/`, `lowerings/`, `asm_reports/`. Regenerate them with the commands below; the CSVs name
