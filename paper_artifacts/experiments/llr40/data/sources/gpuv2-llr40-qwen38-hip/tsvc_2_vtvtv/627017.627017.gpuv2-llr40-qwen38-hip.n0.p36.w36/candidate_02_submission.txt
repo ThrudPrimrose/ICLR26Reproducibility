@@ -1,0 +1,49 @@
+// Device half for tsvc_2_vtvtv (HIP): a[i] = a[i] * b[i] * c[i]  (fp64, in-place).
+#include <cstdint>
+#include <hip/hip_runtime.h>
+
+#define VT_BLOCK 256
+
+__global__ void vtvtv_vec4_kernel(double4 *__restrict__ a, const double4 *__restrict__ b,
+                                  const double4 *__restrict__ c, double *__restrict__ asrc,
+                                  const double *__restrict__ bsrc, const double *__restrict__ csrc,
+                                  const int64_t n4, const int64_t n) {
+    const int64_t i = (int64_t)blockIdx.x * VT_BLOCK + threadIdx.x;
+    if (i < n4) {
+        double4 av = a[i];
+        double4 bv = b[i];
+        double4 cv = c[i];
+        av.x = av.x * bv.x * cv.x;
+        av.y = av.y * bv.y * cv.y;
+        av.z = av.z * bv.z * cv.z;
+        av.w = av.w * bv.w * cv.w;
+        a[i] = av;
+    }
+    // Tail elements (n % 4 of them) handled by the first few threads.
+    const int64_t r = n4 * 4 + i;
+    if (r < n) asrc[r] = asrc[r] * bsrc[r] * csrc[r];
+}
+
+__global__ void vtvtv_scalar_kernel(double *__restrict__ a, const double *__restrict__ b,
+                                    const double *__restrict__ c, const int64_t n) {
+    const int64_t i = (int64_t)blockIdx.x * VT_BLOCK + threadIdx.x;
+    if (i < n) a[i] = a[i] * b[i] * c[i];
+}
+
+void vtvtv_launcher(double *a, const double *b, const double *c, const int64_t n) {
+    if (n <= 0) return;
+    const uintptr_t align = (uintptr_t)a | (uintptr_t)b | (uintptr_t)c;
+    if ((align & 31) == 0) {
+        const int64_t n4 = n / 4;
+        const int64_t r = n - n4 * 4;
+        int64_t T = n4;
+        if (r > T) T = r;
+        if (T < 1) T = 1;
+        const int blocks = (int)((T + VT_BLOCK - 1) / VT_BLOCK);
+        vtvtv_vec4_kernel<<<blocks, VT_BLOCK, 0, hipStreamDefault>>>(
+            (double4 *)a, (const double4 *)b, (const double4 *)c, a, b, c, n4, n);
+    } else {
+        const int blocks = (int)((n + VT_BLOCK - 1) / VT_BLOCK);
+        vtvtv_scalar_kernel<<<blocks, VT_BLOCK, 0, hipStreamDefault>>>(a, b, c, n);
+    }
+}

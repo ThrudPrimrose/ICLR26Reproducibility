@@ -1,0 +1,2 @@
+#include <hip/hip_runtime.h>
+// Device-side code (none needed as hipcub handles kernels internally)

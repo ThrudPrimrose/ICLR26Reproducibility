@@ -1,0 +1,16 @@
+import numpy as np
+
+
+def s323(a, b, c, d, e, LEN_1D):
+    n = int(LEN_1D)
+    if n <= 1:
+        return None
+    # b[i] = b[i-1] + c[i]*(d[i]+e[i])  (prefix sum seeded by b[0])
+    # a[i] = b[i] - c[i]*e[i]
+    t = d[1:] + e[1:]            # d+e
+    t *= c[1:]                   # t = c*(d+e)
+    t[0] += b[0]                 # fold the seed into the first element
+    np.cumsum(t, out=b[1:])      # b[1:] = b[0] + prefix(c*(d+e))
+    np.multiply(c[1:], e[1:], out=t)  # reuse t as c*e
+    np.subtract(b[1:], t, out=a[1:])  # a[1:] = b[1:] - c*e
+    return None

@@ -1,0 +1,28 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+
+    #pragma omp parallel
+    {
+        /* aa update: recurrence in j, so j is kept outer and serial.
+           The i loop is parallel and unit-stride after swapping. */
+        for (int64_t j = 8; j < LEN_2D; ++j) {
+            #pragma omp for simd nowait
+            for (int64_t i = 8; i < LEN_2D; ++i) {
+                aa[j * LEN_2D + i] = aa[(j - 1) * LEN_2D + i] + cc[j * LEN_2D + i];
+            }
+        }
+
+        #pragma omp barrier
+
+        /* bb update: recurrence in i, so i is kept outer and serial.
+           The j loop is parallel and unit-stride. */
+        for (int64_t i = 8; i < LEN_2D; ++i) {
+            #pragma omp for simd nowait
+            for (int64_t j = 8; j < LEN_2D; ++j) {
+                bb[i * LEN_2D + j] = bb[(i - 1) * LEN_2D + j] + cc[i * LEN_2D + j];
+            }
+        }
+    }
+}

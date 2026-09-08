@@ -1,0 +1,59 @@
+#include "/opt/rocm/include/hip/hip_runtime.h"
+#include <cstdint>
+
+extern "C" __global__ void tsvc_2_s119_row_kernel(double* __restrict__ aa,
+                                                   const double* __restrict__ bb,
+                                                   int N,
+                                                   int row) {
+    int j = 1 + blockIdx.x * blockDim.x + threadIdx.x;
+    if (j < N) {
+        int idx = row * N + j;
+        int idx_prev = (row - 1) * N + (j - 1);
+        aa[idx] = aa[idx_prev] + bb[idx];
+    }
+}
+
+extern "C" __global__ void tsvc_2_s119_diag_kernel(double* __restrict__ aa,
+                                                    const double* __restrict__ bb,
+                                                    int N) {
+    int d = blockIdx.x + 2;
+    int start_i = max(1, d - (N - 1));
+    int end_i = min(N - 1, d - 1);
+    int len = end_i - start_i + 1;
+    int tid = threadIdx.x;
+    extern __shared__ double s[];
+    double val = 0.0;
+    if (tid < len) {
+        int i = start_i + tid;
+        int j = d - i;
+        int idx_bb = i * N + j;
+        val = bb[idx_bb];
+    }
+    s[tid] = val;
+    __syncthreads();
+    for (int offset = 1; offset < len; offset <<= 1) {
+        double prev = 0.0;
+        if (tid >= offset && tid < len) {
+            prev = s[tid - offset];
+        }
+        __syncthreads();
+        if (tid >= offset && tid < len) {
+            s[tid] = s[tid] + prev;
+        }
+        __syncthreads();
+    }
+    if (tid < len) {
+        int i = start_i + tid;
+        int j = d - i;
+        int idx_aa = i * N + j;
+        double border;
+        if (i <= j) {
+            int off = j - i;
+            border = aa[off];
+        } else {
+            int off = i - j;
+            border = aa[off * N];
+        }
+        aa[idx_aa] = border + s[tid];
+    }
+}

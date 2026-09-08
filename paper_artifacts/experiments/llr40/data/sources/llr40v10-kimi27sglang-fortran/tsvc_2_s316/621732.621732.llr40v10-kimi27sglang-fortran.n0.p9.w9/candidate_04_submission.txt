@@ -1,0 +1,46 @@
+subroutine tsvc_2_s316_fp64(a, result, LEN_1D) bind(c, name="tsvc_2_s316_fp64")
+  use iso_c_binding, only: c_double, c_int64_t
+  use omp_lib
+  implicit none
+  real(c_double), intent(in) :: a(*)
+  real(c_double), intent(out) :: result(*)
+  integer(c_int64_t), value :: LEN_1D
+  real(c_double) :: x, x0, x1, x2, x3
+  integer(c_int64_t) :: i, j, n
+  integer :: nthreads, tid
+  real(c_double), allocatable :: partial(:)
+
+  nthreads = omp_get_max_threads()
+  allocate(partial(nthreads))
+  partial = huge(1.0_c_double)
+
+  n = (LEN_1D / 4_c_int64_t) * 4_c_int64_t
+
+  !$omp parallel private(tid, i, x0, x1, x2, x3)
+  tid = omp_get_thread_num()
+  x0 = huge(1.0_c_double)
+  x1 = x0
+  x2 = x0
+  x3 = x0
+  !$omp do schedule(static)
+  do i = 1, n, 4
+     x0 = min(x0, a(i))
+     x1 = min(x1, a(i+1))
+     x2 = min(x2, a(i+2))
+     x3 = min(x3, a(i+3))
+  end do
+  !$omp end do
+  partial(tid+1) = min(min(min(x0, x1), x2), x3)
+  !$omp end parallel
+
+  x = huge(1.0_c_double)
+  do i = n + 1, LEN_1D
+     x = min(x, a(i))
+  end do
+  do j = 1, nthreads
+     x = min(x, partial(j))
+  end do
+
+  result(1) = x
+  deallocate(partial)
+end subroutine tsvc_2_s316_fp64

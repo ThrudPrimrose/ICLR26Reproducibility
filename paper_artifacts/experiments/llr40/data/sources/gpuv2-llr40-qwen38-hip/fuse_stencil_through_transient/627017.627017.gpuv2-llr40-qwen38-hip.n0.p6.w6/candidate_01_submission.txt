@@ -1,0 +1,18 @@
+// Device half: kernels + launcher
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+__global__ void stencil_fused(const double* __restrict__ a, double* __restrict__ out, int64_t n) {
+  int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x + 1;
+  if (i < n) {
+    out[i] = (a[i - 1] + a[i] + a[i + 1]) * (a[i] + a[i + 1] + a[i + 2]);
+  }
+}
+
+void fst_launch(const double* a, double* out, int64_t n) {
+  if (n < 2) return;
+  int64_t cnt = n - 1;
+  const int block = 256;
+  int64_t grid = (cnt + block - 1) / block;
+  stencil_fused<<<(unsigned)grid, block>>>(a, out, n);
+}

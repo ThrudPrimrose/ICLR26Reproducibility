@@ -1,0 +1,17 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void tsvc_2_s152_kernel(double* __restrict__ a,
+                                   double* __restrict__ b,
+                                   const double* __restrict__ c,
+                                   const double* __restrict__ d,
+                                   const double* __restrict__ e,
+                                   int64_t N) {
+    int64_t gid = static_cast<int64_t>(blockIdx.x) * static_cast<int64_t>(blockDim.x) + static_cast<int64_t>(threadIdx.x);
+    int64_t stride = static_cast<int64_t>(blockDim.x) * static_cast<int64_t>(gridDim.x);
+    for (int64_t i = gid; i < N; i += stride) {
+        double t = d[i] * e[i];
+        b[i] = t;
+        a[i] += t * c[i];
+    }
+}

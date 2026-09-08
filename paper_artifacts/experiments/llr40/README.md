@@ -31,18 +31,6 @@ cp /tmp/fresh/merged.csv data/llr40_observations.csv
 takes the fresh rows for every arm it does, so a re-measured arm is replaced whole rather than
 duplicated.
 
-**The derived tables in `data/` are ONE SNAPSHOT BEHIND the observations.**
-`llr40_observations.csv` carries the 2026-09-08 merge (the recovered `adhoc` rows and waves 6-9,
-20,620 rows); the fifteen summary tables beside it were produced from the previous extraction and
-have not been regenerated, because `analyze_llr40.py` needs pandas and no interpreter on this
-machine has it. Re-run it wherever pandas is available before quoting a summary table:
-
-```
-$S/venv-optarena-314/bin/python analyze_llr40.py --artifact . --out analysis
-```
-
-- committed -- `data/*.csv` (the fifteen index and summary tables), `figures/`, `tables/`,
-  `artifacts/`, and the scripts.
 - local only -- `data/sources/` (10,587 exported source files, ~66 MB), `timings/` (132 merged
   per-job judge databases), `analysis/` (the raw output directory the tables are copied FROM),
   `kernels/`, `lowerings/`, `asm_reports/`. Regenerate them with the commands below; the CSVs name

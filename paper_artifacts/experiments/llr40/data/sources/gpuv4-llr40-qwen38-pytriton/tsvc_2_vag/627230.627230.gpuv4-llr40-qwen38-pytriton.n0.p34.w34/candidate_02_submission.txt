@@ -1,0 +1,26 @@
+import numpy as _np
+import numba as _nb
+
+
+@_nb.njit(parallel=True, fastmath=True, boundscheck=False, nogil=True)
+def _vag(a, b, ip, n):
+    for i in _nb.prange(n):
+        a[i] = b[ip[i]]
+
+
+def vag(a, b, ip, LEN_1D):
+    _vag(a, b, ip, LEN_1D)
+
+
+def _warm():
+    a = _np.zeros(256, dtype=_np.float64)
+    b = _np.ones(256, dtype=_np.float64)
+    i32 = _np.arange(256, dtype=_np.int32)
+    i64 = _np.arange(256, dtype=_np.int64)
+    _vag(a, b, i32, 256)
+    _vag(a, b, i32, _np.int64(256))
+    _vag(a, b, i64, 256)
+    _vag(a, b, i64, _np.int64(256))
+
+
+_warm()

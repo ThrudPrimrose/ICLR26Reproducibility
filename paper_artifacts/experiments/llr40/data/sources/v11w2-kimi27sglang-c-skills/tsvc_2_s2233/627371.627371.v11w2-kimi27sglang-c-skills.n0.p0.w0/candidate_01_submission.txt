@@ -1,0 +1,24 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb,
+                       const double *restrict cc, const int64_t LEN_2D) {
+    /* The original first nest is:
+     *   for i parallel
+     *     for j serial: aa[j,i] = aa[j-1,i] + cc[j,i]
+     * We interchange it so the unit-stride (i) axis is inner and parallel,
+     * and fuse the two independent serial outer loops (aa row k and bb row k)
+     * into one sequential outer loop over k.
+     */
+    #pragma omp parallel
+    {
+        for (int64_t k = 8; k < LEN_2D; ++k) {
+            #pragma omp for simd schedule(static)
+            for (int64_t idx = 8; idx < LEN_2D; ++idx) {
+                const double c = cc[k * LEN_2D + idx];
+                aa[k * LEN_2D + idx] = aa[(k - 1) * LEN_2D + idx] + c;
+                bb[k * LEN_2D + idx] = bb[(k - 1) * LEN_2D + idx] + c;
+            }
+        }
+    }
+}

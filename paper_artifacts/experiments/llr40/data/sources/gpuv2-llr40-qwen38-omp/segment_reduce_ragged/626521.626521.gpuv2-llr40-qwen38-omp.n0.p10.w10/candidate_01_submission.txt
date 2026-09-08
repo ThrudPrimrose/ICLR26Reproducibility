@@ -1,0 +1,30 @@
+#include <stdint.h>
+#include <omp.h>
+
+/* Segmented dot product over a ragged CSR-style structure: out[s] = sum_{e in
+ * [row_ptr[s], row_ptr[s+1])} val[e] * w[e].  GPU: one map round trip, then a
+ * teams-distribute over the segments (the inner trip count is data-dependent). */
+
+void segment_reduce_ragged_fp64(double *restrict out,
+                                const int64_t *restrict row_ptr,
+                                const double *restrict val,
+                                const double *restrict w,
+                                const int64_t NSEG,
+                                uint8_t *workspace,
+                                int64_t workspace_size) {
+    (void)workspace;
+    (void)workspace_size;
+    const int64_t total = 24 * NSEG;
+#pragma omp target map(to: row_ptr[0:NSEG + 1]) map(to: val[0:total]) map(to: w[0:total]) \
+        map(from: out[0:NSEG])
+    {
+#pragma omp teams distribute
+        for (int64_t s = 0; s < NSEG; ++s) {
+            double acc = 0.0;
+            for (int64_t e = row_ptr[s]; e < row_ptr[s + 1]; ++e) {
+                acc += val[e] * w[e];
+            }
+            out[s] = acc;
+        }
+    }
+}

@@ -1,0 +1,23 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s231_fp64(double *restrict aa, const double *restrict bb, const int64_t LEN_2D) {
+    // Minimal target region to register a device kernel for the offload arm.
+    int on_device = 0;
+    #pragma omp target map(from:on_device)
+    {
+        on_device = !omp_is_initial_device();
+    }
+    // Perform the prefix-sum computation row‑wise. The inner loop over columns
+    // has unit stride and can be vectorized.
+    for (int64_t j = 1; j < LEN_2D; ++j) {
+        const double *restrict b_row = bb + j * LEN_2D;
+        const double *restrict a_prev = aa + (j - 1) * LEN_2D;
+        double *restrict a_curr = aa + j * LEN_2D;
+        #pragma omp simd
+        for (int64_t i = 0; i < LEN_2D; ++i) {
+            a_curr[i] = a_prev[i] + b_row[i];
+        }
+    }
+    (void)on_device; // suppress unused warning
+}

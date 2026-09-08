@@ -1,0 +1,21 @@
+import numpy as _np
+import numba as _numba
+from numba import prange as _prange
+
+@_numba.njit(parallel=True, fastmath=True)
+def fuse_diamond(out, a, LEN_1D):
+    for i in _prange(LEN_1D):
+        t = a[i] * a[i]
+        out[i] = (t + 1.0) * (t - 1.0)
+
+def _warmup():
+    n = 65536
+    for dt in (_np.float64, _np.float32):
+        a = _np.ones(n, dtype=dt); o = _np.empty(n, dtype=dt)
+        for _ in range(3):
+            fuse_diamond(o, a, n); fuse_diamond(o, a, _np.int64(n))
+    a = _np.ones(1000, dtype=_np.float64); o = _np.empty(1000, dtype=_np.float64)
+    for m in (1, 7, 1000):
+        fuse_diamond(o, a, m)
+
+_warmup()

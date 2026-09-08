@@ -1,0 +1,54 @@
+subroutine tsvc_2_s2710_fp64(a, b, c, d, e, x, len_1d) bind(c, name='tsvc_2_s2710_fp64')
+  use iso_c_binding
+  implicit none
+  real(kind=c_double), intent(inout), dimension(:), contiguous :: a, b, c
+  real(kind=c_double), intent(in),    dimension(:), contiguous :: d, e, x
+  integer(kind=c_int64_t), value :: len_1d
+  integer(kind=8) :: i, n
+  n = len_1d
+  if (n > 10) then
+    if (x(1) > 0.0d0) then
+      do i = 1, n
+        if (a(i) > b(i)) then
+          a(i) = a(i) + b(i) * d(i)
+          c(i) = c(i) + d(i) * d(i)
+        else
+          b(i) = a(i) + e(i) * e(i)
+          c(i) = a(i) + d(i) * d(i)
+        end if
+      end do
+    else
+      do i = 1, n
+        if (a(i) > b(i)) then
+          a(i) = a(i) + b(i) * d(i)
+          c(i) = c(i) + d(i) * d(i)
+        else
+          b(i) = a(i) + e(i) * e(i)
+          c(i) = c(i) + e(i) * e(i)
+        end if
+      end do
+    end if
+  else
+    if (x(1) > 0.0d0) then
+      do i = 1, n
+        if (a(i) > b(i)) then
+          a(i) = a(i) + b(i) * d(i)
+          c(i) = d(i) * e(i) + 1.0d0
+        else
+          b(i) = a(i) + e(i) * e(i)
+          c(i) = a(i) + d(i) * d(i)
+        end if
+      end do
+    else
+      do i = 1, n
+        if (a(i) > b(i)) then
+          a(i) = a(i) + b(i) * d(i)
+          c(i) = d(i) * e(i) + 1.0d0
+        else
+          b(i) = a(i) + e(i) * e(i)
+          c(i) = c(i) + e(i) * e(i)
+        end if
+      end do
+    end if
+  end if
+end subroutine tsvc_2_s2710_fp64

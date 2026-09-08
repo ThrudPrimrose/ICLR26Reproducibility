@@ -1,0 +1,64 @@
+"""TSVC tsvc_2_5 fuse_diamond -- optimized python (numba) arm.
+
+out[i] = (t + 1.0) * (t - 1.0),  t = a[i]*a[i]
+
+One fused pass, no temporaries. The numba kernels are compiled at import time
+so the timed call is pure native code. Large N uses a parallel prange loop;
+small N uses a plain loop to avoid thread-pool overhead.
+"""
+import os
+
+import numpy as np
+import numba
+from numba import njit, prange
+
+# Threads: what we are actually allowed to use, capped.
+try:
+    _NT = len(os.sched_getaffinity(0))
+except AttributeError:
+    _NT = os.cpu_count() or 1
+_NUMBA_THREADS = max(1, min(_NT, 24))
+numba.set_num_threads(_NUMBA_THREADS)
+
+_SMALL = 1 << 20
+
+
+@njit(cache=False)
+def _kernel_seq(a, out, n):
+    for i in range(n):
+        t = a[i] * a[i]
+        out[i] = (t + 1.0) * (t - 1.0)
+
+
+@njit(parallel=True, cache=False)
+def _kernel_par(a, out, n):
+    for i in prange(n):
+        t = a[i] * a[i]
+        out[i] = (t + 1.0) * (t - 1.0)
+
+
+# Compile / warm at import time (not timed).
+def _warm():
+    a = np.ones(1 << 20)
+    o = np.empty(1 << 20)
+    _kernel_seq(a, o, a.size)
+    _kernel_par(a, o, a.size)
+    b = np.ones(4 << 20)
+    ob = np.empty(4 << 20)
+    _kernel_par(b, ob, b.size)
+
+
+_warm()
+
+
+def fuse_diamond(out, a, LEN_1D):
+    if a.dtype != np.float64 or a.ndim != 1:
+        # Faithful fallback for exotic dtypes (reference: t=a*a; u=t+1.0; v=t-1.0; out=u*v)
+        t = a * a
+        out[:LEN_1D] = ((t + 1.0) * (t - 1.0)).astype(out.dtype, copy=False)
+        return None
+    if LEN_1D >= _SMALL and _NUMBA_THREADS > 1:
+        _kernel_par(a, out, LEN_1D)
+    else:
+        _kernel_seq(a, out, LEN_1D)
+    return None

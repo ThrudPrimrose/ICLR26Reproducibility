@@ -1,0 +1,50 @@
+subroutine scatter_accum_dup_fp64(bins, ip, src, LEN_1D, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D
+  integer(c_int64_t), value, intent(in) :: workspace_size
+  real(c_double), intent(inout) :: bins(LEN_1D)
+  integer(c_int32_t), intent(in) :: ip(LEN_1D)
+  real(c_double), intent(in) :: src(LEN_1D)
+  integer(c_int8_t), intent(inout) :: workspace(*)
+  integer(c_int64_t) :: i
+  integer(c_int8_t), allocatable :: seen(:)
+  logical :: is_perm
+
+  ! Fast path: check whether ip is a permutation (no duplicates)
+  if (LEN_1D > 0) then
+    allocate(seen(LEN_1D))
+    seen = 0_c_int8_t
+    is_perm = .true.
+    do i = 1, LEN_1D
+      if (ip(i) < 1 .or. ip(i) > LEN_1D) then
+        is_perm = .false.
+        exit
+      end if
+      if (seen(ip(i)) /= 0_c_int8_t) then
+        is_perm = .false.
+        exit
+      end if
+      seen(ip(i)) = 1_c_int8_t
+    end do
+    deallocate(seen)
+  else
+    is_perm = .true.
+  end if
+
+  if (is_perm) then
+    !$omp parallel do schedule(static)
+    do i = 1, LEN_1D
+      bins(ip(i)) = bins(ip(i)) + src(i)
+    end do
+    !$omp end parallel do
+  else
+    !$omp parallel do schedule(static)
+    do i = 1, LEN_1D
+      !$omp atomic update
+      bins(ip(i)) = bins(ip(i)) + src(i)
+    end do
+    !$omp end parallel do
+  end if
+end subroutine scatter_accum_dup_fp64

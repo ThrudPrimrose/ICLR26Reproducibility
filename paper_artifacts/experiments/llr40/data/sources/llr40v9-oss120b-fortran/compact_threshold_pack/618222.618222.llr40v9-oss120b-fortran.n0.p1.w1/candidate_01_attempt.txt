@@ -1,0 +1,73 @@
+subroutine compact_threshold_pack_fp64(out_count, src, weight, packed, LEN_1D, workspace, workspace_bytes) bind(C, name="compact_threshold_pack_fp64")
+   use iso_c_binding
+   use omp_lib
+   implicit none
+   ! Arguments
+   integer(c_int64_t), intent(out) :: out_count(1)
+   real(c_double), intent(in) :: src(*)
+   real(c_double), intent(in) :: weight(*)
+   real(c_double), intent(out) :: packed(*)
+   integer(c_int64_t), value :: LEN_1D
+   type(c_ptr), value :: workspace   ! unused
+   integer(c_int64_t), value :: workspace_bytes   ! unused
+
+   integer(c_int) :: max_threads, nthreads, tid
+   integer(c_int64_t) :: i, i_start, i_end, local_count, pos, total_n
+   integer(c_int64_t), allocatable :: block_counts(:)
+   integer(c_int64_t), allocatable :: block_offsets(:)
+
+   ! Allocate per‑thread buffers based on the maximum number of threads
+   max_threads = omp_get_max_threads()
+   allocate(block_counts(max_threads))
+   allocate(block_offsets(max_threads))
+   block_counts = 0_c_int64_t
+
+   !$omp parallel private(tid, i, i_start, i_end, local_count, pos)
+   tid = omp_get_thread_num()
+   nthreads = omp_get_num_threads()
+
+   ! Compute this thread's slice (1‑based indexing)
+   i_start = (LEN_1D * tid) / nthreads + 1
+   i_end   = (LEN_1D * (tid + 1)) / nthreads
+
+   ! First pass: count survivors in this slice
+   local_count = 0_c_int64_t
+   do i = i_start, i_end
+      if (src(i) > 0.0_c_double) then
+         local_count = local_count + 1_c_int64_t
+      end if
+   end do
+   block_counts(tid+1) = local_count
+   !$omp barrier
+
+   ! Compute prefix offsets (single thread)
+   !$omp single
+      block_offsets(1) = 0_c_int64_t
+      do i = 2, nthreads
+         block_offsets(i) = block_offsets(i-1) + block_counts(i-1)
+      end do
+      total_n = block_offsets(nthreads) + block_counts(nthreads)
+   !$omp end single
+
+   ! Second pass: write packed values using the computed offsets
+   pos = block_offsets(tid+1)
+   do i = i_start, i_end
+      if (src(i) > 0.0_c_double) then
+         packed(pos+1) = src(i) * weight(i)
+         pos = pos + 1_c_int64_t
+      end if
+   end do
+   !$omp barrier
+
+   ! Store final count and zero tail (single thread)
+   !$omp single
+      out_count(1) = total_n
+      do i = total_n + 1, LEN_1D
+         packed(i) = 0.0_c_double
+      end do
+   !$omp end single
+   !$omp end parallel
+
+   deallocate(block_counts)
+   deallocate(block_offsets)
+end subroutine compact_threshold_pack_fp64

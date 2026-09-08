@@ -1,0 +1,8 @@
+#include <stdint.h>
+static void __attribute__((noinline)) rowadd(double *restrict w, const double *restrict p, const double *restrict b, int64_t n) {
+  for (int64_t k = 0; k < n; ++k) w[k] = p[k] + b[k];
+}
+void tsvc_2_s119_fp64(double *restrict aa, const double *restrict bb, const int64_t LEN_2D) {
+  for (int64_t i = 1; i < LEN_2D; ++i)
+    rowadd(aa + i*LEN_2D + 1, aa + (i-1)*LEN_2D, bb + i*LEN_2D + 1, LEN_2D-1);
+}

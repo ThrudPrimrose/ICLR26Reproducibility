@@ -1,0 +1,9 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void gather_kernel(double * __restrict__ a, const double * __restrict__ b, const int32_t * __restrict__ ip, int64_t LEN_1D) {
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (i < LEN_1D) {
+        a[i] = b[ip[i]];
+    }
+}

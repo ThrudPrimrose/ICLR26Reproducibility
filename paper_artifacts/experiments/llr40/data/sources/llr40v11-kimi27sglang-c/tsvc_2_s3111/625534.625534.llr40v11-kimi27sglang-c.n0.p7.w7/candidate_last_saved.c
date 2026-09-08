@@ -1,0 +1,57 @@
+#include <stdint.h>
+#include <immintrin.h>
+
+void tsvc_2_s3111_fp64(const double *restrict a, double *restrict b, const int64_t LEN_1D) {
+    __m512d vsum0 = _mm512_setzero_pd();
+    __m512d vsum1 = _mm512_setzero_pd();
+    __m512d vsum2 = _mm512_setzero_pd();
+    __m512d vsum3 = _mm512_setzero_pd();
+    __m512d vsum4 = _mm512_setzero_pd();
+    __m512d vsum5 = _mm512_setzero_pd();
+    __m512d zero = _mm512_setzero_pd();
+
+    int64_t i = 0;
+    const int64_t simd_end = LEN_1D & ~47;
+    for (; i < simd_end; i += 48) {
+        __m512d x0 = _mm512_loadu_pd(&a[i]);
+        __m512d x1 = _mm512_loadu_pd(&a[i+8]);
+        __m512d x2 = _mm512_loadu_pd(&a[i+16]);
+        __m512d x3 = _mm512_loadu_pd(&a[i+24]);
+        __m512d x4 = _mm512_loadu_pd(&a[i+32]);
+        __m512d x5 = _mm512_loadu_pd(&a[i+40]);
+
+        __mmask8 m0 = _mm512_cmp_pd_mask(x0, zero, _CMP_GT_OQ);
+        __mmask8 m1 = _mm512_cmp_pd_mask(x1, zero, _CMP_GT_OQ);
+        __mmask8 m2 = _mm512_cmp_pd_mask(x2, zero, _CMP_GT_OQ);
+        __mmask8 m3 = _mm512_cmp_pd_mask(x3, zero, _CMP_GT_OQ);
+        __mmask8 m4 = _mm512_cmp_pd_mask(x4, zero, _CMP_GT_OQ);
+        __mmask8 m5 = _mm512_cmp_pd_mask(x5, zero, _CMP_GT_OQ);
+
+        vsum0 = _mm512_mask_add_pd(vsum0, m0, vsum0, x0);
+        vsum1 = _mm512_mask_add_pd(vsum1, m1, vsum1, x1);
+        vsum2 = _mm512_mask_add_pd(vsum2, m2, vsum2, x2);
+        vsum3 = _mm512_mask_add_pd(vsum3, m3, vsum3, x3);
+        vsum4 = _mm512_mask_add_pd(vsum4, m4, vsum4, x4);
+        vsum5 = _mm512_mask_add_pd(vsum5, m5, vsum5, x5);
+    }
+
+    const int64_t simd8_end = LEN_1D & ~7;
+    for (; i < simd8_end; i += 8) {
+        __m512d x = _mm512_loadu_pd(&a[i]);
+        __mmask8 m = _mm512_cmp_pd_mask(x, zero, _CMP_GT_OQ);
+        vsum0 = _mm512_mask_add_pd(vsum0, m, vsum0, x);
+    }
+
+    vsum0 = _mm512_add_pd(vsum0, vsum1);
+    vsum2 = _mm512_add_pd(vsum2, vsum3);
+    vsum4 = _mm512_add_pd(vsum4, vsum5);
+    vsum0 = _mm512_add_pd(vsum0, vsum2);
+    vsum0 = _mm512_add_pd(vsum0, vsum4);
+    double sum = _mm512_reduce_add_pd(vsum0);
+
+    for (; i < LEN_1D; ++i) {
+        if (a[i] > 0.0) sum += a[i];
+    }
+
+    b[0] = sum;
+}

@@ -1,0 +1,54 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define HIP_CHECK(expr)                                                        \
+  do {                                                                         \
+    hipError_t _e = (expr);                                                    \
+    if (_e != hipSuccess) {                                                    \
+      fprintf(stderr, "HIP error %s at %s:%d: %s\n", #expr, __FILE__, __LINE__, \
+              hipGetErrorString(_e));                                          \
+      abort();                                                                 \
+    }                                                                          \
+  } while (0)
+
+namespace {
+__global__ void s2710_kernel(double *__restrict__ a, double *__restrict__ b, double *__restrict__ c,
+                             const double *__restrict__ d, const double *__restrict__ e,
+                             const double *__restrict__ x, long long n) {
+  const bool big = n > 10;
+  const double x0 = x[0];
+  const long long stride = (long long)gridDim.x * blockDim.x;
+  for (long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x; i < n; i += stride) {
+    const double ai = a[i];
+    const double bi = b[i];
+    const double di = d[i];
+    const double ei = e[i];
+    if (ai > bi) {
+      a[i] = ai + bi * di;
+      if (big)
+        c[i] += di * di;
+      else
+        c[i] = di * ei + 1.0;
+    } else {
+      b[i] = ai + ei * ei;
+      if (x0 > 0.0)
+        c[i] = ai + di * di;
+      else
+        c[i] += ei * ei;
+    }
+  }
+}
+} // namespace
+
+void tsvc2_launch(double *a, double *b, double *c, const double *d, const double *e,
+                  const double *x, int64_t n) {
+  if (n <= 0) return;
+  const int block = 256;
+  long long blocks = (n + block - 1) / block;
+  if (blocks > 2147483647LL) blocks = 2147483647LL;
+  s2710_kernel<<<(unsigned int)blocks, (unsigned int)block>>>(a, b, c, d, e, x, n);
+  HIP_CHECK(hipGetLastError());
+  HIP_CHECK(hipDeviceSynchronize());
+}

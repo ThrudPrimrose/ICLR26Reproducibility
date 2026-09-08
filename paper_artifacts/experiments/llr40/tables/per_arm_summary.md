@@ -1,6 +1,6 @@
 # llr40 speed-up by arm
 
-Snapshot: **2026-09-08T08:40:02Z**. The campaign was UNFINISHED when this was extracted, so every
+Snapshot: **2026-09-08T18:42:47Z**. The campaign was UNFINISHED when this was extracted, so every
 count below is a snapshot of a live tree, not a finished campaign.
 
 **How to read these numbers.**
@@ -65,12 +65,12 @@ count below is a snapshot of a live tree, not a finished campaign.
 | llr40v11-kimi27sglang-c-skills | kimi27sglang | c | on | 2 | 43 | 25 | 8.363 | 7.031 | 1.020 | 209.208 | 0.000 |
 | llr40v10-oss120b-fortran | oss120b | fortran | off | 2 | 68 | 34 | 8.268 | 9.111 | 1.000 | 115.158 | 0.000 |
 | llr40v10-kimi27sglang-c-skills | kimi27sglang | c | on | 2 | 129 | 32 | 8.239 | 8.088 | 1.010 | 215.547 | 0.000 |
+| v11w2-oss120b-c-skills | oss120b | c | on | 2 | 4 | 4 | 7.982 | 11.228 | 1.474 | 22.077 | 0.000 |
 | llr40v11-kimi27sglang-c | kimi27sglang | c | off | 2 | 49 | 27 | 7.709 | 5.428 | 1.000 | 231.095 | 0.000 |
 | llr40v10-qwen38-fortran-skills | qwen38 | fortran | on | 1 | 33 | 28 | 7.578 | 9.315 | 1.000 | 209.208 | 0.000 |
+| v11w2-qwen38-fortran | qwen38 | fortran | off | 3 | 36 | 23 | 7.253 | 8.244 | 1.000 | 79.690 | 0.000 |
 | llr40v9-oss120b-c | oss120b | c | off | 1 | 4 | 4 | 7.136 | 12.690 | 1.149 | 20.388 | 0.000 |
-| v11w2-oss120b-c-skills | oss120b | c | on | 2 | 3 | 3 | 6.892 | 10.059 | 1.474 | 22.077 | 0.000 |
-| v11w2-qwen38-fortran | qwen38 | fortran | off | 3 | 35 | 22 | 6.698 | 7.273 | 1.000 | 79.690 | 0.000 |
-| v11w2-kimi27sglang-fortran | kimi27sglang | fortran | off | 3 | 47 | 14 | 6.670 | 9.981 | 1.000 | 50.422 | 0.000 |
+| v11w2-kimi27sglang-fortran | kimi27sglang | fortran | off | 3 | 49 | 14 | 6.670 | 9.981 | 1.000 | 50.422 | 0.000 |
 | gpuv2-llr40-oss120b-omp-skills | llr40-oss120b | c | on | 1 | 23 | 22 | 6.362 | 6.790 | 1.105 | 463.754 | 0.000 |
 | llr40v9-oss120b-cpp | oss120b | cpp | off | 1 | 3 | 3 | 6.198 | 5.013 | 3.610 | 13.159 | 0.000 |
 | llr40v9-oss120b-fortran-skills | oss120b | fortran | on | 1 | 4 | 4 | 6.177 | 6.635 | 3.610 | 11.223 | 0.000 |
@@ -79,19 +79,19 @@ count below is a snapshot of a live tree, not a finished campaign.
 | v11w2-qwen38-c-skills | qwen38 | c | on | 3 | 31 | 14 | 5.983 | 5.888 | 1.000 | 80.487 | 0.000 |
 | v11w2-qwen38-fortran-skills | qwen38 | fortran | on | 3 | 33 | 17 | 5.909 | 5.705 | 1.000 | 64.663 | 0.000 |
 | llr40v11-kimi27sglang-fortran | kimi27sglang | fortran | off | 2 | 38 | 26 | 5.799 | 4.254 | 1.000 | 93.443 | 0.000 |
+| v11w2-oss120b-c | oss120b | c | off | 3 | 15 | 8 | 5.748 | 9.443 | 1.000 | 39.711 | 0.000 |
 | llr40v11-oss120b-fortran-skills | oss120b | fortran | on | 1 | 27 | 26 | 5.659 | 3.683 | 1.000 | 152.158 | 0.000 |
 | llr40v11-oss120b-c | oss120b | c | off | 1 | 39 | 32 | 5.566 | 4.211 | 1.000 | 235.741 | 0.000 |
 | v11w2-kimi27sglang-c-skills | kimi27sglang | c | on | 3 | 48 | 15 | 5.158 | 4.817 | 1.000 | 64.663 | 0.000 |
-| v11w2-oss120b-c | oss120b | c | off | 3 | 8 | 6 | 5.122 | 10.113 | 1.000 | 39.711 | 0.000 |
 | llr40v9-oss120b-fortran | oss120b | fortran | off | 1 | 4 | 4 | 4.853 | 6.816 | 1.000 | 15.430 | 0.000 |
 | v11w2-kimi27sglang-fortran-skills | kimi27sglang | fortran | on | 3 | 43 | 14 | 4.848 | 4.185 | 1.000 | 88.027 | 0.000 |
 | llr40v10-oss120b-fortran-skills | oss120b | fortran | on | 2 | 38 | 31 | 4.693 | 3.538 | 1.000 | 209.208 | 0.000 |
 | llr40v11-oss120b-c-skills | oss120b | c | on | 1 | 36 | 35 | 4.490 | 3.948 | 1.000 | 58.539 | 0.000 |
-| v11w2-oss120b-fortran-skills | oss120b | fortran | on | 4 | 12 | 10 | 4.488 | 5.995 | 1.000 | 43.865 | 0.000 |
 | v11w2-qwen38-c | qwen38 | c | off | 3 | 37 | 16 | 4.468 | 4.077 | 1.000 | 70.021 | 0.000 |
+| v11w2-oss120b-fortran-skills | oss120b | fortran | on | 4 | 30 | 13 | 4.371 | 4.538 | 1.000 | 43.865 | 0.000 |
 | v11w2-kimi27sglang-c | kimi27sglang | c | off | 3 | 25 | 13 | 4.027 | 2.424 | 1.000 | 49.923 | 0.000 |
 | gpuv2-llr40-oss120b-omp | llr40-oss120b | c | off | 1 | 26 | 25 | 3.709 | 3.503 | 1.000 | 255.273 | 0.000 |
-| v11w2-oss120b-fortran | oss120b | fortran | off | 3 | 11 | 11 | 2.910 | 1.010 | 1.000 | 15.898 | 0.000 |
+| v11w2-oss120b-fortran | oss120b | fortran | off | 3 | 20 | 14 | 2.979 | 1.418 | 1.000 | 17.045 | 0.000 |
 | gpuv4-llr40-oss120b-pytriton-skills | llr40-oss120b | python | on | 1 | 38 | 32 | 2.528 | 1.558 | 1.000 | 147.683 | 0.000 |
 | gpuv4-llr40-oss120b-pytriton | llr40-oss120b | python | off | 1 | 38 | 35 | 1.943 | 1.596 | 1.000 | 20.592 | 0.000 |
 

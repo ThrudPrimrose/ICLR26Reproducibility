@@ -1,0 +1,36 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define HIP_CHECK(x)                                                     \
+  do {                                                                   \
+    hipError_t e_ = (x);                                                 \
+    if (e_ != hipSuccess) {                                              \
+      fprintf(stderr, "HIP error: %s at %s:%d\n", hipGetErrorString(e_), \
+              __FILE__, __LINE__);                                       \
+      abort();                                                           \
+    }                                                                    \
+  } while (0)
+
+// a[i] = (b[i] + b[i-1] + b[i-2]) * 0.333, indices wrapping mod n.
+__global__ void tsvc255_kernel(const double* __restrict__ b,
+                               double* __restrict__ a, int64_t n) {
+  const int64_t stride = (int64_t)gridDim.x * blockDim.x;
+  const int64_t start = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+  for (int64_t i = start; i < n; i += stride) {
+    const double bm1 = (i >= 1) ? b[i - 1] : b[n - 1];
+    const double bm2 = (i >= 2) ? b[i - 2] : b[n + i - 2];
+    a[i] = (b[i] + bm1 + bm2) * 0.333;
+  }
+}
+
+extern "C" void tsvc255_launch(const double* b, double* a, int64_t n) {
+  if (n <= 0) return;
+  constexpr int BLOCK = 256;
+  int64_t blocks = (n + BLOCK - 1) / BLOCK;
+  const int64_t MAX_BLOCKS = 1 << 20;
+  if (blocks > MAX_BLOCKS) blocks = MAX_BLOCKS;
+  tsvc255_kernel<<<(unsigned)blocks, BLOCK, 0, nullptr>>>(b, a, n);
+  HIP_CHECK(hipGetLastError());
+}

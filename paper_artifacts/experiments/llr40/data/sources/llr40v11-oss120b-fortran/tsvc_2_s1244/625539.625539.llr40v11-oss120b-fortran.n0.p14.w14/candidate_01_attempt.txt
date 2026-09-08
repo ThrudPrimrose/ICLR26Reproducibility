@@ -1,0 +1,30 @@
+subroutine tsvc_2_s1244_fp64(a, b, c, d, LEN_1D) bind(C, name="tsvc_2_s1244_fp64")
+    use iso_c_binding
+    implicit none
+    real(c_double), intent(inout) :: a(*)
+    real(c_double), intent(in) :: b(*), c(*)
+    real(c_double), intent(out) :: d(*)
+    integer(c_int64_t), value :: LEN_1D
+    integer(c_int64_t) :: i
+    real(c_double), allocatable :: a_old(:)
+
+    ! Allocate a temporary array to hold the original values of a.
+    allocate(a_old(LEN_1D))
+
+    !$omp parallel
+    !$omp do schedule(static)
+    do i = 1, LEN_1D
+        a_old(i) = a(i)
+    end do
+    !$omp end do
+
+    !$omp do simd schedule(static)
+    do i = 1, LEN_1D-1
+        a(i) = b(i) + c(i) * c(i) + b(i) * b(i) + c(i)
+        d(i) = a(i) + a_old(i+1)
+    end do
+    !$omp end do
+    !$omp end parallel
+
+    deallocate(a_old)
+end subroutine tsvc_2_s1244_fp64

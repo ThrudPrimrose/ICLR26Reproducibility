@@ -1,0 +1,28 @@
+#include <stdint.h>
+#include <immintrin.h>
+#include <omp.h>
+#include <stdint.h>
+
+void tsvc_2_vag_fp64(double *restrict a, const double *restrict b, const int32_t *restrict ip, const int64_t LEN_1D) {
+    int64_t i = 0;
+    // Align output to 64-byte boundary for stream stores
+    while (i < LEN_1D && (((uintptr_t)&a[i]) & 63) != 0) {
+        a[i] = b[ip[i]];
+        i++;
+    }
+
+    int64_t n8 = i + ((LEN_1D - i) & ~7);
+
+    #pragma omp parallel for
+    for (int64_t j = i; j < n8; j += 8) {
+        __m256i idx = _mm256_loadu_si256((__m256i const *)&ip[j]);
+        __m512d vals = _mm512_i32gather_pd(idx, b, 8);
+        _mm512_stream_pd(&a[j], vals);
+    }
+
+    _mm_sfence();
+
+    for (int64_t j = n8; j < LEN_1D; ++j) {
+        a[j] = b[ip[j]];
+    }
+}

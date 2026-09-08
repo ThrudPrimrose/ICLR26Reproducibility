@@ -1,0 +1,33 @@
+#include <hip/hip_runtime.h>
+#include <cstddef>
+#include <cstdint>
+
+__global__ void tsvc_2_s2710_kernel(double * __restrict__ a,
+                                            double * __restrict__ b,
+                                            double * __restrict__ c,
+                                            const double * __restrict__ d,
+                                            const double * __restrict__ e,
+                                            double x0,
+                                            int64_t LEN_1D) {
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (i >= LEN_1D) return;
+    double ai = a[i];
+    double bi = b[i];
+    double di = d[i];
+    double ei = e[i];
+    if (ai > bi) {
+        a[i] = ai + bi * di;
+        if (LEN_1D > 10) {
+            c[i] = c[i] + di * di;
+        } else {
+            c[i] = di * ei + 1.0;
+        }
+    } else {
+        b[i] = ai + ei * ei;
+        if (x0 > 0.0) {
+            c[i] = ai + di * di;
+        } else {
+            c[i] = c[i] + ei * ei;
+        }
+    }
+}

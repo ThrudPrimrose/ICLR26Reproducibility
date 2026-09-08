@@ -1,0 +1,92 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+#define TC 8
+#define TR 32
+#define W 256            // must equal TC*TR for k_aa
+#define TRPAD (TR + 1)
+
+// bb: row scan. One workgroup per row j in [8,N); threads cover i; shared-mem inclusive scan
+// (Hillis-Steele) with a running carry across chunks of W. Coalesced (consecutive i, fixed j).
+__global__ void k_bb(double* __restrict__ bb, const double* __restrict__ cc, int64_t N) {
+  int64_t j = (int64_t)blockIdx.x + 8;
+  if (j >= N) return;
+  int t = threadIdx.x;
+  int64_t base = j * N;
+  double seed = bb[base + 7];
+  __shared__ double s[W];
+  __shared__ double s_carry;
+  if (t == 0) s_carry = 0.0;
+  __syncthreads();
+  for (int i0 = 8; i0 < N; i0 += W) {
+    int64_t rem = N - i0;
+    int cnt = (rem < (int64_t)W) ? (int)rem : W;
+    s[t] = (t < cnt) ? cc[base + i0 + t] : 0.0;
+    __syncthreads();
+    for (int off = 1; off < W; off <<= 1) {
+      double up = (t >= off) ? s[t - off] : 0.0;
+      __syncthreads();
+      if (t >= off) s[t] += up;
+      __syncthreads();
+    }
+    __syncthreads();
+    if (t < cnt) bb[base + i0 + t] = seed + s_carry + s[t];
+    __syncthreads();
+    if (t == 0) s_carry += s[cnt - 1];
+    __syncthreads();
+  }
+}
+
+// aa: column scan via 2D tiling + in-shared-memory column prefix sum with per-column carry.
+// Workgroup = TC columns x all rows, processed in TR-row tiles with double-buffered prefetch.
+// Coalesced along c; tile stored column-major with stride TRPAD to avoid bank conflicts.
+__global__ void k_aa(double* __restrict__ aa, const double* __restrict__ cc, int64_t N) {
+  int c = threadIdx.x % TC;
+  int r = threadIdx.x / TC;
+  int64_t i0 = (int64_t)blockIdx.x * TC + 8;
+  int64_t i = i0 + c;
+  bool cv = (i < N);
+  __shared__ double st[2][TC * TRPAD];
+  __shared__ double carry[TC];
+  if (r == 0) carry[c] = cv ? aa[7 * N + i] : 0.0;
+  int ntiles = (int)((N - 8 + TR - 1) / TR);
+  {
+    int cnt = (N - 8 < (int64_t)TR) ? (int)(N - 8) : TR;
+    if (cv && r < cnt) st[0][c * TRPAD + r] = cc[(8 + r) * N + i];
+    else st[0][c * TRPAD + r] = 0.0;
+  }
+  __syncthreads();
+  for (int ti = 0; ti < ntiles; ti++) {
+    int j0 = 8 + ti * TR;
+    int cnt = (N - j0 < (int64_t)TR) ? (int)(N - j0) : TR;
+    int buf = ti & 1, nbuf = buf ^ 1;
+    if (ti + 1 < ntiles) {
+      int nj0 = 8 + (ti + 1) * TR;
+      int ncnt = (N - nj0 < (int64_t)TR) ? (int)(N - nj0) : TR;
+      if (cv && r < ncnt) st[nbuf][c * TRPAD + r] = cc[(nj0 + r) * N + i];
+      else st[nbuf][c * TRPAD + r] = 0.0;
+    }
+    for (int off = 1; off < TR; off <<= 1) {
+      double up = (r >= off) ? st[buf][c * TRPAD + r - off] : 0.0;
+      __syncthreads();
+      if (r >= off) st[buf][c * TRPAD + r] += up;
+      __syncthreads();
+    }
+    __syncthreads();
+    if (cv && r < cnt) aa[(j0 + r) * N + i] = carry[c] + st[buf][c * TRPAD + r];
+    __syncthreads();
+    if (r == 0 && cv) carry[c] += st[buf][c * TRPAD + (cnt - 1)];
+    __syncthreads();
+  }
+}
+
+void tsvc_2_s233_launch(double* aa, double* bb, const double* cc, int64_t N) {
+  if (N <= 8) return;
+  static hipStream_t s1 = nullptr, s2 = nullptr;
+  if (!s1) { hipStreamCreate(&s1); hipStreamCreate(&s2); }
+  int64_t ncols = N - 8;
+  k_aa<<<(unsigned)((ncols + TC - 1) / TC), W, 0, s1>>>(aa, cc, N);
+  k_bb<<<(unsigned)(ncols), W, 0, s2>>>(bb, cc, N);
+  hipStreamSynchronize(s1);
+  hipStreamSynchronize(s2);
+}

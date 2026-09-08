@@ -1,0 +1,37 @@
+#include <stdint.h>
+#include <omp.h>
+
+/* v6b: v5a + software prefetch of cc row+4 (full span). */
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+  const int64_t N = LEN_2D;
+  if (N <= 8) return;
+
+  #pragma omp parallel
+  {
+    const int tid = omp_get_thread_num();
+    const int nt = omp_get_num_threads();
+    const int64_t total = N - 8;
+    const int64_t q = total / nt, r = total % nt;
+    const int64_t i0 = 8 + (int64_t)tid * q + (tid < r ? tid : r);
+    const int64_t w = q + (tid < r);
+    if (w > 0) {
+      for (int64_t row = 8; row < N; ++row) {
+        const int64_t rf = row + 4;
+        if (rf < N) {
+          for (int64_t k0 = 0; k0 < w; k0 += 8)
+            __builtin_prefetch(cc + rf * N + i0 + k0, 0, 3);
+        }
+        const double *c = cc + row * N + i0;
+        double *da = aa + row * N + i0;
+        const double *pa = aa + (row - 1) * N + i0;
+        double *db = bb + row * N + i0;
+        const double *pb = bb + (row - 1) * N + i0;
+        for (int64_t k = 0; k < w; ++k)
+          da[k] = pa[k] + c[k];
+        for (int64_t k = 0; k < w; ++k)
+          db[k] = pb[k] + c[k];
+      }
+    }
+  }
+}

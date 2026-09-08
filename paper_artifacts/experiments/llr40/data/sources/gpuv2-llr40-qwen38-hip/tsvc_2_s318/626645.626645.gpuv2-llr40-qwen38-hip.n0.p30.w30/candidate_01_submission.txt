@@ -1,0 +1,67 @@
+#include <hip/hip_runtime.h>
+#include <cmath>
+#include <cstdint>
+
+#define BLOCK 256
+
+typedef struct { double v; long long i; } P;
+
+__global__ void k1(const double* __restrict__ a, P* __restrict__ scratch,
+                   long long LEN, long long inc) {
+    __shared__ double s_v[BLOCK];
+    __shared__ long long s_i[BLOCK];
+    long long stride = (long long)gridDim.x * BLOCK;
+    double myv = -1.0; long long myi = -1;
+    for (long long i = (long long)blockIdx.x*BLOCK + threadIdx.x; i < LEN; i += stride) {
+        double v = fabs(a[i*inc]);
+        if (myi<0 || v>myv || (v==myv && i<myi)) { myv=v; myi=i; }
+    }
+    s_v[threadIdx.x]=myv; s_i[threadIdx.x]=myi;
+    __syncthreads();
+    for (int s=BLOCK/2;s>0;s>>=1){
+      if(threadIdx.x<s){
+        double v1=s_v[threadIdx.x],v2=s_v[threadIdx.x+s];
+        long long i1=s_i[threadIdx.x],i2=s_i[threadIdx.x+s];
+        if(v2>v1||(v2==v1&&i2<i1)){s_v[threadIdx.x]=v2;s_i[threadIdx.x]=i2;}
+      }
+      __syncthreads();
+    }
+    if(threadIdx.x==0){ scratch[blockIdx.x].v=s_v[0]; scratch[blockIdx.x].i=s_i[0]; }
+}
+
+__global__ void k2(P* __restrict__ scratch, double* __restrict__ result, int nblocks) {
+    __shared__ double s_v[BLOCK];
+    __shared__ long long s_i[BLOCK];
+    double myv=-1.0; long long myi=-1;
+    for (int b=threadIdx.x;b<nblocks;b+=BLOCK){
+      double v=scratch[b].v; long long i=scratch[b].i;
+      if(myi<0||v>myv||(v==myv&&i<myi)){myv=v;myi=i;}
+    }
+    s_v[threadIdx.x]=myv; s_i[threadIdx.x]=myi;
+    __syncthreads();
+    for(int s=BLOCK/2;s>0;s>>=1){
+      if(threadIdx.x<s){
+        double v1=s_v[threadIdx.x],v2=s_v[threadIdx.x+s];
+        long long i1=s_i[threadIdx.x],i2=s_i[threadIdx.x+s];
+        if(v2>v1||(v2==v1&&i2<i1)){s_v[threadIdx.x]=v2;s_i[threadIdx.x]=i2;}
+      }
+      __syncthreads();
+    }
+    if(threadIdx.x==0){ result[0]=s_v[0]+(double)s_i[0]; }
+}
+
+static P* d_scratch=0; static int d_scratch_n=0;
+
+void launch_tsvc(const double* a, double* result, long long LEN, long long inc){
+    int nblocks = (int)((LEN + BLOCK - 1) / BLOCK);
+    if (nblocks < 1) nblocks = 1;
+    const int MAXB = 4096;
+    if (nblocks > MAXB) nblocks = MAXB;
+    if (d_scratch_n < nblocks){
+        if (d_scratch) hipFree(d_scratch);
+        hipMalloc(&d_scratch, MAXB*sizeof(P));
+        d_scratch_n = MAXB;
+    }
+    k1<<<nblocks, BLOCK>>>(a, d_scratch, LEN, inc);
+    k2<<<1, BLOCK>>>(d_scratch, result, nblocks);
+}

@@ -1,0 +1,35 @@
+#include <stdint.h>
+#include <omp.h>
+
+/* v3b: exact even contiguous column split, plain row scan, full width per step. */
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+  const int64_t N = LEN_2D;
+  if (N <= 8) return;
+
+  #pragma omp parallel
+  {
+    const int tid = omp_get_thread_num();
+    const int nt = omp_get_num_threads();
+    const int64_t total = N - 8;
+    const int64_t q = total / nt, r = total % nt;
+    const int64_t i0 = 8 + (int64_t)tid * q + (tid < r ? tid : r);
+    const int64_t w = q + (tid < r);
+    if (w > 0) {
+      for (int64_t j = 8; j < N; ++j) {
+        const double *c = cc + j * N + i0;
+        const double *p = aa + (j - 1) * N + i0;
+        double *d = aa + j * N + i0;
+        for (int64_t k = 0; k < w; ++k)
+          d[k] = p[k] + c[k];
+      }
+      for (int64_t i = 8; i < N; ++i) {
+        const double *c = cc + i * N + i0;
+        const double *p = bb + (i - 1) * N + i0;
+        double *d = bb + i * N + i0;
+        for (int64_t k = 0; k < w; ++k)
+          d[k] = p[k] + c[k];
+      }
+    }
+  }
+}

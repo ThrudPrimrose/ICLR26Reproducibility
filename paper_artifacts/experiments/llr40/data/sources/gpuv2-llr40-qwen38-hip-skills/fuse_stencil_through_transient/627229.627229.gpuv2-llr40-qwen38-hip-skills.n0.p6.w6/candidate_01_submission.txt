@@ -1,0 +1,38 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+
+#define FSSTT_CHECK(expr)                                                   \
+    do {                                                                    \
+        hipError_t e_ = (expr);                                             \
+        if (e_ != hipSuccess) {                                             \
+            const char *s = hipGetErrorString(e_);                          \
+            fprintf(stderr, "HIP error %s at %s:%d\n", s, __FILE__, __LINE__); \
+            abort();                                                        \
+        }                                                                   \
+    } while (0)
+
+__global__ void stencil_kernel(const double * __restrict__ a,
+                               double * __restrict__ out, long long N) {
+    const long long stride = (long long)gridDim.x * blockDim.x;
+    // i ranges over [1, N-3]
+    for (long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x + 1;
+         i <= N - 3; i += stride) {
+        const double v0 = a[i - 1];
+        const double v1 = a[i];
+        const double v2 = a[i + 1];
+        const double v3 = a[i + 2];
+        out[i] = (v0 + v1 + v2) * (v1 + v2 + v3);
+    }
+}
+
+extern "C" void fsstt_launch(const double *a, double *out, long long N) {
+    if (N < 4) return;
+    const long long count = N - 3;           // number of outputs (i in [1, N-3])
+    const int blockSize = 256;
+    long long gridSize = (count + blockSize - 1) / blockSize;
+    if (gridSize < 1) gridSize = 1;
+    if (gridSize > (1LL << 24)) gridSize = (1LL << 24);
+    stencil_kernel<<<(unsigned)gridSize, blockSize>>>(a, out, N);
+    FSSTT_CHECK(hipGetLastError());
+}

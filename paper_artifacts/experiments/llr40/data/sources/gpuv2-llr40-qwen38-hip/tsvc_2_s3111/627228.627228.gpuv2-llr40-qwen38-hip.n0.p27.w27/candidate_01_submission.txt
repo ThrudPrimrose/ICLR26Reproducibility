@@ -1,0 +1,109 @@
+// Device half for tsvc_2_s3111: b[0] = sum of a[i] over i with a[i] > 0.
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+#define S3111_BLOCK 256
+
+union d4 { double4 v; float4 f; };
+
+static __device__ __forceinline__ double posadd(double s, double x) {
+    return s + (x > 0.0 ? x : 0.0);
+}
+
+// Vectorized (32-byte aligned) partial sum: one partial per block.
+__global__ void __launch_bounds__(S3111_BLOCK)
+k_red_vec(const double4* __restrict__ a, const double* __restrict__ tail,
+          int64_t nv, int64_t nt, double* __restrict__ out) {
+    double sx = 0.0, sy = 0.0, sz = 0.0, sw = 0.0;
+    const int64_t stride = (int64_t)gridDim.x * blockDim.x;
+    for (int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x; i < nv; i += stride) {
+        double4 v = a[i];
+        sx = posadd(sx, v.x);
+        sy = posadd(sy, v.y);
+        sz = posadd(sz, v.z);
+        sw = posadd(sw, v.w);
+    }
+    double s = sx + sy + sz + sw;
+    for (int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x; i < nt; i += stride) {
+        s = posadd(s, tail[i]);
+    }
+    #pragma unroll
+    for (int o = 16; o; o >>= 1) s += __shfl_down(s, o);
+    __shared__ double sh[S3111_BLOCK / 32];
+    const int lane = threadIdx.x & 31;
+    const int warp = threadIdx.x >> 5;
+    if (lane == 0) sh[warp] = s;
+    __syncthreads();
+    if (warp == 0) {
+        s = (lane < S3111_BLOCK / 32) ? sh[lane] : 0.0;
+        #pragma unroll
+        for (int o = S3111_BLOCK / 64; o; o >>= 1) s += __shfl_down(s, o);
+        if (lane == 0) out[blockIdx.x] = s;
+    }
+}
+
+// Scalar fallback (unaligned or tiny arrays).
+__global__ void __launch_bounds__(S3111_BLOCK)
+k_red_scl(const double* __restrict__ a, int64_t n, double* __restrict__ out) {
+    double s = 0.0;
+    const int64_t stride = (int64_t)gridDim.x * blockDim.x;
+    for (int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x; i < n; i += stride)
+        s = posadd(s, a[i]);
+    #pragma unroll
+    for (int o = 16; o; o >>= 1) s += __shfl_down(s, o);
+    __shared__ double sh[S3111_BLOCK / 32];
+    const int lane = threadIdx.x & 31;
+    const int warp = threadIdx.x >> 5;
+    if (lane == 0) sh[warp] = s;
+    __syncthreads();
+    if (warp == 0) {
+        s = (lane < S3111_BLOCK / 32) ? sh[lane] : 0.0;
+        #pragma unroll
+        for (int o = S3111_BLOCK / 64; o; o >>= 1) s += __shfl_down(s, o);
+        if (lane == 0) out[blockIdx.x] = s;
+    }
+}
+
+// Final: b[0] = sum of block partials.
+__global__ void k_finish(const double* __restrict__ in, int nblk, double* __restrict__ b) {
+    double s = 0.0;
+    for (int i = threadIdx.x; i < nblk; i += blockDim.x) s += in[i];
+    #pragma unroll
+    for (int o = 16; o; o >>= 1) s += __shfl_down(s, o);
+    __shared__ double sh[S3111_BLOCK / 32];
+    const int lane = threadIdx.x & 31;
+    const int warp = threadIdx.x >> 5;
+    if (lane == 0) sh[warp] = s;
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        s = 0.0;
+        for (int i = 0; i < (int)(blockDim.x / 32); ++i) s += sh[i];
+        b[0] = s;
+    }
+}
+
+__global__ void k_zero(double* __restrict__ b) { b[0] = 0.0; }
+
+void s3111_launch(const double* a, double* b, int64_t n) {
+    if (n <= 0) {
+        k_zero<<<1, 1, 0, (hipStream_t)0>>>(b);
+        return;
+    }
+
+    // Workspace: one double per block, allocated once.
+    static double* ws = nullptr;
+    const int GRID = 1024;
+    if (!ws) { hipError_t e = hipMalloc(&ws, (size_t)GRID * sizeof(double)); (void)e; }
+
+    const int64_t al = (int64_t)(uintptr_t)a;
+    if (n >= 4 && (al & 31) == 0) {
+        const int64_t nv = n >> 2;
+        const int64_t nt = n - (nv << 2);
+        k_red_vec<<<GRID, S3111_BLOCK, 0, (hipStream_t)0>>>(
+            (const double4*)a, a + (nv << 2), nv, nt, ws);
+        k_finish<<<1, S3111_BLOCK, 0, (hipStream_t)0>>>(ws, GRID, b);
+    } else {
+        k_red_scl<<<GRID, S3111_BLOCK, 0, (hipStream_t)0>>>(a, n, ws);
+        k_finish<<<1, S3111_BLOCK, 0, (hipStream_t)0>>>(ws, GRID, b);
+    }
+}

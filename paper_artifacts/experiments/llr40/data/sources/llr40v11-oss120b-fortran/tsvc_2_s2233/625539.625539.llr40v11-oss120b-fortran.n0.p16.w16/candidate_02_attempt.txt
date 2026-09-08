@@ -1,0 +1,27 @@
+module tsvc_2_s2233_mod
+  use iso_c_binding, only: c_int64_t, c_double
+  implicit none
+contains
+  subroutine tsvc_2_s2233_fp64(aa, bb, cc, LEN_2D) bind(C, name="tsvc_2_s2233_fp64")
+    real(c_double), intent(inout) :: aa(*)
+    real(c_double), intent(inout) :: bb(*)
+    real(c_double), intent(in) :: cc(*)
+    integer(c_int64_t), value :: LEN_2D
+    integer(c_int64_t) :: i, j, idx
+    !$omp parallel do schedule(static) private(i, j, idx) shared(aa, cc, LEN_2D)
+    do i = 8_c_int64_t, LEN_2D - 1_c_int64_t
+      do j = 8_c_int64_t, LEN_2D - 1_c_int64_t
+        idx = j * LEN_2D + i + 1_c_int64_t
+        aa(idx) = aa(idx - LEN_2D) + cc(idx)
+      end do
+    end do
+    !$omp end parallel do
+    do i = 8_c_int64_t, LEN_2D - 1_c_int64_t
+      !$omp simd
+      do j = 8_c_int64_t, LEN_2D - 1_c_int64_t
+        idx = i * LEN_2D + j + 1_c_int64_t
+        bb(idx) = bb(idx - LEN_2D) + cc(idx)
+      end do
+    end do
+  end subroutine tsvc_2_s2233_fp64
+end module tsvc_2_s2233_mod

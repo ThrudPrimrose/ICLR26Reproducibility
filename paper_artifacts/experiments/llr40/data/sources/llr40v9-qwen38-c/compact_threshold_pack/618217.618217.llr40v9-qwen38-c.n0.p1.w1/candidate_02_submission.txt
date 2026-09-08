@@ -1,0 +1,100 @@
+/* compact_threshold_pack -- stream compaction, AVX-512 + OpenMP.
+ *
+ * Two passes:
+ *   pass 1: per-thread vectorized count of src[i] > 0.
+ *   pass 2: per-thread, 16-element blocks. Survivors of a block occupy a
+ *           CONTIGUOUS output range [run, run+cnt): the 8-lane half is
+ *           compacted in-register via a 256-entry LUT (bit positions) +
+ *           permutexvar, then written with a plain 64B store. Every block
+ *           except the thread's last vector block may write up to 15
+ *           garbage lanes past its survivors; those positions are
+ *           guaranteed to be overwritten by the next block (or masked on
+ *           the final block), so the tail past n stays zero.
+ */
+#include <stdint.h>
+#include <immintrin.h>
+#include <omp.h>
+
+static int64_t ctp_lut[256][8] __attribute__((aligned(64)));
+__attribute__((constructor)) static void ctp_lut_build(void) {
+  for (int m = 0; m < 256; m++) {
+    int dset = 0;
+    for (int b = 0; b < 8; b++)
+      if (m & (1 << b)) ctp_lut[m][dset++] = 0x3FF0000000000000LL + b;
+    for (int d = dset; d < 8; d++) ctp_lut[m][d] = 0x3FF0000000000000LL + d;
+  }
+}
+
+void compact_threshold_pack_fp64(int64_t *restrict out_count,
+                                 double *restrict packed,
+                                 const double *restrict src,
+                                 const double *restrict weight,
+                                 const int64_t LEN_1D) {
+  if (LEN_1D <= 0) {
+    out_count[0] = 0;
+    return;
+  }
+
+  int nt = omp_get_max_threads();
+  if (nt < 1) nt = 1;
+  if (nt > 128) nt = 128;
+  static int64_t counts[128];
+  const __m512d zero = _mm512_setzero_pd();
+
+  #pragma omp parallel num_threads(nt)
+  {
+    int tid = omp_get_thread_num();
+    int64_t lo = (LEN_1D * (int64_t)tid) / nt;
+    int64_t hi = (LEN_1D * (int64_t)(tid + 1)) / nt;
+    const double *s = src + lo;
+    int64_t n = hi - lo;
+
+    /* ---- pass 1: count survivors ---- */
+    int64_t cnt = 0;
+    {
+      int64_t i = 0;
+      for (; i + 16 <= n; i += 16) {
+        __mmask8 m1 = _mm512_cmp_pd_mask(_mm512_loadu_pd(s + i), zero, _CMP_GT_OQ);
+        __mmask8 m2 = _mm512_cmp_pd_mask(_mm512_loadu_pd(s + i + 8), zero, _CMP_GT_OQ);
+        cnt += (int64_t)__builtin_popcount(m1) + (int64_t)__builtin_popcount(m2);
+      }
+      for (; i < n; i++) cnt += (s[i] > 0.0);
+    }
+    counts[tid] = cnt;
+
+    #pragma omp barrier
+    int64_t base = 0;
+    for (int t = 0; t < tid; t++) base += counts[t];
+
+    /* ---- pass 2: compact + store ---- */
+    {
+      const double *w = weight + lo;
+      int64_t run = base;
+      int64_t i = 0;
+      for (; i + 16 <= n; i += 16) {
+        __m512d sA = _mm512_loadu_pd(s + i);
+        __m512d sB = _mm512_loadu_pd(s + i + 8);
+        __mmask8 mA = _mm512_cmp_pd_mask(sA, zero, _CMP_GT_OQ);
+        __mmask8 mB = _mm512_cmp_pd_mask(sB, zero, _CMP_GT_OQ);
+        __m512d pA = _mm512_mul_pd(sA, _mm512_loadu_pd(w + i));
+        __m512d pB = _mm512_mul_pd(sB, _mm512_loadu_pd(w + i + 8));
+        __m512d cA = _mm512_permutexvar_pd(_mm512_loadu_si512((const void *)ctp_lut[mA]), pA);
+        __m512d cB = _mm512_permutexvar_pd(_mm512_loadu_si512((const void *)ctp_lut[mB]), pB);
+        int cntA = __builtin_popcount(mA);
+        int cntB = __builtin_popcount(mB);
+        _mm512_mask_storeu_pd(packed + run, (__mmask8)((1u << cntA) - 1u), cA);
+        _mm512_mask_storeu_pd(packed + run + cntA, (__mmask8)((1u << cntB) - 1u), cB);
+        run += (int64_t)cntA + (int64_t)cntB;
+      }
+      for (; i < n; i++)
+        if (s[i] > 0.0) {
+          packed[run] = s[i] * w[i];
+          run++;
+        }
+    }
+  }
+
+  int64_t total = 0;
+  for (int t = 0; t < nt; t++) total += counts[t];
+  out_count[0] = total;
+}

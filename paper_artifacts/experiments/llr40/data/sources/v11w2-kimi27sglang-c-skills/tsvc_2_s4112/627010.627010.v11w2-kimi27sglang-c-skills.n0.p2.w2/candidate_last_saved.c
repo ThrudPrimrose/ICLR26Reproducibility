@@ -1,0 +1,63 @@
+#include <stdint.h>
+#include <immintrin.h>
+#include <omp.h>
+
+static inline void prefetch_b_chunk(const int32_t *restrict ip,
+                                    const double *restrict b,
+                                    int64_t i) {
+    __m256i idx = _mm256_stream_load_si256((__m256i *)(void *)(ip + i));
+    int32_t pidx[8] __attribute__((aligned(32)));
+    _mm256_store_si256((__m256i *)pidx, idx);
+    _mm_prefetch((const char *)(b + pidx[0]), _MM_HINT_T1);
+    _mm_prefetch((const char *)(b + pidx[1]), _MM_HINT_T1);
+    _mm_prefetch((const char *)(b + pidx[2]), _MM_HINT_T1);
+    _mm_prefetch((const char *)(b + pidx[3]), _MM_HINT_T1);
+    _mm_prefetch((const char *)(b + pidx[4]), _MM_HINT_T1);
+    _mm_prefetch((const char *)(b + pidx[5]), _MM_HINT_T1);
+    _mm_prefetch((const char *)(b + pidx[6]), _MM_HINT_T1);
+    _mm_prefetch((const char *)(b + pidx[7]), _MM_HINT_T1);
+}
+
+void tsvc_2_s4112_fp64(double *restrict a, const double *restrict b,
+                       const int32_t *restrict ip, const int64_t LEN_1D) {
+    const int64_t VL = 8;
+    const __m512d vtwo = _mm512_set1_pd(2.0);
+
+    int64_t head = 0;
+    if (LEN_1D > 0) {
+        uintptr_t ap = (uintptr_t)a;
+        uintptr_t ipp = (uintptr_t)ip;
+        int64_t need_a  = (ap  & 63ULL) ? ((64ULL - (ap  & 63ULL)) / sizeof(double)) : 0;
+        int64_t need_ip = (ipp & 63ULL) ? ((64ULL - (ipp & 63ULL)) / sizeof(int32_t)) : 0;
+        int64_t need = need_a > need_ip ? need_a : need_ip;
+        if (need > LEN_1D) need = LEN_1D;
+        for (; head < need; ++head) {
+            a[head] += b[ip[head]] * 2.0;
+        }
+    }
+
+    const int64_t main_k = (LEN_1D - head) / VL;
+    const int64_t tail   = head + main_k * VL;
+
+    #pragma omp parallel for schedule(static) if(LEN_1D > 4096)
+    for (int64_t k = 0; k < main_k; ++k) {
+        const int64_t i = head + k * VL;
+        if (k + 8 < main_k) {
+            prefetch_b_chunk(ip, b, head + (k + 4) * VL);
+            prefetch_b_chunk(ip, b, head + (k + 6) * VL);
+            prefetch_b_chunk(ip, b, head + (k + 8) * VL);
+        }
+        __m256i idx = _mm256_load_si256((__m256i *)(void *)(ip + i));
+        __m512d bv  = _mm512_i32gather_pd(idx, (const void *)b, 8);
+        __m512d av  = _mm512_castsi512_pd(
+                          _mm512_stream_load_si512((__m512i *)(void *)(a + i)));
+        __m512d out = _mm512_fmadd_pd(vtwo, bv, av);
+        _mm512_stream_pd(a + i, out);
+    }
+
+    _mm_sfence();
+
+    for (int64_t i = tail; i < LEN_1D; ++i) {
+        a[i] += b[ip[i]] * 2.0;
+    }
+}

@@ -1,0 +1,32 @@
+subroutine versioned_distance_update_fp64(a, b, c, K, LEN_1D, workspace, workspace_size) &
+    bind(c, name="versioned_distance_update_fp64")
+    use iso_c_binding, only: c_double, c_int64_t
+    implicit none
+    real(c_double), dimension(*), intent(inout) :: a, b, c
+    integer(c_int64_t), value :: K, LEN_1D
+    real(c_double), dimension(*), intent(inout) :: workspace
+    integer(c_int64_t), value :: workspace_size
+    integer(c_int64_t) :: i
+
+    if (K == 1_c_int64_t) then
+        do i = 2, LEN_1D
+            a(i) = 0.75_c_double * a(i - 1) + b(i) * c(i)
+        end do
+    else if (K == 5_c_int64_t) then
+        do i = 6, LEN_1D
+            a(i) = 0.75_c_double * a(i - 5) + b(i) * c(i)
+        end do
+    else if (K == 64_c_int64_t) then
+        do i = 65, LEN_1D
+            a(i) = 0.75_c_double * a(i - 64) + b(i) * c(i)
+        end do
+    else if (K == 251_c_int64_t) then
+        do i = 252, LEN_1D
+            a(i) = 0.75_c_double * a(i - 251) + b(i) * c(i)
+        end do
+    else
+        do i = K + 1, LEN_1D
+            a(i) = 0.75_c_double * a(i - K) + b(i) * c(i)
+        end do
+    end if
+end subroutine versioned_distance_update_fp64

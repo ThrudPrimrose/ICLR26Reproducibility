@@ -1,0 +1,61 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+
+#define HIP_CHECK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { \
+    std::fprintf(stderr, "HIP error %s at %s:%d\n", hipGetErrorString(e_), __FILE__, __LINE__); \
+    std::abort(); } } while (0)
+
+__global__ void stencil_s1(const double* __restrict__ a, double* __restrict__ out, const long long LIM) {
+    const long long j = (long long)blockIdx.x * blockDim.x + threadIdx.x + 1;
+    if (j < LIM) {
+        out[j] = (a[j-1] + a[j] + a[j+1]) * (a[j] + a[j+1] + a[j+2]);
+    }
+}
+
+// thread g: outputs {4g+2 .. 4g+5} (j0 even -> 16B vector loads/stores)
+__global__ void stencil_v4s(const double* __restrict__ a, double* __restrict__ out,
+                            const long long n_out, const long long G_full, const long long G_total) {
+    const long long gstride = (long long)gridDim.x * blockDim.x;
+    for (long long g = (long long)blockIdx.x * blockDim.x + threadIdx.x; g < G_total; g += gstride) {
+        const long long j0 = 4 * g + 2;
+        if (g < G_full) {
+            const double2 d2a = *(const double2*)(a + 4 * g);
+            const double4 d4b = *(const double4*)(a + 4 * g + 2);
+            const double2 d2c = *(const double2*)(a + 4 * g + 6);
+            const double2 r0 = make_double2((d2a.y + d4b.x + d4b.y) * (d4b.x + d4b.y + d4b.z),
+                                            (d4b.x + d4b.y + d4b.z) * (d4b.y + d4b.z + d4b.w));
+            const double2 r1 = make_double2((d4b.y + d4b.z + d4b.w) * (d4b.z + d4b.w + d2c.x),
+                                            (d4b.z + d4b.w + d2c.x) * (d4b.w + d2c.x + d2c.y));
+            *(double2*)(out + j0) = r0;
+            *(double2*)(out + j0 + 2) = r1;
+        } else if (g == G_total - 1) {
+            for (long long j = j0; j <= n_out; j++)
+                out[j] = (a[j-1] + a[j] + a[j+1]) * (a[j] + a[j+1] + a[j+2]);
+        }
+    }
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        out[1] = (a[0] + a[1] + a[2]) * (a[1] + a[2] + a[3]);
+    }
+}
+
+namespace fst {
+void launch(const double* a, double* out, long long n) {
+    if (n < 4) return;
+    const long long n_out = n - 3;   // outputs j in [1, n-3]
+    const int block = 256;
+    if ((reinterpret_cast<unsigned long long>(a) & 31ULL) == 0 &&
+        (reinterpret_cast<unsigned long long>(out) & 15ULL) == 0) {
+        const long long G_total_ = (n_out + 2) / 4; const long long G_total = G_total_ < 1 ? 1 : G_total_;
+        const long long G_full  = (n_out >= 5) ? (n_out - 5) / 4 + 1 : 0;
+        long long grid = (G_total + block - 1) / block;
+        if (grid > (1LL << 20)) grid = (1LL << 20);
+        stencil_v4s<<<(unsigned)grid, block>>>(a, out, n_out, G_full, G_total);
+    } else {
+        long long grid = (n_out + block - 1) / block;
+        if (grid > (1LL << 20)) grid = (1LL << 20);
+        stencil_s1<<<(unsigned)grid, block>>>(a, out, n - 2);
+    }
+    HIP_CHECK(hipGetLastError());
+}
+}

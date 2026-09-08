@@ -1,0 +1,13 @@
+#include <stdint.h>
+
+void tsvc_2_s1232_fp64(double *restrict aa, const double *restrict bb, const double *restrict cc,
+                       const int64_t LEN_2D, const int64_t VLEN) {
+  for (int64_t i = 0; i < LEN_2D; ++i) {
+    int64_t lim = VLEN > 0 ? i / VLEN + 1 : LEN_2D;
+    if (lim > LEN_2D) lim = LEN_2D;
+    double *a = aa + i * LEN_2D;
+    const double *b = bb + i * LEN_2D;
+    const double *c = cc + i * LEN_2D;
+    for (int64_t j = 0; j < lim; ++j) a[j] = b[j] + c[j];
+  }
+}

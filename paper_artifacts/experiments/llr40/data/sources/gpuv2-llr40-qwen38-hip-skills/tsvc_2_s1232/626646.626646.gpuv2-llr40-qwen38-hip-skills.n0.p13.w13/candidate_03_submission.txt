@@ -1,0 +1,54 @@
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+#include <cstdio>
+#include <cstdlib>
+#define HIP_CHECK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { \
+    fprintf(stderr, "HIP error %s at %s:%d\n", hipGetErrorString(e_), __FILE__, __LINE__); exit(1); } } while(0)
+__global__ void k_vec4(double4* __restrict__ a4,const double4* __restrict__ b4,const double4* __restrict__ c4,
+                       double* __restrict__ ad,const double* __restrict__ bd,const double* __restrict__ cd,
+                       int64_t N,int64_t VLEN,int64_t J4){
+    int64_t j4=blockIdx.x*blockDim.x+threadIdx.x;
+    int64_t i =blockIdx.y*blockDim.y+threadIdx.y;
+    if(j4>=J4||i>=N) return;
+    int64_t j0=4*j4;
+    int64_t K=i/VLEN;
+    if(j0>K) return;
+    int64_t idx=i*N+j0;
+    if(j0+3<=K){ double4 x=b4[idx>>2],y=c4[idx>>2]; x.x+=y.x;x.y+=y.y;x.z+=y.z;x.w+=y.w; a4[idx>>2]=x; }
+    else { for(int64_t j=j0;j<=K;++j){ int64_t l=i*N+j; ad[l]=bd[l]+cd[l]; } }
+}
+__global__ void k_vec2(double2* __restrict__ a2,const double2* __restrict__ b2,const double2* __restrict__ c2,
+                       double* __restrict__ ad,const double* __restrict__ bd,const double* __restrict__ cd,
+                       int64_t N,int64_t VLEN,int64_t J2){
+    int64_t j2=blockIdx.x*blockDim.x+threadIdx.x;
+    int64_t i =blockIdx.y*blockDim.y+threadIdx.y;
+    if(j2>=J2||i>=N) return;
+    int64_t j0=2*j2; if(i<j0*VLEN) return;
+    int64_t idx=i*N+j0;
+    if(i>=(j0+1)*VLEN){ double2 x=b2[idx>>1],y=c2[idx>>1]; x.x+=y.x;x.y+=y.y; a2[idx>>1]=x; }
+    else { ad[idx]=bd[idx]+cd[idx]; }
+}
+__global__ void k_scalar(double* __restrict__ aa,const double* __restrict__ bb,const double* __restrict__ cc,
+                         int64_t N,int64_t VLEN,int64_t J){
+    int64_t j=blockIdx.x*blockDim.x+threadIdx.x;
+    int64_t i =blockIdx.y*blockDim.y+threadIdx.y;
+    if(j<J&&i<N&&i>=j*VLEN){ int64_t l=i*N+j; aa[l]=bb[l]+cc[l]; }
+}
+void launch_s1232(double* aa,const double* bb,const double* cc,int64_t N,int64_t VLEN){
+    int64_t J=(VLEN>0)?((N+VLEN-1)/VLEN):N; if(J>N)J=N;
+    dim3 block(32,8);
+    if((N&3)==0){
+        int64_t J4=(J+3)/4;
+        dim3 grid((unsigned)((J4+block.x-1)/block.x),(unsigned)((N+block.y-1)/block.y));
+        k_vec4<<<grid,block>>>((double4*)aa,(const double4*)bb,(const double4*)cc,aa,bb,cc,N,VLEN,J4);
+    } else if((N&1)==0){
+        int64_t J2=(J+1)/2;
+        dim3 grid((unsigned)((J2+block.x-1)/block.x),(unsigned)((N+block.y-1)/block.y));
+        k_vec2<<<grid,block>>>((double2*)aa,(const double2*)bb,(const double2*)cc,aa,bb,cc,N,VLEN,J2);
+    } else {
+        dim3 grid((unsigned)((J+block.x-1)/block.x),(unsigned)((N+block.y-1)/block.y));
+        k_scalar<<<grid,block>>>(aa,bb,cc,N,VLEN,J);
+    }
+    HIP_CHECK(hipGetLastError());
+    HIP_CHECK(hipDeviceSynchronize());
+}

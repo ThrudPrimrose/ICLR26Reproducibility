@@ -1,0 +1,24 @@
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+__global__ void s275_col_kernel(double* __restrict__ aa,
+                                const double* __restrict__ bb,
+                                const double* __restrict__ cc,
+                                const long L) {
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= L) return;
+    double acc = aa[i];              // aa[0, i]  (row 0, col i)
+    if (acc > 0.0) {
+        for (long j = 1; j < L; j++) {
+            long idx = i + j * L;
+            acc += bb[idx] * cc[idx];
+            aa[idx] = acc;
+        }
+    }
+}
+
+extern "C" void launch_s275(double* aa, const double* bb, const double* cc, long L) {
+    const int block = 256;
+    long blocks = (L + block - 1) / block;
+    s275_col_kernel<<<blocks, block>>>(aa, bb, cc, L);
+}

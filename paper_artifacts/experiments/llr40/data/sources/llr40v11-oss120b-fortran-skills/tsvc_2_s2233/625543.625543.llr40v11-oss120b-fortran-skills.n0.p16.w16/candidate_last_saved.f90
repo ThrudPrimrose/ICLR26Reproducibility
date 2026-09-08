@@ -1,0 +1,33 @@
+subroutine tsvc_2_s2233_fp64(aa, bb, cc, LEN_2D) bind(C, name="tsvc_2_s2233_fp64")
+  use iso_c_binding
+  implicit none
+
+  integer(c_int64_t), value, intent(in) :: LEN_2D
+  real(c_double), intent(inout) :: aa(LEN_2D, LEN_2D)
+  real(c_double), intent(inout) :: bb(LEN_2D, LEN_2D)
+  real(c_double), intent(in)    :: cc(LEN_2D, LEN_2D)
+
+  integer(c_int64_t) :: i, j
+
+  ! Parallelize the aa update over columns i (outer loop)
+  !$omp parallel private(i, j)
+  ! Update aa: for each column i, compute prefix sum down rows j
+  !$omp do schedule(static) private(j)
+  do i = 9, LEN_2D
+    do j = 9, LEN_2D
+      aa(i, j) = aa(i, j-1) + cc(i, j)
+    end do
+  end do
+  !$omp end do
+
+  ! Update bb: for each row j, compute prefix sum across columns i
+  !$omp do schedule(static) private(i)
+  do j = 9, LEN_2D
+    do i = 9, LEN_2D
+      bb(j, i) = bb(j, i-1) + cc(j, i)
+    end do
+  end do
+  !$omp end do
+!$omp end parallel
+
+end subroutine tsvc_2_s2233_fp64

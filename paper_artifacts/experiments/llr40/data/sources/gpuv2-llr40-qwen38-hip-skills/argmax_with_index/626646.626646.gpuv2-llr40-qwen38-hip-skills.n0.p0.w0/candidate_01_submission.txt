@@ -1,0 +1,142 @@
+// argmax_with_index (TSVC s315) -- HIP implementation for gfx942.
+// out_value = max of a[0..n-1], out_index = first 0-based position of that max
+// (ties -> earliest index, matching the sequential reference exactly).
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define HIPE(call)                                                                          \
+    do {                                                                                    \
+        hipError_t _e = (call);                                                             \
+        if (_e != hipSuccess) {                                                             \
+            std::fprintf(stderr, "HIP error %s:%d %s\n", __FILE__, __LINE__,                \
+                         hipGetErrorString(_e));                                            \
+            std::abort();                                                                   \
+        }                                                                                   \
+    } while (0)
+
+struct P {
+    double v;
+    int64_t i; // -1 => no element yet
+};
+
+// Commutative/associative merge: winner is the larger value; on a tie the
+// smaller index wins. Yields (global max, first position of that max), i.e.
+// exactly the sequential reference result for any finite data.
+__device__ __forceinline__ P merge2(P L, P R) {
+    if (R.i < 0) return L;
+    if (L.i < 0) return R;
+    if (R.v > L.v) return R;
+    if (L.v > R.v) return L;
+    return (L.i < R.i) ? L : R;
+}
+
+__device__ __forceinline__ P waveReduce(P p) {
+    const int ws = warpSize;
+#pragma unroll
+    for (int off = ws / 2; off > 0; off >>= 1) {
+        P q;
+        q.v = __shfl_down(p.v, off, ws);
+        q.i = __shfl_down(p.i, off, ws);
+        p = merge2(p, q);
+    }
+    return p;
+}
+
+// Block-wise vectorized argmax. Block b covers the contiguous vector range
+// [vs, ve); threads stride by blockDim. Local scan per thread is in index
+// order, and merge2 is order-independent, so any tree shape is exact.
+template <int BWARP>
+__global__ void __launch_bounds__(BWARP * 64) k1(const double* __restrict__ a, int64_t n,
+                                                 P* __restrict__ pres) {
+    const int64_t nv = (n + 3) >> 2;
+    const int64_t vper = (nv + gridDim.x - 1) / gridDim.x;
+    const int64_t vs = (int64_t)blockIdx.x * vper;
+    const int64_t ve = min(vs + vper, nv);
+    P p;
+    p.v = 0.0;
+    p.i = -1;
+    const double4* a4 = reinterpret_cast<const double4*>(a);
+    for (int64_t v = vs + threadIdx.x; v < ve; v += blockDim.x) {
+        const int64_t i0 = v << 2;
+        if (i0 + 3 < n) {
+            double4 d = a4[v];
+            p = merge2(p, P{d.x, i0});
+            p = merge2(p, P{d.y, i0 + 1});
+            p = merge2(p, P{d.z, i0 + 2});
+            p = merge2(p, P{d.w, i0 + 3});
+        } else {
+            for (int k = 0; k < 4; ++k)
+                if (i0 + k < n) p = merge2(p, P{a[i0 + k], i0 + k});
+        }
+    }
+    p = waveReduce(p);
+    __shared__ P wsp[16];
+    if ((threadIdx.x & (warpSize - 1)) == 0) wsp[threadIdx.x / warpSize] = p;
+    __syncthreads();
+    if (threadIdx.x < warpSize) {
+        P q;
+        q.v = 0.0;
+        q.i = -1;
+        const int nw = blockDim.x / warpSize;
+        for (int w = 0; w < nw; ++w) q = merge2(q, wsp[w]);
+        if (threadIdx.x == 0) pres[blockIdx.x] = q;
+    }
+}
+
+// Final reduction over the per-block pairs (<= 8192 of them).
+__global__ void __launch_bounds__(256) k2(const P* __restrict__ pres, int64_t nb,
+                                          double* __restrict__ out_v,
+                                          int64_t* __restrict__ out_i) {
+    const int64_t per = (nb + blockDim.x - 1) / blockDim.x;
+    const int64_t s = (int64_t)threadIdx.x * per;
+    const int64_t e = min(s + per, nb);
+    P p;
+    p.v = 0.0;
+    p.i = -1;
+    for (int64_t j = s; j < e; ++j) p = merge2(p, pres[j]);
+    p = waveReduce(p);
+    __shared__ P wsp[16];
+    if ((threadIdx.x & (warpSize - 1)) == 0) wsp[threadIdx.x / warpSize] = p;
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        P q;
+        q.v = 0.0;
+        q.i = -1;
+        const int nw = blockDim.x / warpSize;
+        for (int w = 0; w < nw; ++w) q = merge2(q, wsp[w]);
+        *out_v = q.v;
+        *out_i = q.i;
+    }
+}
+
+void launch_argmax_with_index(const double* a, int64_t* out_index, double* out_value,
+                              int64_t n) {
+    if (n <= 0) {
+        *out_value = 0.0;
+        *out_index = 0;
+        return;
+    }
+    if (n <= 2048) {
+        // One block handles it directly; still 2 launches (k1 with 1 block + k2)
+        // is fine and correct.
+    }
+    const int64_t target = 65536; // ~512 KB of doubles per block
+    int64_t nblocks = (n + target - 1) / target;
+    if (nblocks < 1) nblocks = 1;
+    if (nblocks > 8192) nblocks = 8192;
+
+    static P* d_pres = nullptr;
+    if (!d_pres) {
+        HIPE(hipMalloc(&d_pres, 8192 * sizeof(P)));
+    }
+
+    const int blockThreads = 256;
+    k1<4><<<nblocks, blockThreads, 0, nullptr>>>(a, n, d_pres);
+    HIPE(hipGetLastError());
+    k2<<<1, 256, 0, nullptr>>>(d_pres, nblocks, out_value, out_index);
+    HIPE(hipGetLastError());
+    HIPE(hipDeviceSynchronize());
+}
+

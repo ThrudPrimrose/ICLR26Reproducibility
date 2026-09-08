@@ -1,0 +1,49 @@
+// device half: kernels + launcher
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+#define TB_X 256
+#define TB_Y 4
+
+__global__ void __launch_bounds__(TB_X * TB_Y)
+s1232_kernel(double* __restrict__ aa, const double* __restrict__ bb, const double* __restrict__ cc,
+             int64_t n, int64_t vlen)
+{
+  int64_t j = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+  int64_t i = (int64_t)blockIdx.y * blockDim.y + threadIdx.y;
+  if (i >= n || j >= n) return;
+  if (i >= j * vlen) {
+    int64_t idx = i * n + j;
+    aa[idx] = bb[idx] + cc[idx];
+  }
+}
+
+// 1D grid-stride fallback
+__global__ void __launch_bounds__(256)
+s1232_kernel_1d(double* __restrict__ aa, const double* __restrict__ bb, const double* __restrict__ cc,
+                int64_t n, int64_t vlen)
+{
+  int64_t total = n * n;
+  for (int64_t idx = (int64_t)blockIdx.x * blockDim.x + threadIdx.x; idx < total;
+       idx += (int64_t)gridDim.x * blockDim.x) {
+    int64_t j = idx % n;
+    int64_t i = idx / n;
+    if (i >= j * vlen) aa[idx] = bb[idx] + cc[idx];
+  }
+}
+
+void tsvc_2_s1232_launch(double* aa, const double* bb, const double* cc,
+                         int64_t n, int64_t vlen, hipStream_t stream)
+{
+  if (n <= 0) return;
+  if (n <= 65535LL / TB_Y + 1) {
+    dim3 block(TB_X, TB_Y);
+    dim3 grid((unsigned)((n + TB_X - 1) / TB_X), (unsigned)((n + TB_Y - 1) / TB_Y));
+    s1232_kernel<<<grid, block, 0, stream>>>(aa, bb, cc, n, vlen);
+  } else {
+    int64_t total = n * n;
+    int64_t want = (total + 255) / 256;
+    unsigned blocks = (unsigned)(want > 2147483647LL ? 2147483647LL : want);
+    s1232_kernel_1d<<<blocks, 256, 0, stream>>>(aa, bb, cc, n, vlen);
+  }
+}

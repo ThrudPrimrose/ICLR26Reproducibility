@@ -1,0 +1,23 @@
+subroutine quasi_affine_reduce_odd_fp64(a, out, LEN_1D, workspace, workspace_size) bind(c, name='quasi_affine_reduce_odd_fp64')
+    use iso_c_binding, only: c_double, c_int64_t, c_ptr, c_f_pointer
+    implicit none
+    type(c_ptr), value, intent(in) :: a
+    type(c_ptr), value, intent(in) :: out
+    integer(c_int64_t), value, intent(in) :: LEN_1D
+    type(c_ptr), value, intent(in) :: workspace
+    integer(c_int64_t), value, intent(in) :: workspace_size
+
+    real(c_double), pointer :: a_f(:)
+    real(c_double), pointer :: out_f(:)
+    real(c_double) :: acc
+    integer(c_int64_t) :: i
+
+    call c_f_pointer(a, a_f, [LEN_1D])
+    call c_f_pointer(out, out_f, [1_c_int64_t])
+
+    acc = 0.0_c_double
+    do i = 2, LEN_1D, 2
+        acc = acc + a_f(i)
+    end do
+    out_f(1) = acc
+end subroutine quasi_affine_reduce_odd_fp64

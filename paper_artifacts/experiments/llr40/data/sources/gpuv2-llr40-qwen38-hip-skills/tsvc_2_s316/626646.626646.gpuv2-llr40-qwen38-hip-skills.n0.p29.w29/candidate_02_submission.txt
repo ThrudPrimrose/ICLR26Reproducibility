@@ -1,0 +1,121 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <algorithm>
+#include <cmath>
+
+#define BLOCK 256
+#ifndef DINF
+#define DINF HUGE_VALL
+#endif
+
+#define HIP_CHECK(x) do { hipError_t _e = (x); \
+  if (_e != hipSuccess) { \
+    fprintf(stderr, "HIP error %s at %s:%d\n", hipGetErrorString(_e), __FILE__, __LINE__); \
+    abort(); } } while (0)
+
+__device__ __forceinline__ double warpReduceMin(double val, int warpSize) {
+  for (int offset = warpSize / 2; offset > 0; offset >>= 1)
+    val = fmin(val, __shfl_down(val, offset, warpSize));
+  return val;
+}
+
+__device__ __forceinline__ void blockReduceMin(double local, double* out, int tid, int warpSize, __shared__ double* sd) {
+  const int lane = tid % warpSize;
+  const int warp = tid / warpSize;
+  double v = warpReduceMin(local, warpSize);
+  if (lane == 0) sd[warp] = v;
+  __syncthreads();
+  const int nw = blockDim.x / warpSize;
+  if (warp == 0) {
+    v = (lane < nw) ? sd[lane] : DINF;
+    v = warpReduceMin(v, warpSize);
+    if (lane == 0) *out = v;
+  }
+}
+
+// Grid-stride min of a[0..n), one value per block into partial[blockIdx.x].
+// Fast path: 2x-unrolled double4 (256-bit) loads when a is 32B-aligned.
+__global__ void partialReduceMin(const double* __restrict__ a,
+                                 double* __restrict__ partial,
+                                 int64_t n, int warpSize) {
+  const int tid = threadIdx.x;
+  const int64_t gsize = (int64_t)blockDim.x * gridDim.x;
+  const int64_t gidx  = (int64_t)blockIdx.x * blockDim.x + tid;
+  double local = DINF;
+  if (((uintptr_t)a & 31) == 0) {
+    const double4* a4 = reinterpret_cast<const double4*>(a);
+    const int64_t n4 = n >> 2;
+    int64_t i = gidx;
+    for (; i + gsize < n4; i += 2 * gsize) {
+      double4 v1 = a4[i];
+      double4 v2 = a4[i + gsize];
+      local = fmin(local, v1.x); local = fmin(local, v1.y);
+      local = fmin(local, v1.z); local = fmin(local, v1.w);
+      local = fmin(local, v2.x); local = fmin(local, v2.y);
+      local = fmin(local, v2.z); local = fmin(local, v2.w);
+    }
+    for (int64_t j = i; j < n4; j += gsize) {
+      double4 v = a4[j];
+      local = fmin(local, v.x); local = fmin(local, v.y);
+      local = fmin(local, v.z); local = fmin(local, v.w);
+    }
+    const int64_t base = n4 << 2;
+    const int64_t tail = n - base;
+    if (gidx < tail) local = fmin(local, a[base + gidx]);
+  } else {
+    for (int64_t i = gidx; i < n; i += gsize) local = fmin(local, a[i]);
+  }
+  __shared__ double sdata[BLOCK];
+  blockReduceMin(local, &partial[blockIdx.x], tid, warpSize, sdata);
+}
+
+__global__ void finalReduceMin(const double* __restrict__ partial,
+                               double* __restrict__ result,
+                               int nblocks, int warpSize) {
+  const int tid = threadIdx.x;
+  const int64_t stride = (int64_t)blockDim.x;
+  int64_t idx = tid;
+  double local = (idx < nblocks) ? partial[idx] : DINF;
+  for (int64_t i = idx + stride; i < nblocks; i += stride)
+    local = fmin(local, partial[i]);
+  __shared__ double sdata[BLOCK];
+  blockReduceMin(local, &result[0], tid, warpSize, sdata);
+}
+
+struct Cfg { int numCU = 0, maxThreadsPerCU = 0, warpSize = 0, maxGrid = 0, ready = 0; };
+static Cfg g_cfg;
+static double* g_partial = nullptr;
+static int g_partialCap = 0;
+
+static void init_cfg() {
+  if (g_cfg.ready) return;
+  hipDeviceProp_t p;
+  HIP_CHECK(hipGetDeviceProperties(&p, 0));
+  g_cfg.numCU = p.multiProcessorCount;
+  g_cfg.maxThreadsPerCU = p.maxThreadsPerMultiProcessor;
+  g_cfg.warpSize = (p.warpSize > 0) ? p.warpSize : 64;
+  int bpc = g_cfg.maxThreadsPerCU / BLOCK;
+  if (bpc < 1) bpc = 1;
+  g_cfg.maxGrid = g_cfg.numCU * bpc;
+  if (g_cfg.maxGrid < 1) g_cfg.maxGrid = 1;
+  g_cfg.ready = 1;
+  HIP_CHECK(hipMalloc((void**)&g_partial, sizeof(double) * (size_t)g_cfg.maxGrid));
+  g_partialCap = g_cfg.maxGrid;
+}
+
+void launch_min_reduction(const double* a, double* result, int64_t n) {
+  if (n <= 0) { return; }
+  init_cfg();
+  const int ws = g_cfg.warpSize;
+  long long need = (n + BLOCK - 1) / BLOCK;
+  int grid = (int)std::min<long long>(need, (long long)g_cfg.maxGrid);
+  if (grid < 1) grid = 1;
+  partialReduceMin<<<grid, BLOCK>>>(a, g_partial, n, ws);
+  HIP_CHECK(hipGetLastError());
+  finalReduceMin<<<1, BLOCK>>>(g_partial, result, grid, ws);
+  HIP_CHECK(hipGetLastError());
+  HIP_CHECK(hipDeviceSynchronize());
+}

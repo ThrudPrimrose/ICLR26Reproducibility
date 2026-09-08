@@ -1,0 +1,22 @@
+module tsvc_2_s119_mod
+  use iso_c_binding
+  implicit none
+contains
+  subroutine tsvc_2_s119_fp64(aa, bb, LEN_2D) bind(C, name="tsvc_2_s119_fp64")
+    real(c_double), intent(inout) :: aa(*)
+    real(c_double), intent(in) :: bb(*)
+    integer(c_int64_t), value :: LEN_2D
+    integer(c_int64_t) :: i, j, s, i_start, i_end
+    integer(c_int64_t) :: idx, idx_prev
+    integer(c_int64_t) :: stride
+    stride = LEN_2D + 1_c_int64_t
+    do i = 1_c_int64_t, LEN_2D - 1_c_int64_t
+      !$omp simd
+      do j = 1_c_int64_t, LEN_2D - 1_c_int64_t
+        idx = i * LEN_2D + j
+        idx_prev = idx - stride
+        aa(idx + 1) = aa(idx_prev + 1) + bb(idx + 1)
+      end do
+    end do
+  end subroutine tsvc_2_s119_fp64
+end module tsvc_2_s119_mod

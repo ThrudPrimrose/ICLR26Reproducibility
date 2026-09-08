@@ -1,0 +1,83 @@
+// Device half for tsvc_2_vtvtv: a[i] = a[i] * b[i] * c[i] (fp64).
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#define HIP_CHECK(call)                                                         \
+    do {                                                                        \
+        hipError_t e_ = (call);                                                 \
+        if (e_ != hipSuccess) {                                                 \
+            std::fprintf(stderr, "HIP error '%s' at %s:%d\n",                   \
+                         hipGetErrorString(e_), __FILE__, __LINE__);            \
+            std::abort();                                                       \
+        }                                                                       \
+    } while (0)
+
+#define VEC 2          // doubles per thread per vector step (16 bytes)
+#define BLOCK 256      // threads per workgroup
+#define MAX_GRID 10240 // workgroup cap (~304 CUs * 32 groups/CU)
+
+struct alignas(16) vdouble2 {
+    double v[2];
+};
+
+__global__ __launch_bounds__(BLOCK) void tsvc_vtvtv_kernel(
+    double * __restrict__ a, const double * __restrict__ b,
+    const double * __restrict__ c, long long head, long long nvec,
+    long long ntail, long long n) {
+    long long tid = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    long long step = (long long)gridDim.x * blockDim.x;
+
+    for (long long i = tid; i < nvec; i += step) {
+        long long idx = i * VEC;
+        const vdouble2 va = *reinterpret_cast<const vdouble2 *>(a + idx);
+        const vdouble2 vb = *reinterpret_cast<const vdouble2 *>(b + idx);
+        const vdouble2 vc = *reinterpret_cast<const vdouble2 *>(c + idx);
+        vdouble2 vo;
+#pragma unroll
+        for (int k = 0; k < VEC; ++k) vo.v[k] = va.v[k] * vb.v[k] * vc.v[k];
+        *reinterpret_cast<vdouble2 *>(a + idx) = vo;
+    }
+    // head elements [0, head) and scalar tail [ntail, n): tiny (<= 4 elements)
+    for (long long idx = tid; idx < n; idx += step) {
+        if (idx < head || idx >= ntail) a[idx] = a[idx] * b[idx] * c[idx];
+    }
+}
+
+void tsvc_vtvtv_launch(double *a, const double *b, const double *c, long long n) {
+    if (n <= 0) return;
+
+    // Smallest h in {0,1} with all three pointers 16-byte aligned at +8h;
+    // -1 means pure-scalar fallback. hipMalloc buffers are 256B aligned, so
+    // in practice h == 0.
+    int head = -1;
+    for (int h = 0; h < 2 && head < 0; ++h) {
+        if (((unsigned long long)a + 8ull * h) % 16 == 0 &&
+            ((unsigned long long)b + 8ull * h) % 16 == 0 &&
+            ((unsigned long long)c + 8ull * h) % 16 == 0)
+            head = h;
+    }
+
+    long long nvec, ntail;
+    long long chunks;
+    if (head < 0) {
+        head = 0;
+        nvec = 0;
+        ntail = 0; // everything scalar: idx >= 0 always
+        chunks = n;
+    } else {
+        nvec = (n - head) / VEC;
+        ntail = head + nvec * VEC;
+        chunks = nvec;
+    }
+
+    if (chunks < BLOCK) chunks = BLOCK;
+    long long g = chunks / BLOCK;
+    if (g > MAX_GRID) g = MAX_GRID;
+    unsigned grid = (unsigned)g;
+
+    tsvc_vtvtv_kernel<<<grid, BLOCK>>>(a, b, c, (long long)head, nvec, ntail, n);
+    HIP_CHECK(hipGetLastError());
+    HIP_CHECK(hipStreamSynchronize(hipStreamDefault));
+}

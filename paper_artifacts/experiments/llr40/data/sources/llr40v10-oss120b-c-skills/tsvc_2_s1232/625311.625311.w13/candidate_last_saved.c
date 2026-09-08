@@ -1,0 +1,14 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s1232_fp64(double *restrict aa, const double *restrict bb, const double *restrict cc, const int64_t LEN_2D,
+                       const int64_t VLEN) {
+    #pragma omp parallel for schedule(static)
+    for (int64_t i = 0; i < LEN_2D; ++i) {
+        int64_t max_j = i / VLEN;
+        #pragma omp simd
+        for (int64_t j = 0; j <= max_j; ++j) {
+            aa[i * LEN_2D + j] = bb[i * LEN_2D + j] + cc[i * LEN_2D + j];
+        }
+    }
+}

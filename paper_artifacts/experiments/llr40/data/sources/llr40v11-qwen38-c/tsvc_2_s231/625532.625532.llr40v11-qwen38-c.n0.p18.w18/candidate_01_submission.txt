@@ -1,0 +1,30 @@
+#include <stdint.h>
+#include <immintrin.h>
+#include <omp.h>
+
+void tsvc_2_s231_fp64(double *restrict aa, const double *restrict bb, const int64_t LEN_2D) {
+  const int64_t N = LEN_2D;
+  if (N < 2) return;
+  #pragma omp parallel
+  {
+    const int nt = omp_get_num_threads();
+    const int tid = omp_get_thread_num();
+    const int64_t start = (N * tid) / nt;
+    const int64_t end = (N * (tid + 1)) / nt;
+    const int64_t len = end - start;
+    if (len > 0) {
+    const int64_t nv = len / 8;
+    for (int64_t j = 1; j < N; ++j) {
+      const double *a1 = aa + (j - 1) * N + start;
+      double *a2 = aa + j * N + start;
+      const double *b2 = bb + j * N + start;
+      for (int64_t m = 0; m < nv; ++m) {
+        __m512d x = _mm512_loadu_pd(a1 + m * 8);
+        __m512d y = _mm512_loadu_pd(b2 + m * 8);
+        _mm512_storeu_pd(a2 + m * 8, _mm512_add_pd(x, y));
+      }
+      for (int64_t k = nv * 8; k < len; ++k) a2[k] = a1[k] + b2[k];
+    }
+    }
+  }
+}

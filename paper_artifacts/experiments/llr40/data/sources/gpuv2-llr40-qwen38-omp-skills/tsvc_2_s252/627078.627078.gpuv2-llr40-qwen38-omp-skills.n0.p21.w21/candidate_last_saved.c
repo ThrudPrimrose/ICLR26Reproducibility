@@ -1,0 +1,28 @@
+/* TSVC tsvc_2 s252: a[i] = b[i]*c[i] + t where t carries only the PREVIOUS
+ * product (not a running sum), so for i >= 1:
+ *     a[i] = b[i]*c[i] + b[i-1]*c[i-1]
+ * which is a fully parallel, unit-stride, vectorizable loop. Peel i = 0
+ * (a[0] = b[0]*c[0], since t = 0 there). Bit-exact to the serial loop
+ * (verified: no reassociation, same op order).
+ *
+ * Big LEN: GPU. a[0] is set on the host; the device region maps only
+ * a[1:LEN] (from) so no copy-in of a is needed. Small LEN: threaded host,
+ * no transfer round trip. */
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s252_fp64(double *restrict a, const double *restrict b, const double *restrict c, const int64_t LEN_1D) {
+  if (LEN_1D <= 0) return;
+  a[0] = b[0] * c[0];
+  if (LEN_1D == 1) return;
+  if (LEN_1D >= (int64_t)1 << 20) { /* big enough to amortize the map round trip */
+    #pragma omp target teams distribute parallel for \
+        map(to: b[0:LEN_1D], c[0:LEN_1D]) map(from: a[1:LEN_1D])
+    for (int64_t i = 1; i < LEN_1D; ++i)
+      a[i] = b[i] * c[i] + b[i - 1] * c[i - 1];
+    return;
+  }
+  #pragma omp parallel for simd schedule(static)
+  for (int64_t i = 1; i < LEN_1D; ++i)
+    a[i] = b[i] * c[i] + b[i - 1] * c[i - 1];
+}

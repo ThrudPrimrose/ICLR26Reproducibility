@@ -1,0 +1,45 @@
+subroutine ext_war_unit_fp64(a, b, n, workspace, workspace_size) bind(C, name="ext_war_unit_fp64")
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  type(c_ptr), value, intent(in) :: a
+  type(c_ptr), value, intent(in) :: b
+  integer(c_int64_t), value, intent(in) :: n
+  type(c_ptr), value, intent(in) :: workspace
+  integer(c_int64_t), value, intent(in) :: workspace_size
+  real(c_double), pointer, contiguous :: pa(:)
+  real(c_double), pointer, contiguous :: pb(:)
+  integer(c_int64_t) :: i
+  integer :: nt, t
+  integer(c_int64_t) :: chunk, start_idx, end_idx
+  real(c_double), allocatable :: boundary(:)
+  call c_f_pointer(a, pa, [n])
+  call c_f_pointer(b, pb, [n])
+  if (n <= 4096_c_int64_t) then
+    do i = 1, n - 1
+      pa(i) = pa(i + 1) + pb(i)
+    end do
+  else
+    nt = omp_get_max_threads()
+    allocate(boundary(nt))
+    !$omp parallel default(none) shared(pa, pb, n, nt, boundary) private(t, chunk, start_idx, end_idx, i)
+      t = omp_get_thread_num()
+      chunk = (n - 1 + int(nt, c_int64_t) - 1) / int(nt, c_int64_t)
+      start_idx = int(t, c_int64_t) * chunk + 1
+      end_idx = min(start_idx + chunk - 1, n - 1)
+      if (start_idx <= end_idx) then
+        boundary(t + 1) = pa(end_idx + 1)
+      end if
+      !$omp barrier
+      if (start_idx <= end_idx) then
+        !$omp simd aligned(pa, pb : 64)
+        do i = start_idx, end_idx - 1
+          pa(i) = pa(i + 1) + pb(i)
+        end do
+        !$omp end simd
+        pa(end_idx) = boundary(t + 1) + pb(end_idx)
+      end if
+    !$omp end parallel
+    deallocate(boundary)
+  end if
+end subroutine ext_war_unit_fp64

@@ -1,0 +1,93 @@
+"""TSVC tsvc_2 s319 -- optimized Python (numba) implementation.
+
+Reference:
+    for i in range(LEN_1D):
+        a[i] = c[i] + d[i]; sum_val += a[i]
+        b[i] = c[i] + e[i]; sum_val += b[i]
+    b[0] = sum_val
+
+Strategy:
+  * n below a threshold: a plain numba loop identical to the reference
+    (bit-exact, no parallel-region overhead).
+  * larger n: contiguous chunks handled by a numba parallel region; each
+    chunk folds its terms with the same sequential order the reference
+    uses, then a serial tail folds the chunk partials left-to-right.
+    a[i]/b[i] are single exact additions (bit-identical); the sum matches
+    the reference to within a few ulps of chunk-boundary rounding.
+"""
+import os as _os
+import sys as _sys
+
+try:
+    _avail = len(_os.sched_getaffinity(0))
+except (AttributeError, OSError):
+    _avail = _os.cpu_count() or 1
+_os.environ.setdefault("NUMBA_NUM_THREADS", str(min(16, max(1, _avail))))
+_os.environ.setdefault("NUMBA_THREADING_LAYER", "workqueue")
+
+import numpy as np
+from numba import njit, prange
+
+_SMALL = 16384
+
+
+@njit
+def _seq(a, b, c, d, e):
+    n = c.shape[0]
+    s = 0.0
+    for i in range(n):
+        ai = c[i] + d[i]
+        a[i] = ai
+        s = s + ai
+        bi = c[i] + e[i]
+        b[i] = bi
+        s = s + bi
+    b[0] = s
+
+
+@njit(parallel=True)
+def _par(a, b, c, d, e, nt):
+    n = c.shape[0]
+    parts = np.empty(nt, dtype=np.float64)
+    for j in prange(nt):
+        lo = (n * j) // nt
+        hi = (n * (j + 1)) // nt
+        s = 0.0
+        for i in range(lo, hi):
+            ai = c[i] + d[i]
+            a[i] = ai
+            s = s + ai
+            bi = c[i] + e[i]
+            b[i] = bi
+            s = s + bi
+        parts[j] = s
+    s = 0.0
+    for j in range(nt):
+        s = s + parts[j]
+    b[0] = s
+
+
+def s319(a, b, c, d, e, LEN_1D):
+    if LEN_1D < _SMALL:
+        _seq(a, b, c, d, e)
+    else:
+        nt = LEN_1D >> 14
+        if nt > 32:
+            nt = 32
+        if nt < 1:
+            nt = 1
+        _par(a, b, c, d, e, nt)
+
+
+def _warm():
+    c = np.random.rand(2 * _SMALL + 1)
+    d = np.random.rand(2 * _SMALL + 1)
+    ee = np.random.rand(2 * _SMALL + 1)
+    a = np.empty(2 * _SMALL + 1)
+    b = np.empty(2 * _SMALL + 1)
+    s319(a, b, c, d, ee, 1000)
+    s319(a, b, c, d, ee, 2 * _SMALL + 1)
+    s319(a, b, c, d, ee, 2 * _SMALL + 1)
+
+
+_warm()

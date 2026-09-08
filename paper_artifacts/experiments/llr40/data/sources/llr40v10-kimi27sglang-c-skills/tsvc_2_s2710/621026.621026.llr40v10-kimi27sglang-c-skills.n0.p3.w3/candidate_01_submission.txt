@@ -1,0 +1,28 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s2710_fp64(double *restrict a, double *restrict b, double *restrict c, const double *restrict d,
+                       const double *restrict e, const double *restrict x, const int64_t LEN_1D) {
+
+  const int len_gt_10 = LEN_1D > 10;
+  const int x_pos = x[0] > 0.0;
+
+  #pragma omp parallel for simd schedule(static)
+  for (int64_t i = 0; i < LEN_1D; ++i) {
+    const double ai = a[i];
+    const double bi = b[i];
+    const double di = d[i];
+    const double ei = e[i];
+    const int cond = ai > bi;
+
+    const double a_upd = ai + bi * di;
+    const double b_upd = ai + ei * ei;
+
+    a[i] = cond ? a_upd : ai;
+    b[i] = cond ? bi : b_upd;
+
+    const double c1 = len_gt_10 ? (c[i] + di * di) : (di * ei + 1.0);
+    const double c2 = x_pos ? (ai + di * di) : (c[i] + ei * ei);
+    c[i] = cond ? c1 : c2;
+  }
+}

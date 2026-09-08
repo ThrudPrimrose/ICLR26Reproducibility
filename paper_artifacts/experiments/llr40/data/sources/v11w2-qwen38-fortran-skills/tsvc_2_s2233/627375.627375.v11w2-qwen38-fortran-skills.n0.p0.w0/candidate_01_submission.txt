@@ -1,0 +1,26 @@
+subroutine tsvc_2_s2233_fp64(aa, bb, cc, len_2d) bind(C)
+  use iso_c_binding
+  integer(c_int64_t), value, intent(in) :: len_2d
+  real(c_double), intent(inout) :: aa(len_2d, len_2d)
+  real(c_double), intent(inout) :: bb(len_2d, len_2d)
+  real(c_double), intent(in)    :: cc(len_2d, len_2d)
+  integer(c_int64_t) :: n, i, j
+  real(c_double) :: ra, rb, cv
+
+  n = len_2d
+  if (n < 9) return
+
+  !$omp parallel do schedule(static)
+  do i = 9, n
+    ra = aa(i, 8)
+    rb = bb(i, 8)
+    do j = 9, n
+      cv = cc(i, j)
+      ra = ra + cv
+      aa(i, j) = ra
+      rb = rb + cv
+      bb(i, j) = rb
+    end do
+  end do
+
+end subroutine tsvc_2_s2233_fp64

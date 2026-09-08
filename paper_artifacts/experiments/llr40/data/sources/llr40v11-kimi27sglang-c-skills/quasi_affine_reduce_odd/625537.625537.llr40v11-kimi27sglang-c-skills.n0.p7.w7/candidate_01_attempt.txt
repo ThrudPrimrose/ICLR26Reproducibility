@@ -1,0 +1,12 @@
+#include <stdint.h>
+#include <omp.h>
+
+void quasi_affine_reduce_odd_fp64(const double *restrict a, double *restrict out, const int64_t LEN_1D) {
+    double acc = 0.0;
+    const int64_t n = (LEN_1D - 1) >> 1;
+    #pragma omp parallel for simd reduction(+:acc) schedule(static)
+    for (int64_t j = 0; j < n; j++) {
+        acc += a[2 * j + 1];
+    }
+    out[0] = acc;
+}

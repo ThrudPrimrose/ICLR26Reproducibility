@@ -1,0 +1,75 @@
+"""Optimized ``fuse_move_ifs`` (TSVC tsvc_2_5) for the python arm.
+
+Reference semantics:
+    for i in range(LEN_2D):
+        if cond[i] > 0.0:
+            for j in range(LEN_2D):
+                a[i, j] = src[i, j] * 2.0
+    if K > 0:
+        for i in range(LEN_2D):
+            for j in range(LEN_2D):
+                b[i, j] = src[i, j] + 1.0
+
+Why this beats the numba baseline: the baseline parallelizes only the first
+nest (the ``b`` nest is a serial loop); here both writes live in ONE fused
+``prange`` over rows, each row of ``src`` is loaded once from memory and fed
+to both stores, so the whole kernel is parallel and at minimum DRAM traffic
+(one read of src + writes of a(masked rows) and b).
+"""
+
+import numba as nb
+import numpy as np
+
+
+@nb.njit(parallel=True, nogil=True, fastmath=False, cache=False)
+def _fuse(a, b, src, cond, n, K):
+    if K > 0:
+        for i in nb.prange(n):
+            s = src[i]
+            bo = b[i]
+            if cond[i] > 0.0:
+                ao = a[i]
+                for j in range(n):
+                    v = s[j]
+                    ao[j] = v * 2.0
+                    bo[j] = v + 1.0
+            else:
+                for j in range(n):
+                    bo[j] = s[j] + 1.0
+    else:
+        for i in nb.prange(n):
+            if cond[i] > 0.0:
+                s = src[i]
+                ao = a[i]
+                for j in range(n):
+                    ao[j] = s[j] * 2.0
+
+
+def _pick_threads():
+    try:
+        ncpu = len(os_sga(0))
+    except Exception:
+        ncpu = 0
+    if ncpu <= 0:
+        return nb.get_num_threads()
+    return max(1, min(ncpu, nb.get_num_threads()))
+
+
+def _warmup():
+    # Compile both K-branch specializations before the measurement clock
+    # starts (module import is untimed); the warmup rep is discarded too.
+    n = 257
+    zz = np.zeros((n, n), dtype=np.float64)
+    c = np.zeros(n, dtype=np.float64)
+    _fuse(zz, zz, zz, c, n, 1)
+    _fuse(zz, zz, zz, c, n, -1)
+
+
+def fuse_move_ifs(a, b, src, cond, LEN_2D, K):
+    _fuse(a, b, src, cond, LEN_2D, K)
+    return None
+
+
+os_sga = __import__("os").sched_getaffinity
+nb.set_num_threads(_pick_threads())
+_warmup()

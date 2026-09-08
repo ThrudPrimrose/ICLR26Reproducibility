@@ -1,0 +1,100 @@
+#include <cstdint>
+extern "C" void tsvc_2_s3112_scan(const double *a, double *b, int64_t n);
+extern "C" void tsvc_2_s3112_fp64(const double *a, double *b, int64_t n) {
+  tsvc_2_s3112_scan(a, b, n);
+}
+// Device half: kernels + host launcher for fp64 inclusive scan (TSVC s3112)
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+
+#define TB 256                 // threads per block
+#define V  8                   // elements per thread
+#define CH (TB * V)            // 2048 elements per block
+
+#define HIP_CHECK(e) do { hipError_t _e = (e); if (_e != hipSuccess) { \
+  printf("HIP error %s at %s:%d\n", hipGetErrorString(_e), __FILE__, __LINE__); \
+  abort(); } } while (0)
+
+__device__ __forceinline__ void block_inclusive_scan(double &x, int tid, double *lsm) {
+  const int W  = warpSize;          // runtime: 64 on CDNA
+  const int NW = TB / W;
+  #pragma unroll
+  for (int o = 1; o < W; o <<= 1) {
+    double y = __shfl_up(x, o, W);
+    if ((tid & (W - 1)) >= o) x += y;
+  }
+  if ((tid & (W - 1)) == W - 1) lsm[tid / W] = x;   // inclusive wave sum
+  __syncthreads();
+  if (tid == 0) {
+    double p = 0.0;
+    #pragma unroll
+    for (int w = 0; w < NW; ++w) { double t = lsm[w]; lsm[w] = p; p += t; }
+  }
+  __syncthreads();
+  x += lsm[tid / W];
+}
+
+__global__ void __launch_bounds__(TB) k_block_scan(
+    const double * __restrict__ a, double * __restrict__ b,
+    double * __restrict__ bsum, const int64_t n) {
+  __shared__ double lsm[8];
+  const int t = threadIdx.x;
+  const int64_t base = (int64_t)blockIdx.x * CH + (int64_t)t * V;
+  double v[V];
+  #pragma unroll
+  for (int k = 0; k < V; ++k) v[k] = (base + k < n) ? a[base + k] : 0.0;
+  #pragma unroll
+  for (int k = 1; k < V; ++k) v[k] += v[k - 1];
+  double last = v[V - 1];
+  block_inclusive_scan(last, t, lsm);
+  const double pre = last - v[V - 1];
+  #pragma unroll
+  for (int k = 0; k < V; ++k)
+    if (base + k < n) b[base + k] = v[k] + pre;
+  if (t == TB - 1) bsum[blockIdx.x] = last;
+}
+
+__global__ void __launch_bounds__(TB) k_scan_bsums(
+    const double * __restrict__ bsum, double * __restrict__ prefix, const int B) {
+  __shared__ double lsm[8];
+  const int t = threadIdx.x;
+  const int64_t K = (int64_t)((B + TB - 1) / TB);
+  const int64_t lo = (int64_t)t * K;
+  const int64_t hi = lo + K < B ? lo + K : B;
+  double s = 0.0;
+  for (int64_t i = lo; i < hi; ++i) s += bsum[i];
+  double last = s;
+  block_inclusive_scan(last, t, lsm);
+  double acc = last - s;   // exclusive thread prefix
+  double run = 0.0;
+  for (int64_t i = lo; i < hi; ++i) { prefix[i] = acc + run; run += bsum[i]; }
+}
+
+__global__ void __launch_bounds__(TB) k_add_prefix(
+    double * __restrict__ b, const double * __restrict__ prefix, const int64_t n) {
+  const int64_t stride = (int64_t)gridDim.x * TB;
+  for (int64_t i = (int64_t)blockIdx.x * TB + threadIdx.x; i < n; i += stride)
+    b[i] += prefix[i / CH];
+}
+
+// host launcher (lives in device translation unit, called by host half)
+extern "C" void tsvc_2_s3112_scan(const double *a, double *b, int64_t n) {
+  if (n <= 0) return;
+  const int B = (int)((n + CH - 1) / CH);
+  static double *bsum = nullptr, *prefix = nullptr;
+  static int cap = 0;
+  if (B > cap) {
+    if (bsum) { hipFree(bsum); hipFree(prefix); }
+    HIP_CHECK(hipMalloc((void **)&bsum, sizeof(double) * (size_t)B));
+    HIP_CHECK(hipMalloc((void **)&prefix, sizeof(double) * (size_t)B));
+    cap = B;
+  }
+  k_block_scan<<<B, TB>>>(a, b, bsum, n);
+  HIP_CHECK(hipGetLastError());
+  k_scan_bsums<<<1, TB>>>(bsum, prefix, B);
+  HIP_CHECK(hipGetLastError());
+  k_add_prefix<<<B, TB>>>(b, prefix, n);
+  HIP_CHECK(hipGetLastError());
+  HIP_CHECK(hipDeviceSynchronize());
+}

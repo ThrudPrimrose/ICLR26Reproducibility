@@ -1,0 +1,50 @@
+subroutine tsvc_2_s323_fp64(a, b, c, d, e, LEN_1D) bind(C)
+  use iso_c_binding, only: c_double, c_int64_t
+  use omp_lib, only: omp_get_max_threads, omp_get_thread_num
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D
+  real(c_double), intent(inout) :: a(LEN_1D), b(LEN_1D)
+  real(c_double), intent(in) :: c(LEN_1D), d(LEN_1D), e(LEN_1D)
+  integer(c_int64_t) :: i, lo, hi, m
+  integer :: t, nt
+  real(c_double) :: run, cd, ce, b0
+  real(c_double) :: part(0:2)
+
+  if (LEN_1D < 2) return
+
+  nt = min(omp_get_max_threads(), 2)
+  part = 0.0d0
+  b0 = b(1)
+  m = LEN_1D - 1
+
+  !$omp parallel private(t, lo, hi, i, run, cd, ce) num_threads(nt)
+  t = omp_get_thread_num()
+  lo = 2_c_int64_t + (m * int(t, c_int64_t)) / int(nt, c_int64_t)
+  hi = 1_c_int64_t + (m * int(t + 1, c_int64_t)) / int(nt, c_int64_t)
+
+  run = 0.0d0
+  do i = lo, hi
+    cd = c(i) * d(i)
+    ce = c(i) * e(i)
+    run = run + cd + ce
+  end do
+  part(t + 1) = run
+
+  !$omp barrier
+
+  !$omp single
+  do i = 1, nt
+    part(i) = part(i) + part(i - 1)
+  end do
+  !$omp end single
+
+  run = b0 + part(t)
+  do i = lo, hi
+    cd = c(i) * d(i)
+    ce = c(i) * e(i)
+    a(i) = run + cd
+    run = a(i) + ce
+    b(i) = run
+  end do
+  !$omp end parallel
+end subroutine tsvc_2_s323_fp64

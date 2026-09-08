@@ -1,0 +1,41 @@
+#include <stdint.h>
+#include <immintrin.h>
+
+void tsvc_2_s252_fp64(double *restrict a, const double *restrict b, const double *restrict c, const int64_t LEN_1D) {
+    int64_t i = 0;
+    double prev = 0.0;
+
+    for (; i < LEN_1D && ((uintptr_t)&a[i] & 63) != 0; ++i) {
+        double s = b[i] * c[i];
+        a[i] = s + prev;
+        prev = s;
+    }
+
+    __m512d vprev = _mm512_set1_pd(prev);
+
+    for (; i + 8 <= LEN_1D; i += 8) {
+        __m512d vb = _mm512_loadu_pd(&b[i]);
+        __m512d vc = _mm512_loadu_pd(&c[i]);
+        __m512d s  = _mm512_mul_pd(vb, vc);
+
+        // rotated = [s7, s0, s1, s2, s3, s4, s5, s6]
+        __m512d rotated = _mm512_castsi512_pd(_mm512_alignr_epi64(
+            _mm512_castpd_si512(s), _mm512_castpd_si512(s), 7));
+        // shifted = [prev, s0, s1, s2, s3, s4, s5, s6]
+        __m512d shifted = _mm512_mask_blend_pd(0x01, rotated, vprev);
+
+        __m512d va = _mm512_add_pd(s, shifted);
+        _mm512_stream_pd(&a[i], va);
+
+        vprev = _mm512_permutexvar_pd(_mm512_set1_epi64(7), s);
+    }
+
+    prev = _mm512_cvtsd_f64(vprev);
+    for (; i < LEN_1D; ++i) {
+        double s = b[i] * c[i];
+        a[i] = s + prev;
+        prev = s;
+    }
+
+    _mm_sfence();
+}

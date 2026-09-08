@@ -1,0 +1,46 @@
+import numpy as np
+from concurrent.futures import ThreadPoolExecutor
+from numba import njit
+
+
+@njit(fastmath=True)
+def _min1(a, n):
+    x = a[0]
+    for i in range(1, n):
+        if a[i] < x:
+            x = a[i]
+    return x
+
+
+_NT = 24
+_pool = ThreadPoolExecutor(max_workers=_NT)
+_parts = np.empty(_NT, np.float64)
+
+
+def _minp(a, n):
+    nt = _NT
+    ch = (n + nt - 1) // nt
+    def f(i):
+        lo = i * ch
+        hi = n if lo + ch > n else lo + ch
+        _parts[i] = np.min(a[lo:hi]) if lo < hi else np.inf
+    list(_pool.map(f, range(nt)))
+    return float(np.min(_parts))
+
+
+_w = np.arange(1 << 16, dtype=np.float64)
+for _ in range(3):
+    _min1(_w, _w.shape[0])
+    _minp(_w, _w.shape[0])
+
+_SMALL = 1 << 20
+
+
+def s316(a, result, LEN_1D):
+    n = int(LEN_1D)
+    if n <= _SMALL:
+        x = _min1(a, n) if n > 1 else a[0]
+    else:
+        x = _minp(a, n)
+    result[0] = x
+    return None

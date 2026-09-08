@@ -1,0 +1,115 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <math.h>
+
+namespace tsvc {
+
+__device__ __forceinline__ void combine2(double &v, long long &i, double v2, long long i2) {
+  if (v2 > v) { v = v2; i = i2; }
+  else if (v2 == v && i2 < i) { i = i2; }
+}
+
+// block reduction over (sV,sI)
+template <int NB>
+__device__ __forceinline__ void blockReduce(double *sV, long long *sI) {
+  __syncthreads();
+  for (int s = NB / 2; s > 0; s >>= 1) {
+    if (threadIdx.x < s)
+      combine2(sV[threadIdx.x], sI[threadIdx.x], sV[threadIdx.x + s], sI[threadIdx.x + s]);
+    __syncthreads();
+  }
+}
+
+// vectorized contiguous argmax over |a[i]|
+template <int V, int NB>
+__global__ void k1(const double *__restrict__ a, long long N,
+                   double *__restrict__ pV, long long *__restrict__ pI) {
+  double lv = -1.0;
+  long long li = N;
+  long long nvec = N / V;
+  long long total = (long long)NB * gridDim.x;
+  long long tid = (long long)blockIdx.x * NB + threadIdx.x;
+  const double4 *a4 = reinterpret_cast<const double4 *>(a);
+  if (V >= 4) {
+    for (long long j = tid; j < nvec; j += total) {
+      double4 x = a4[j];
+      double v0 = fabs(x.x), v1 = fabs(x.y), v2 = fabs(x.z), v3 = fabs(x.w);
+      double best = v0; int bo = 0;
+      if (v1 > best) { best = v1; bo = 1; }
+      if (v2 > best) { best = v2; bo = 2; }
+      if (v3 > best) { best = v3; bo = 3; }
+      if (best > lv) { lv = best; li = j * V + bo; }
+    }
+  } else {
+    const double2 *a2 = reinterpret_cast<const double2 *>(a);
+    for (long long j = tid; j < nvec; j += total) {
+      double2 x = a2[j];
+      double v0 = fabs(x.x), v1 = fabs(x.y);
+      double best = v0; int bo = 0;
+      if (v1 > best) { best = v1; bo = 1; }
+      if (best > lv) { lv = best; li = j * V + bo; }
+    }
+  }
+  // tail
+  long long base = nvec * V;
+  if (tid < (N - base)) combine2(lv, li, fabs(a[base + tid]), base + tid);
+
+  __shared__ double sV[NB];
+  __shared__ long long sI[NB];
+  sV[threadIdx.x] = lv;
+  sI[threadIdx.x] = li;
+  blockReduce<NB>(sV, sI);
+  if (threadIdx.x == 0) { pV[blockIdx.x] = sV[0]; pI[blockIdx.x] = sI[0]; }
+}
+
+
+// scalar strided fallback (general inc)
+template <int NB>
+__global__ void k1s(const double *__restrict__ a, long long N, long long inc,
+                    double *__restrict__ pV, long long *__restrict__ pI) {
+  double lv = -1.0; long long li = N;
+  long long total = (long long)NB * gridDim.x;
+  for (long long gid = (long long)blockIdx.x * NB + threadIdx.x; gid < N; gid += total) {
+    double v = fabs(a[gid * inc]);
+    if (v > lv) { lv = v; li = gid; }
+  }
+  __shared__ double sV[NB]; __shared__ long long sI[NB];
+  sV[threadIdx.x] = lv; sI[threadIdx.x] = li;
+  blockReduce<NB>(sV, sI);
+  if (threadIdx.x == 0) { pV[blockIdx.x] = sV[0]; pI[blockIdx.x] = sI[0]; }
+}
+
+__global__ void k2(const double *__restrict__ pV, const long long *__restrict__ pI, int n,
+                   double *__restrict__ result) {
+  const int NB = 256;
+  double lv = -1.0;
+  long long li = (long long)n;
+  for (int j = threadIdx.x; j < n; j += NB) combine2(lv, li, pV[j], pI[j]);
+  __shared__ double sV[NB];
+  __shared__ long long sI[NB];
+  sV[threadIdx.x] = lv;
+  sI[threadIdx.x] = li;
+  blockReduce<NB>(sV, sI);
+  if (threadIdx.x == 0) result[0] = sV[0] + (double)sI[0];
+}
+
+void launch(const double *a, double *result, long long LEN_1D, long long inc,
+            double *wV, long long *wI) {
+  const int NB = 256;
+  const long long cap = 2048;
+  if (inc != 1) {
+    long long want = (LEN_1D + NB - 1) / NB;
+    int blocks = (int)(want < cap ? want : cap); if (blocks < 1) blocks = 1;
+    k1s<NB><<<blocks, NB>>>(a, LEN_1D, inc, wV, wI);
+    k2<<<1, NB>>>(wV, wI, blocks, result);
+    return;
+  }
+  const int V = 4;
+  long long nvec = LEN_1D / V;
+  long long want = (nvec + NB - 1) / NB;
+  int blocks = (int)(want < cap ? want : cap); if (blocks < 1) blocks = 1;
+  k1<V, NB><<<blocks, NB>>>(a, LEN_1D, wV, wI);
+  k2<<<1, NB>>>(wV, wI, blocks, result);
+}
+
+} // namespace tsvc

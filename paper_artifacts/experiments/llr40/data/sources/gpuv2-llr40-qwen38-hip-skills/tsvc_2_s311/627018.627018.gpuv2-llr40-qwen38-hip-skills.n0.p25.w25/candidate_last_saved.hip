@@ -1,0 +1,86 @@
+// TSVC tsvc_2 s311: sum of LEN_1D doubles -> sum_out[0]
+// HIP two-stage device reduction: per-workgroup partials (deterministic tree),
+// then one workgroup sums partials in fixed order -> bit-reproducible.
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define HIP_CHECK(expr)                                                      \
+  do {                                                                       \
+    hipError_t _e = (expr);                                                  \
+    if (_e != hipSuccess) {                                                  \
+      std::fprintf(stderr, "HIP error %s:%d %s\n", __FILE__, __LINE__,       \
+                   hipGetErrorString(_e));                                   \
+      std::abort();                                                          \
+    }                                                                        \
+  } while (0)
+
+static constexpr int BLOCK = 512;
+
+__global__ void __launch_bounds__(BLOCK)
+k_reduce(const double* __restrict__ a, double* __restrict__ partials,
+         const int64_t n, const int warpSize) {
+  const int64_t stride = (int64_t)gridDim.x * BLOCK;
+  int64_t i = (int64_t)blockIdx.x * BLOCK + threadIdx.x;
+  double s = 0.0;
+  for (; i < n; i += stride) s += a[i];
+  const int lane = threadIdx.x & (warpSize - 1);
+  for (int off = warpSize / 2; off > 0; off >>= 1)
+    s += __shfl_down(s, off, warpSize);
+  __shared__ double smem[BLOCK / 32];
+  const int wid = threadIdx.x / warpSize;
+  if (lane == 0) smem[wid] = s;
+  __syncthreads();
+  if (threadIdx.x == 0) {
+    double t = 0.0;
+    const int nw = (BLOCK + warpSize - 1) / warpSize;
+    for (int w = 0; w < nw; ++w) t += smem[w];
+    partials[blockIdx.x] = t;
+  }
+}
+
+__global__ void __launch_bounds__(BLOCK)
+k_final(const double* __restrict__ partials, double* __restrict__ sum_out,
+        const int64_t npart, const int warpSize) {
+  double s = 0.0;
+  for (int64_t i = threadIdx.x; i < npart; i += BLOCK) s += partials[i];
+  const int lane = threadIdx.x & (warpSize - 1);
+  for (int off = warpSize / 2; off > 0; off >>= 1)
+    s += __shfl_down(s, off, warpSize);
+  __shared__ double smem[BLOCK / 32];
+  const int wid = threadIdx.x / warpSize;
+  if (lane == 0) smem[wid] = s;
+  __syncthreads();
+  if (threadIdx.x == 0) {
+    double t = 0.0;
+    const int nw = (BLOCK + warpSize - 1) / warpSize;
+    for (int w = 0; w < nw; ++w) t += smem[w];
+    sum_out[0] = t;
+  }
+}
+
+extern "C" void tsvc_2_s311_fp64(const double* __restrict__ a,
+                                 double* __restrict__ sum_out,
+                                 const int64_t n) {
+  static double* d_partials = nullptr;
+  static int nblocks = 0;
+  static int warpSize = 32;
+  if (!d_partials) {
+    int cu = 0;
+    HIP_CHECK(hipDeviceGetAttribute(&cu, hipDeviceAttributeMultiprocessorCount,
+                                    0));
+    if (cu < 1) cu = 1;
+    nblocks = cu * 16;
+    hipDeviceProp_t prop;
+    HIP_CHECK(hipGetDeviceProperties(&prop, 0));
+    warpSize = prop.warpSize;
+    HIP_CHECK(hipMalloc(&d_partials, (size_t)nblocks * sizeof(double)));
+  }
+  const int64_t grid = nblocks;
+  k_reduce<<<grid, BLOCK, 0, hipStreamDefault>>>(a, d_partials, n, warpSize);
+  HIP_CHECK(hipGetLastError());
+  k_final<<<1, BLOCK, 0, hipStreamDefault>>>(d_partials, sum_out, nblocks,
+                                             warpSize);
+  HIP_CHECK(hipGetLastError());
+}

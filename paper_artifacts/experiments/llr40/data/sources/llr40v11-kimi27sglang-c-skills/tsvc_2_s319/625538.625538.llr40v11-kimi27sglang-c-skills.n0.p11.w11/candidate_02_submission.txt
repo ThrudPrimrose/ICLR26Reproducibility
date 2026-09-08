@@ -1,0 +1,79 @@
+#include <stdint.h>
+#include <immintrin.h>
+#include <omp.h>
+
+static inline double hsum256(__m256d v) {
+    __m128d lo = _mm256_castpd256_pd128(v);
+    __m128d hi = _mm256_extractf128_pd(v, 1);
+    __m128d s = _mm_add_pd(lo, hi);
+    __m128d h = _mm_hadd_pd(s, s);
+    return _mm_cvtsd_f64(h);
+}
+
+void tsvc_2_s319_fp64(double *restrict a, double *restrict b,
+                      const double *restrict c, const double *restrict d,
+                      const double *restrict e, const int64_t LEN_1D) {
+    double sum = 0.0;
+
+    if (LEN_1D > 16 &&
+        (((uintptr_t)a) & 31) == (((uintptr_t)b) & 31)) {
+
+        int64_t i = 0;
+        /* scalar peel until a and b are 32-byte aligned */
+        while (i < LEN_1D &&
+               ((((uintptr_t)(a + i)) & 31) || (((uintptr_t)(b + i)) & 31))) {
+            double ci = c[i];
+            double ai = ci + d[i];
+            double bi = ci + e[i];
+            a[i] = ai;
+            b[i] = bi;
+            sum += ai + bi;
+            ++i;
+        }
+
+        int64_t simd_end = i + ((LEN_1D - i) / 4) * 4;
+        __m256d vsum = _mm256_setzero_pd();
+
+        #pragma omp parallel shared(i, simd_end, a, b, c, d, e) reduction(+:sum)
+        {
+            __m256d tsum = _mm256_setzero_pd();
+
+            #pragma omp for schedule(static)
+            for (int64_t j = i; j < simd_end; j += 4) {
+                __m256d cv = _mm256_loadu_pd(c + j);
+                __m256d av = _mm256_add_pd(cv, _mm256_loadu_pd(d + j));
+                __m256d bv = _mm256_add_pd(cv, _mm256_loadu_pd(e + j));
+                _mm256_stream_pd(a + j, av);
+                _mm256_stream_pd(b + j, bv);
+                tsum = _mm256_add_pd(tsum, _mm256_add_pd(av, bv));
+            }
+
+            #pragma omp critical
+            vsum = _mm256_add_pd(vsum, tsum);
+        }
+
+        sum += hsum256(vsum);
+        _mm_sfence();
+
+        for (int64_t j = simd_end; j < LEN_1D; ++j) {
+            double cj = c[j];
+            double aj = cj + d[j];
+            double bj = cj + e[j];
+            a[j] = aj;
+            b[j] = bj;
+            sum += aj + bj;
+        }
+    } else {
+        #pragma omp parallel for reduction(+:sum) schedule(static)
+        for (int64_t i = 0; i < LEN_1D; ++i) {
+            double ci = c[i];
+            double ai = ci + d[i];
+            double bi = ci + e[i];
+            a[i] = ai;
+            b[i] = bi;
+            sum += ai + bi;
+        }
+    }
+
+    b[0] = sum;
+}

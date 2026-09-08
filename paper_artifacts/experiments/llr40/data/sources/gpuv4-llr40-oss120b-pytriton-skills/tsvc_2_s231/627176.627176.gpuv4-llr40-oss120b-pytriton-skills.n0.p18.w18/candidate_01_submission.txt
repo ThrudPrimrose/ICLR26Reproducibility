@@ -1,0 +1,38 @@
+import numpy as np
+import numba
+
+# Numba JIT compiled kernel: parallel across columns (i index).
+# The kernel updates aa in-place; aa and bb are expected to be 2D arrays of the same shape.
+
+@numba.njit(parallel=True, fastmath=True)
+def _s231_numba(aa, bb, LEN_2D):
+    # Parallel loop over columns i.
+    for i in numba.prange(LEN_2D):
+        for j in range(1, LEN_2D):
+            aa[j, i] = aa[j - 1, i] + bb[j, i]
+    # No return, aa modified directly.
+
+# Pre‑compile for common dtypes to avoid JIT cost during timed call.
+# Compile for int64 and float32 (covers typical integer and float cases).
+_dummy_int = np.empty((1, 1), dtype=np.int64)
+_dummy_float = np.empty((1, 1), dtype=np.float32)
+# The calls below trigger compilation; their results are discarded.
+_s231_numba(_dummy_int, _dummy_int, 1)
+_s231_numba(_dummy_float, _dummy_float, 1)
+
+def s231(aa, bb, LEN_2D):
+    """In‑place prefix‑sum kernel using a Numba‑compiled parallel loop.
+
+    Parameters
+    ----------
+    aa : ndarray
+        Input/output array of shape (LEN_2D, LEN_2D). ``aa[0, :]`` is left unchanged;
+        ``aa[1:, :]`` is updated according to the reference loop.
+    bb : ndarray
+        Input array of the same shape.
+    LEN_2D : int
+        Size of the square dimensions.
+    """
+    # Directly call the compiled kernel.
+    _s231_numba(aa, bb, LEN_2D)
+    return None

@@ -1,0 +1,187 @@
+#include <stdint.h>
+#include <omp.h>
+#include <immintrin.h>
+
+/* TSVC s2710, fp64.
+ *   if (a[i] > b[i]) { a[i] += b[i]*d[i];  LEN>10 ? c[i]+=d[i]*d[i] : c[i]=d[i]*e[i]+1.0; }
+ *   else             { b[i]  = a[i]+e[i]*e[i]; x[0]>0 ? c[i]=a[i]+d[i]*d[i] : c[i]+=e[i]*e[i]; }
+ * Element-independent: AVX-512 mask arithmetic, 48 threads, contiguous aligned chunks.
+ * c is always fully written -> non-temporal full-line stores (32B-aligned), sfenced.
+ */
+
+static inline void body_xpos(double *restrict a, double *restrict b, double *restrict c,
+                             const double *restrict d, const double *restrict e, int64_t i) {
+  __m512d va = _mm512_loadu_pd(a + i);
+  __m512d vb = _mm512_loadu_pd(b + i);
+  __m512d vc = _mm512_loadu_pd(c + i);
+  __m512d vd = _mm512_loadu_pd(d + i);
+  __m512d ve = _mm512_loadu_pd(e + i);
+  __mmask16 m = _mm512_cmp_pd_mask(va, vb, _CMP_GT_OQ);
+  __m512d ee = _mm512_mul_pd(ve, ve);
+  __m512d dd = _mm512_mul_pd(vd, vd);
+  __m512d badd = _mm512_add_pd(va, ee);                            /* a + e*e on old a */
+  __m512d cadd = _mm512_add_pd(va, dd);                            /* a + d*d on old a */
+  __m512d bd = _mm512_mul_pd(vb, vd);
+  va = _mm512_mask_add_pd(va, m, va, bd);                          /* a += (m) b*d */
+  vb = _mm512_mask_mov_pd(vb, m ^ 0xFFFFu, badd);                  /* b = (~m) (a+e*e) */
+  vc = _mm512_mask_blend_pd(m, cadd, _mm512_add_pd(vc, dd));       /* m ? c+d*d : a+d*d */
+  _mm512_storeu_pd(a + i, va);
+  _mm512_storeu_pd(b + i, vb);
+  __m512i vci = _mm512_castpd_si512(vc);
+  _mm256_stream_pd(c + i,     _mm256_castsi256_pd(_mm512_castsi512_si256(vci)));
+  _mm256_stream_pd(c + i + 4, _mm256_castsi256_pd(_mm512_extracti64x4_epi64(vci, 1)));
+}
+
+static inline void body_xneg(double *restrict a, double *restrict b, double *restrict c,
+                             const double *restrict d, const double *restrict e, int64_t i) {
+  __m512d va = _mm512_loadu_pd(a + i);
+  __m512d vb = _mm512_loadu_pd(b + i);
+  __m512d vc = _mm512_loadu_pd(c + i);
+  __m512d vd = _mm512_loadu_pd(d + i);
+  __m512d ve = _mm512_loadu_pd(e + i);
+  __mmask16 m = _mm512_cmp_pd_mask(va, vb, _CMP_GT_OQ);
+  __m512d ee = _mm512_mul_pd(ve, ve);
+  __m512d dd = _mm512_mul_pd(vd, vd);
+  __m512d badd = _mm512_add_pd(va, ee);                            /* a + e*e on old a */
+  __m512d bd = _mm512_mul_pd(vb, vd);
+  va = _mm512_mask_add_pd(va, m, va, bd);                          /* a += (m) b*d */
+  vb = _mm512_mask_mov_pd(vb, m ^ 0xFFFFu, badd);                  /* b = (~m) (a+e*e) */
+  vc = _mm512_add_pd(vc, _mm512_mask_blend_pd(m, ee, dd));         /* c += m ? d*d : e*e */
+  _mm512_storeu_pd(a + i, va);
+  _mm512_storeu_pd(b + i, vb);
+  __m512i vci = _mm512_castpd_si512(vc);
+  _mm256_stream_pd(c + i,     _mm256_castsi256_pd(_mm512_castsi512_si256(vci)));
+  _mm256_stream_pd(c + i + 4, _mm256_castsi256_pd(_mm512_extracti64x4_epi64(vci, 1)));
+}
+
+/* plain-store fallbacks (c not 32B-aligned: NT stores would fault) */
+static inline void body_xpos_nn(double *restrict a, double *restrict b, double *restrict c,
+                                const double *restrict d, const double *restrict e, int64_t i) {
+  __m512d va = _mm512_loadu_pd(a + i);
+  __m512d vb = _mm512_loadu_pd(b + i);
+  __m512d vc = _mm512_loadu_pd(c + i);
+  __m512d vd = _mm512_loadu_pd(d + i);
+  __m512d ve = _mm512_loadu_pd(e + i);
+  __mmask16 m = _mm512_cmp_pd_mask(va, vb, _CMP_GT_OQ);
+  __m512d ee = _mm512_mul_pd(ve, ve);
+  __m512d dd = _mm512_mul_pd(vd, vd);
+  __m512d badd = _mm512_add_pd(va, ee);
+  __m512d cadd = _mm512_add_pd(va, dd);
+  __m512d bd = _mm512_mul_pd(vb, vd);
+  va = _mm512_mask_add_pd(va, m, va, bd);
+  vb = _mm512_mask_mov_pd(vb, m ^ 0xFFFFu, badd);
+  vc = _mm512_mask_blend_pd(m, cadd, _mm512_add_pd(vc, dd));
+  _mm512_storeu_pd(a + i, va);
+  _mm512_storeu_pd(b + i, vb);
+  _mm512_storeu_pd(c + i, vc);
+}
+
+static inline void body_xneg_nn(double *restrict a, double *restrict b, double *restrict c,
+                                const double *restrict d, const double *restrict e, int64_t i) {
+  __m512d va = _mm512_loadu_pd(a + i);
+  __m512d vb = _mm512_loadu_pd(b + i);
+  __m512d vc = _mm512_loadu_pd(c + i);
+  __m512d vd = _mm512_loadu_pd(d + i);
+  __m512d ve = _mm512_loadu_pd(e + i);
+  __mmask16 m = _mm512_cmp_pd_mask(va, vb, _CMP_GT_OQ);
+  __m512d ee = _mm512_mul_pd(ve, ve);
+  __m512d dd = _mm512_mul_pd(vd, vd);
+  __m512d badd = _mm512_add_pd(va, ee);
+  __m512d bd = _mm512_mul_pd(vb, vd);
+  va = _mm512_mask_add_pd(va, m, va, bd);
+  vb = _mm512_mask_mov_pd(vb, m ^ 0xFFFFu, badd);
+  vc = _mm512_add_pd(vc, _mm512_mask_blend_pd(m, ee, dd));
+  _mm512_storeu_pd(a + i, va);
+  _mm512_storeu_pd(b + i, vb);
+  _mm512_storeu_pd(c + i, vc);
+}
+
+static inline void run_xpos(double *restrict a, double *restrict b, double *restrict c,
+                            const double *restrict d, const double *restrict e,
+                            int64_t lo, int64_t hi, int nt) {
+  if (nt) for (int64_t i = lo; i < hi; i += 8) body_xpos(a, b, c, d, e, i);
+  else    for (int64_t i = lo; i < hi; i += 8) body_xpos_nn(a, b, c, d, e, i);
+}
+
+static inline void run_xneg(double *restrict a, double *restrict b, double *restrict c,
+                            const double *restrict d, const double *restrict e,
+                            int64_t lo, int64_t hi, int nt) {
+  if (nt) for (int64_t i = lo; i < hi; i += 8) body_xneg(a, b, c, d, e, i);
+  else    for (int64_t i = lo; i < hi; i += 8) body_xneg_nn(a, b, c, d, e, i);
+}
+
+static inline void tail_scalar(double *restrict a, double *restrict b, double *restrict c,
+                               const double *restrict d, const double *restrict e,
+                               int xpos, int64_t lo, int64_t hi) {
+  for (int64_t i = lo; i < hi; ++i) {
+    if (a[i] > b[i]) {
+      a[i] += b[i] * d[i];
+      c[i] += d[i] * d[i];
+    } else {
+      b[i] = a[i] + e[i] * e[i];
+      if (xpos) c[i] = a[i] + d[i] * d[i];
+      else c[i] += e[i] * e[i];
+    }
+  }
+}
+
+void tsvc_2_s2710_fp64(double *restrict a, double *restrict b, double *restrict c,
+                       const double *restrict d, const double *restrict e,
+                       const double *restrict x, const int64_t LEN_1D) {
+  if (LEN_1D <= 10) {
+    const int xpos = x[0] > 0.0;
+    for (int64_t i = 0; i < LEN_1D; ++i) {
+      if (a[i] > b[i]) {
+        a[i] += b[i] * d[i];
+        c[i] = d[i] * e[i] + 1.0;
+      } else {
+        b[i] = a[i] + e[i] * e[i];
+        if (xpos) c[i] = a[i] + d[i] * d[i];
+        else c[i] += e[i] * e[i];
+      }
+    }
+    return;
+  }
+  const int xpos = x[0] > 0.0;
+  const int64_t n = LEN_1D;
+  const int64_t nvec = n & ~7LL;
+  if (n < 256) {
+    for (int64_t i = 0; i < n; ++i) {
+      if (a[i] > b[i]) {
+        a[i] += b[i] * d[i];
+        c[i] += d[i] * d[i];
+      } else {
+        b[i] = a[i] + e[i] * e[i];
+        if (xpos) c[i] = a[i] + d[i] * d[i];
+        else c[i] += e[i] * e[i];
+      }
+    }
+    return;
+  }
+  /* NT stores for c need 32B alignment of every touched line; chunk starts are
+   * multiples of 8 elements (64B) offsets from c, so require c 32B-aligned. */
+  const int nt64 = (((uintptr_t)c) & 31) == 0;
+  #pragma omp parallel num_threads(48)
+  {
+    const int nt = omp_get_num_threads();
+    const int tid = omp_get_thread_num();
+    const int64_t chunk = (nvec / (nt * 8)) * 8;
+    if (chunk < 8) {
+      /* nvec < nt*8: one element each, scalar */
+      if ((int64_t)tid < nvec) {
+        const int64_t i = (int64_t)tid;
+        if (a[i] > b[i]) { a[i] += b[i] * d[i]; c[i] += d[i] * d[i]; }
+        else { b[i] = a[i] + e[i] * e[i]; if (xpos) c[i] = a[i] + d[i] * d[i]; else c[i] += e[i] * e[i]; }
+      }
+      if (tid == 0) tail_scalar(a, b, c, d, e, xpos, nvec, n);
+    } else {
+      const int64_t lo = (int64_t)tid * chunk;
+      const int64_t hi = (tid == nt - 1) ? nvec : lo + chunk;
+      if (xpos) run_xpos(a, b, c, d, e, lo, hi, nt64);
+      else run_xneg(a, b, c, d, e, lo, hi, nt64);
+      if (tid == nt - 1) tail_scalar(a, b, c, d, e, xpos, nvec, n);
+    }
+    /* make NT stores to c globally visible before other threads read it */
+    if (nt64) _mm_sfence();
+  }
+}

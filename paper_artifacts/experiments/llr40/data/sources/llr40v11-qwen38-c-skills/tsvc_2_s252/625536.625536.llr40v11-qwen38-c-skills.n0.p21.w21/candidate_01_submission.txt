@@ -1,0 +1,29 @@
+#include <stdint.h>
+#include <omp.h>
+
+/*
+ * Reference:
+ *   t = 0.0
+ *   for i in 0..LEN_1D-1:  s = b[i]*c[i]; a[i] = s + t; t = s
+ *
+ * The carry is only one step: t at iteration i equals s[i-1] = b[i-1]*c[i-1]
+ * (recompute instead of carry -- the loop has no real recurrence).
+ *   a[0] = b[0]*c[0]
+ *   a[i] = b[i]*c[i] + b[i-1]*c[i-1]     (i >= 1)
+ * Bit-identical arithmetic to the reference (same ops, same order per element).
+ */
+void tsvc_2_s252_fp64(double *restrict a,
+                      const double *restrict b,
+                      const double *restrict c,
+                      const int64_t LEN_1D) {
+    if (LEN_1D <= 0) return;
+    if (LEN_1D == 1) {
+        a[0] = b[0] * c[0];
+        return;
+    }
+    a[0] = b[0] * c[0];
+    #pragma omp parallel for schedule(static)
+    for (int64_t i = 1; i < LEN_1D; ++i) {
+        a[i] = b[i] * c[i] + b[i - 1] * c[i - 1];
+    }
+}

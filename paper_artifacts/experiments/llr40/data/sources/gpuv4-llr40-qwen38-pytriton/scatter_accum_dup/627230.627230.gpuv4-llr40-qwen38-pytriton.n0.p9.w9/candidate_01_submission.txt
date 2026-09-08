@@ -1,0 +1,104 @@
+# Optimized scatter_accum_dup for the CSCS benchmark (python arm).
+#
+# Reference semantics:  bins[ip[i]] += src[i]  for i in range(LEN_1D), in-place.
+# ip may repeat indices, so this is a true scatter reduction.
+#
+# Strategy: run the scatter on the GPU as one Triton kernel using fp64 global
+# atomic adds (correct regardless of duplicates, no ordering assumptions),
+# streaming the three input arrays in and the updated bins back out.  All
+# Triton compilation / CUDA context / allocator warmup happens at import time,
+# before the timer starts.  If no usable GPU is present (or a runtime failure
+# occurs) we fall back to a deterministic NumPy bincount accumulation, which
+# still handles duplicates correctly.
+
+import numpy as np
+
+_GPU_OK = False
+try:
+    import torch
+    import triton
+    import triton.language as tl
+
+    torch.cuda.init()
+    _DEV = torch.device("cuda:0")
+    torch.cuda.set_device(_DEV)
+
+    _BLOCK = 8192
+    _WARPS = 16
+
+    @triton.jit
+    def _scatter_kernel(bins_ptr, src_ptr, ip_ptr, n, BLOCK: tl.constexpr):
+        pid = tl.program_id(0)
+        offs = pid * BLOCK + tl.arange(0, BLOCK)
+        m = offs < n
+        idx = tl.load(ip_ptr + offs, mask=m)
+        v = tl.load(src_ptr + offs, mask=m)
+        tl.atomic_add(bins_ptr + idx, v, mask=m)
+
+    def _scatter_gpu(bins, src, ip, n):
+        gb = torch.from_numpy(bins).to(_DEV)
+        gs = torch.from_numpy(src).to(_DEV)
+        gi = torch.from_numpy(ip).to(_DEV)
+        _scatter_kernel[(triton.cdiv(n, _BLOCK),)](
+            gb, gs, gi, n, BLOCK=_BLOCK, num_warps=_WARPS
+        )
+        torch.from_numpy(bins).copy_(gb)
+        torch.cuda.synchronize()
+
+    # Warm everything up at import (unmeasured): JIT-specialize the kernel for
+    # n == 1 / n % 16 == 0 / other n, the launch path, and the allocator.
+    for _n in (1, 16, 17, 1 << 26):
+        _b = np.ones(_n, dtype=np.float64)
+        _s = np.ones(_n, dtype=np.float64)
+        _i = np.zeros(_n, dtype=np.int32)
+        _scatter_gpu(_b, _s, _i, _n)
+        del _b, _s, _i
+    _GPU_OK = True
+except Exception:
+    _GPU_OK = False
+
+
+def _scatter_cpu(bins, src, ip, n):
+    # Deterministic fallback: per-bin sums accumulated in input order, then one
+    # vectorized add.  Handles repeated indices correctly.
+    if n and ip[0] >= 0:
+        bc = np.bincount(ip[:n], weights=src[:n], minlength=n)
+    else:
+        raise ValueError("negative index in ip")
+    bins[:n] += bc[:n]
+
+
+def scatter_accum_dup(bins, src, ip, LEN_1D):
+    """Indexed read-modify-write bins[ip[i]] += src[i] (in-place)."""
+    n = int(LEN_1D)
+    bins = np.asarray(bins)
+    src = np.asarray(src)
+    ip = np.asarray(ip)
+    if _GPU_OK and bins.flags.c_contiguous and src.flags.c_contiguous and ip.flags.c_contiguous:
+        try:
+            _scatter_gpu(bins, src, ip, n)
+            return None
+        except Exception:
+            pass
+    _scatter_cpu(bins, src, ip, n)
+    return None
+
+
+if __name__ == "__main__":
+    import time
+
+    N = 64_000_000
+    rng = np.random.default_rng(0)
+    bins = rng.uniform(1.0, 1000.0, N)
+    src = rng.uniform(0.5, 2.0, N)
+    ip = rng.integers(0, N, N, dtype=np.int32)
+    scatter_accum_dup(bins, src, ip, N)
+    torch.cuda.synchronize() if _GPU_OK else None
+    best = 1e9
+    for _ in range(5):
+        torch.cuda.synchronize() if _GPU_OK else None
+        t0 = time.perf_counter()
+        scatter_accum_dup(bins, src, ip, N)
+        t1 = time.perf_counter()
+        best = min(best, t1 - t0)
+    print("N=%d best %.1f ms  GPU=%s" % (N, 1000 * best, _GPU_OK))

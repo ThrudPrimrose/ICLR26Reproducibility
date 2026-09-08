@@ -1,0 +1,83 @@
+import os
+import numpy as np
+import numba
+from numba import njit, prange
+
+
+def _pick_threads():
+    try:
+        n = len(os.sched_getaffinity(0))
+    except Exception:
+        n = os.cpu_count() or 1
+    n = max(1, min(n, 64))
+    try:
+        numba.set_num_threads(n)
+    except Exception:
+        pass
+
+
+_pick_threads()
+
+
+@njit(fastmath=True, parallel=True, cache=False)
+def _k(a, b, c, d, m):
+    # Save shifted old-a values (needed by d) before overwriting a.
+    # 8-wide unroll so LLVM SLP can vectorize (numba does no loop vectorization).
+    nfull = m // 8
+    for blk in prange(nfull):
+        i0 = blk * 8
+        d[i0] = a[i0 + 1]
+        d[i0 + 1] = a[i0 + 2]
+        d[i0 + 2] = a[i0 + 3]
+        d[i0 + 3] = a[i0 + 4]
+        d[i0 + 4] = a[i0 + 5]
+        d[i0 + 5] = a[i0 + 6]
+        d[i0 + 6] = a[i0 + 7]
+        d[i0 + 7] = a[i0 + 8]
+    pos = 8 * nfull
+    while pos < m:
+        d[pos] = a[pos + 1]
+        pos += 1
+    for blk2 in prange(nfull):
+        i1 = blk2 * 8
+        ai0 = b[i1] + c[i1] * c[i1] + b[i1] * b[i1] + c[i1]
+        ai1 = b[i1 + 1] + c[i1 + 1] * c[i1 + 1] + b[i1 + 1] * b[i1 + 1] + c[i1 + 1]
+        ai2 = b[i1 + 2] + c[i1 + 2] * c[i1 + 2] + b[i1 + 2] * b[i1 + 2] + c[i1 + 2]
+        ai3 = b[i1 + 3] + c[i1 + 3] * c[i1 + 3] + b[i1 + 3] * b[i1 + 3] + c[i1 + 3]
+        ai4 = b[i1 + 4] + c[i1 + 4] * c[i1 + 4] + b[i1 + 4] * b[i1 + 4] + c[i1 + 4]
+        ai5 = b[i1 + 5] + c[i1 + 5] * c[i1 + 5] + b[i1 + 5] * b[i1 + 5] + c[i1 + 5]
+        ai6 = b[i1 + 6] + c[i1 + 6] * c[i1 + 6] + b[i1 + 6] * b[i1 + 6] + c[i1 + 6]
+        ai7 = b[i1 + 7] + c[i1 + 7] * c[i1 + 7] + b[i1 + 7] * b[i1 + 7] + c[i1 + 7]
+        d[i1] = d[i1] + ai0
+        d[i1 + 1] = d[i1 + 1] + ai1
+        d[i1 + 2] = d[i1 + 2] + ai2
+        d[i1 + 3] = d[i1 + 3] + ai3
+        d[i1 + 4] = d[i1 + 4] + ai4
+        d[i1 + 5] = d[i1 + 5] + ai5
+        d[i1 + 6] = d[i1 + 6] + ai6
+        d[i1 + 7] = d[i1 + 7] + ai7
+        a[i1] = ai0
+        a[i1 + 1] = ai1
+        a[i1 + 2] = ai2
+        a[i1 + 3] = ai3
+        a[i1 + 4] = ai4
+        a[i1 + 5] = ai5
+        a[i1 + 6] = ai6
+        a[i1 + 7] = ai7
+    pos2 = 8 * nfull
+    while pos2 < m:
+        ai = b[pos2] + c[pos2] * c[pos2] + b[pos2] * b[pos2] + c[pos2]
+        a[pos2] = ai
+        d[pos2] = d[pos2] + ai
+        pos2 += 1
+
+
+def s1244(a, b, c, d, LEN_1D):
+    m = int(LEN_1D) - 1
+    if m > 0:
+        _k(a, b, c, d, m)
+
+
+# Warm compile at import time (runs before the clock starts).
+_z = np.zeros(128)
+_k(_z, _z, _z, _z, 127)

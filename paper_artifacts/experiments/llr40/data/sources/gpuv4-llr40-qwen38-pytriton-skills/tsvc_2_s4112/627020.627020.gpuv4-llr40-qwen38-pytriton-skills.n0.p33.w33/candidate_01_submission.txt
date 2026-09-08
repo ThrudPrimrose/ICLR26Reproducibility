@@ -1,0 +1,15 @@
+"""TSVC tsvc_2 s4112 -- a[i] += b[ip[i]] * 2.0 -- parallel numba (warm at import)."""
+import numpy as np
+from numba import njit, prange
+
+@njit(fastmath=True, parallel=True)
+def _k(a, b, ip, N):
+    for i in prange(N):
+        a[i] = a[i] + b[ip[i]] * 2.0
+
+# Warm compile at import (not timed) so the timed reps hit native code.
+for _dt in (np.int32, np.int64):
+    _k(np.zeros(1024), np.zeros(1024), np.zeros(1024, dtype=_dt), 1024)
+
+def s4112(a, b, ip, LEN_1D):
+    _k(a, b, ip, LEN_1D)

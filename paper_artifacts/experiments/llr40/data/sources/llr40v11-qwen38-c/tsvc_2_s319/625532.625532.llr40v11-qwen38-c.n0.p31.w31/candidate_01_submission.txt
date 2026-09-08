@@ -1,0 +1,52 @@
+#include <stdint.h>
+#include <omp.h>
+
+#define UNROLL 8
+
+static void serial_body(double *a, double *b, const double *c, const double *d, const double *e, int64_t N, double *out_sum) {
+  double s0=0,s1=0,s2=0,s3=0,t0=0,t1=0,t2=0,t3=0;
+  int64_t i = 0;
+  for (; i + UNROLL <= N; i += UNROLL) {
+    double v,u; int k;
+    for (k = 0; k < UNROLL; ++k) {
+      int kk = k & 1;
+      v = c[i+k] + d[i+k];
+      u = c[i+k] + e[i+k];
+      a[i+k] = v;
+      b[i+k] = u;
+      if (kk == 0) { s0 += v; t0 += u; } else { s1 += v; t1 += u; }
+    }
+  }
+  for (; i < N; ++i) { a[i]=c[i]+d[i]; s0 += a[i]; b[i]=c[i]+e[i]; t0 += b[i]; }
+  *out_sum = ((s0+s1)+(s2+s3)) + ((t0+t1)+(t2+t3));
+}
+
+void tsvc_2_s319_fp64(double *restrict a, double *restrict b, const double *restrict c, const double *restrict d,
+                      const double *restrict e, const int64_t LEN_1D) {
+  const int64_t N = LEN_1D;
+  double total = 0.0;
+
+  if (N >= (1 << 18)) {
+    #pragma omp parallel reduction(+:total)
+    {
+      double s0=0,s1=0,s2=0,s3=0,t0=0,t1=0,t2=0,t3=0;
+      #pragma omp for schedule(static) nowait
+      for (int64_t i = 0; i < N; ++i) {
+        double v = c[i] + d[i];
+        double u = c[i] + e[i];
+        a[i] = v;
+        b[i] = u;
+        switch (i & 3) {
+          case 0: s0 += v; t0 += u; break;
+          case 1: s1 += v; t1 += u; break;
+          case 2: s2 += v; t2 += u; break;
+          default: s3 += v; t3 += u; break;
+        }
+      }
+      total += ((s0+s1)+(s2+s3)) + ((t0+t1)+(t2+t3));
+    }
+  } else {
+    serial_body(a, b, c, d, e, N, &total);
+  }
+  b[0] = total;
+}

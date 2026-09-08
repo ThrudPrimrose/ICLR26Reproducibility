@@ -1,0 +1,31 @@
+module wf_triangular_mod
+  use iso_c_binding, only: c_int64_t, c_double, c_ptr, c_f_pointer
+  implicit none
+contains
+  subroutine wf_triangular_fp64(a_c, LEN_2D) bind(C, name="wf_triangular_fp64")
+    type(c_ptr), value, intent(in) :: a_c
+    integer(c_int64_t), value, intent(in) :: LEN_2D
+    real(c_double), pointer :: a(:,:)
+    integer(c_int64_t) :: n, s, i0, j0, i_min, i_max
+
+    n = LEN_2D
+    if (n <= 1) return
+
+    ! Map row-major C buffer to a Fortran array whose indices are transposed:
+    ! a(j+1, i+1) lies at C offset i*n + j.
+    call c_f_pointer(a_c, a, [n, n])
+
+    ! Anti-diagonal wavefront: all points with i0+j0 = s are independent.
+    do s = 1_c_int64_t, 2_c_int64_t * (n - 1_c_int64_t)
+      i_min = max(1_c_int64_t, s - (n - 1_c_int64_t))
+      i_max = min(s / 2_c_int64_t, n - 1_c_int64_t)
+      if (i_min > i_max) cycle
+      !$omp parallel do schedule(static) private(i0, j0)
+      do i0 = i_min, i_max
+        j0 = s - i0
+        a(j0 + 1, i0 + 1) = a(j0 + 1, i0 + 1) + a(j0 + 1, i0) + a(j0, i0 + 1)
+      end do
+      !$omp end parallel do
+    end do
+  end subroutine wf_triangular_fp64
+end module wf_triangular_mod

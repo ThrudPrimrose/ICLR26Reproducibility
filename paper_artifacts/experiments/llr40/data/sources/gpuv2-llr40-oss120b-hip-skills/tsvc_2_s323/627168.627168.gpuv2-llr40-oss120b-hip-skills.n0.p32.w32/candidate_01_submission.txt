@@ -1,0 +1,45 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+// Kernel to compute the intermediate array g[i] = c[i] * (d[i] + e[i])
+// g[0] is set to 0.0 because the recurrence starts at i=1.
+extern "C" __global__ void compute_g_kernel(const double* __restrict__ c,
+                                            const double* __restrict__ d,
+                                            const double* __restrict__ e,
+                                            double* __restrict__ g,
+                                            int64_t LEN_1D) {
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (idx >= LEN_1D) return;
+    if (idx == 0) {
+        g[0] = 0.0;
+    } else {
+        g[idx] = c[idx] * (d[idx] + e[idx]);
+    }
+}
+
+// Kernel to write back the final a[i] and b[i] using the exclusive scan prefix.
+extern "C" __global__ void final_kernel(double* __restrict__ a,
+                                        double* __restrict__ b,
+                                        const double* __restrict__ c,
+                                        const double* __restrict__ d,
+                                        const double* __restrict__ e,
+                                        const double* __restrict__ prefix, // size LEN_1D-1, prefix[i-1] = sum_{k=1}^{i-1} g[k]
+                                        const double* __restrict__ g,      // original g array (size LEN_1D)
+                                        int64_t LEN_1D) {
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (idx >= LEN_1D) return;
+    if (idx == 0) return; // a[0] and b[0] remain unchanged
+    (void)e; // silence unused parameter warning
+
+    double b0 = b[0]; // read the unchanged initial value once per thread
+    double pref = prefix[idx - 1]; // sum of g[1..idx-1]
+    double gi = g[idx];
+
+    // Compute b[i] = b0 + pref + gi   where gi = c[i]*(d[i]+e[i])
+    double bi = b0 + pref + gi;
+    b[idx] = bi;
+
+    // Compute a[i] = b0 + pref + c[i]*d[i]
+    double ai = b0 + pref + c[idx] * d[idx];
+    a[idx] = ai;
+}

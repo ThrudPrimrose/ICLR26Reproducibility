@@ -1,0 +1,50 @@
+/* Optimized implementation of fuse_move_ifs_fp64 for OpenMP target offload.
+ * This version uses separate offload regions for the two cases K>0 and K<=0.
+ * When K>0 it writes both `b` and optionally `a` in a fused collapsed 2‑D loop.
+ * When K<=0 it only writes `a` where the condition holds, avoiding the extra
+ * branch inside the inner loop and omitting the `b` array from the data mapping.
+ */
+
+#include <stddef.h>
+#include <stdint.h>
+#include <omp.h>
+
+void fuse_move_ifs_fp64(double *restrict a, double *restrict b,
+                        const double *restrict cond, const double *restrict src,
+                        const int64_t K, const int64_t LEN_2D) {
+    if (K > 0) {
+        /* Both a and b are written. The whole i‑j domain is distributed.
+         * The `cond[i]` test is still required for a.
+         */
+        #pragma omp target teams distribute parallel for collapse(2) \
+            map(to: cond[0:LEN_2D], src[0:(size_t)LEN_2D*LEN_2D]) \
+            map(tofrom: a[0:(size_t)LEN_2D*LEN_2D], b[0:(size_t)LEN_2D*LEN_2D])
+        for (int64_t i = 0; i < LEN_2D; ++i) {
+            for (int64_t j = 0; j < LEN_2D; ++j) {
+                const size_t idx = (size_t)i * (size_t)LEN_2D + (size_t)j;
+                const double s = src[idx];
+                b[idx] = s + 1.0;
+                if (cond[i] > 0.0) {
+                    a[idx] = s * 2.0;
+                }
+            }
+        }
+    } else {
+        /* K <= 0: only a may be written. `b` is omitted from the mapping.
+         * This avoids unnecessary data movement and the per‑iteration branch.
+         */
+        #pragma omp target teams distribute parallel for collapse(2) \
+            map(to: cond[0:LEN_2D], src[0:(size_t)LEN_2D*LEN_2D]) \
+            map(tofrom: a[0:(size_t)LEN_2D*LEN_2D])
+        for (int64_t i = 0; i < LEN_2D; ++i) {
+            for (int64_t j = 0; j < LEN_2D; ++j) {
+                const size_t idx = (size_t)i * (size_t)LEN_2D + (size_t)j;
+                const double s = src[idx];
+                if (cond[i] > 0.0) {
+                    a[idx] = s * 2.0;
+                }
+            }
+        }
+    }
+}
+

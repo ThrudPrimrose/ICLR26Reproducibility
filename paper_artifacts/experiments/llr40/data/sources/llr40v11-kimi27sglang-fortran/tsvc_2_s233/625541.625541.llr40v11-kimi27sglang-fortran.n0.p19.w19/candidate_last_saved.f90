@@ -1,0 +1,49 @@
+module tsvc_2_s233_m
+  use iso_c_binding, only: c_double, c_int64_t
+  use omp_lib
+  implicit none
+contains
+  subroutine tsvc_2_s233_fp64(aa, bb, cc, LEN_2D) bind(C, name='tsvc_2_s233_fp64')
+    real(c_double), intent(inout) :: aa(0:*), bb(0:*)
+    real(c_double), intent(in)    :: cc(0:*)
+    integer(c_int64_t), value     :: LEN_2D
+    integer(c_int64_t) :: i, j, base, tid, nth, istart, iend, n
+    real(c_double) :: t
+    real(c_double) :: s(0:LEN_2D-1)
+
+    n = LEN_2D - 8
+    !$omp parallel private(i,j,base,tid,nth,istart,iend,t,s) firstprivate(n) shared(aa,bb,cc,LEN_2D) default(none)
+    tid = omp_get_thread_num()
+    nth = omp_get_num_threads()
+    istart = 8 + (n * tid) / nth
+    iend   = 8 + (n * (tid + 1)) / nth - 1
+
+    if (istart <= iend) then
+       do i = istart, iend
+          s(i) = aa((8-1)*LEN_2D + i)
+       end do
+       do j = 8, LEN_2D-1
+          base = j*LEN_2D
+          !$omp simd
+          do i = istart, iend
+             s(i) = s(i) + cc(base + i)
+             aa(base + i) = s(i)
+          end do
+       end do
+    end if
+
+    !$omp barrier
+
+    !$omp do schedule(static) private(base,t)
+    do j = 8, LEN_2D-1
+       base = j*LEN_2D
+       t = bb(base + 8 - 1)
+       do i = 8, LEN_2D-1
+          t = t + cc(base + i)
+          bb(base + i) = t
+       end do
+    end do
+    !$omp end do
+    !$omp end parallel
+  end subroutine tsvc_2_s233_fp64
+end module tsvc_2_s233_m

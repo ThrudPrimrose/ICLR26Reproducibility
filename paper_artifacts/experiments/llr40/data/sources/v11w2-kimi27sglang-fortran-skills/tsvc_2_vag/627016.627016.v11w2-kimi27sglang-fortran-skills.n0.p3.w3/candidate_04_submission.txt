@@ -1,0 +1,30 @@
+subroutine tsvc_2_vag_fp64(a, b, ip, LEN_1D, workspace, workspace_size) bind(C, name='tsvc_2_vag_fp64')
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D, workspace_size
+  real(c_double), intent(out) :: a(LEN_1D)
+  real(c_double), intent(in) :: b(LEN_1D)
+  integer(c_int32_t), intent(in) :: ip(LEN_1D)
+  type(c_ptr), value :: workspace
+  integer :: i, m
+  integer(c_int64_t) :: k
+
+  if (LEN_1D <= 8192_c_int64_t) then
+    do k = 1, LEN_1D
+      a(k) = b(ip(k))
+    end do
+  else if (LEN_1D <= int(huge(m), c_int64_t)) then
+    m = int(LEN_1D)
+    !$omp parallel do simd default(none) shared(a,b,ip,m) private(i) schedule(auto) proc_bind(spread) safelen(8)
+    do i = 1, m
+      a(i) = b(ip(i))
+    end do
+    !$omp end parallel do simd
+  else
+    !$omp parallel do default(none) shared(a,b,ip,LEN_1D) private(k) schedule(auto) proc_bind(spread)
+    do k = 1, LEN_1D
+      a(k) = b(ip(k))
+    end do
+    !$omp end parallel do
+  end if
+end subroutine tsvc_2_vag_fp64

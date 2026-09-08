@@ -1,0 +1,10 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern __global__ void vtvtv_kernel(double* __restrict__ a, const double* __restrict__ b,
+                                   const double* __restrict__ c, int64_t LEN_1D) {
+    int64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < LEN_1D) {
+        a[idx] = a[idx] * b[idx] * c[idx];
+    }
+}

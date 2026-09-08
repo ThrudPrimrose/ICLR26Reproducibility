@@ -1,0 +1,88 @@
+#include <stdint.h>
+#include <alloca.h>
+#include <omp.h>
+
+void versioned_distance_update_fp64(double *restrict a, const double *restrict b, const double *restrict c, const int64_t K, const int64_t LEN_1D, uint8_t *restrict workspace, const int64_t workspace_bytes) {
+    (void)workspace;
+    (void)workspace_bytes;
+    if (K <= 0 || LEN_1D <= K) return;
+    const double decay = 0.75;
+
+    if (K == 1) {
+        const int64_t n = LEN_1D;
+        if (n <= 1) return;
+        const int nt = omp_get_max_threads();
+        double *restrict mul = (double *)alloca((size_t)nt * sizeof(double));
+        double *restrict add = (double *)alloca((size_t)nt * sizeof(double));
+        double *restrict prefix = (double *)alloca((size_t)nt * sizeof(double));
+
+        #pragma omp parallel
+        {
+            const int tid = omp_get_thread_num();
+            const int64_t start = 1 + (int64_t)tid * (n - 1) / nt;
+            const int64_t end = 1 + (int64_t)(tid + 1) * (n - 1) / nt;
+            double m = 1.0;
+            double s = 0.0;
+            for (int64_t i = start; i < end; ++i) {
+                s = decay * s + b[i] * c[i];
+                m *= decay;
+            }
+            mul[tid] = m;
+            add[tid] = s;
+        }
+
+        prefix[0] = a[0];
+        double running = a[0];
+        for (int t = 0; t < nt; ++t) {
+            running = mul[t] * running + add[t];
+            if (t + 1 < nt) prefix[t + 1] = running;
+        }
+
+        #pragma omp parallel
+        {
+            const int tid = omp_get_thread_num();
+            const int64_t start = 1 + (int64_t)tid * (n - 1) / nt;
+            const int64_t end = 1 + (int64_t)(tid + 1) * (n - 1) / nt;
+            double val = prefix[tid];
+            for (int64_t i = start; i < end; ++i) {
+                val = decay * val + b[i] * c[i];
+                a[i] = val;
+            }
+        }
+        return;
+    }
+
+    if (K >= 64) {
+        #pragma omp parallel
+        {
+            const int64_t nt = omp_get_num_threads();
+            const int64_t tid = omp_get_thread_num();
+            int64_t chunk = (K + nt - 1) / nt;
+            chunk = (chunk + 7) & ~((int64_t)7);
+            const int64_t j0 = tid * chunk;
+            const int64_t j1 = (j0 + chunk < K) ? j0 + chunk : K;
+            if (j0 < K) {
+                for (int64_t base = K; base < LEN_1D; base += K) {
+                    const int64_t end = base + K < LEN_1D ? base + K : LEN_1D;
+                    const int64_t istart = base + j0;
+                    if (istart >= end) continue;
+                    const int64_t iend = base + j1 < end ? base + j1 : end;
+                    #pragma omp simd
+                    for (int64_t i = istart; i < iend; ++i) {
+                        a[i] = decay * a[i - K] + b[i] * c[i];
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    // 2 <= K <= 63: windowed SIMD (compiler's vector path needs K>=8)
+    for (int64_t base = K; base < LEN_1D; base += K) {
+        const int64_t end = base + K < LEN_1D ? base + K : LEN_1D;
+        #pragma omp simd
+        for (int64_t i = base; i < end; ++i) {
+            a[i] = decay * a[i - K] + b[i] * c[i];
+        }
+    }
+}

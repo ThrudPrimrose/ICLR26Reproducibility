@@ -1,0 +1,43 @@
+/*
+ * Optimized implementation of the TSVC 2 kernel "s2233" (fp64 variant).
+ *
+ * The kernel performs two independent scans over a 2‑D square domain of size
+ * LEN_2D × LEN_2D:
+ *   1. Column‑wise scan of `aa`:
+ *        aa[j,i] = aa[j-1,i] + cc[j,i]
+ *      Independent across columns `i`, so the outer loop over `i` can be
+ *      parallelised.
+ *   2. Column‑wise scan of `bb` (originally a row‑wise scan):
+ *        bb[i,j] = bb[i-1,j] + cc[i,j]
+ *      Independent across columns `j`, so we instead parallelise a loop over
+ *      `j` where the inner loop walks the rows `i` sequentially.
+ *
+ * Both phases are therefore embarrassingly parallel across the outer loop.
+ * The inner loops exhibit a true recurrence and cannot be vectorised, but the
+ * parallelism across columns provides substantial speed‑up on multi‑core
+ * hardware.
+ */
+
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa,
+                       double *restrict bb,
+                       const double *restrict cc,
+                       const int64_t LEN_2D) {
+    /* Phase 1: parallel column‑wise scan of `aa`. */
+    #pragma omp parallel for schedule(static) default(none) shared(aa, cc, LEN_2D)
+    for (int64_t i = 8; i < LEN_2D; ++i) {
+        for (int64_t j = 8; j < LEN_2D; ++j) {
+            aa[j * LEN_2D + i] = aa[(j - 1) * LEN_2D + i] + cc[j * LEN_2D + i];
+        }
+    }
+
+    /* Phase 2: parallel column‑wise scan of `bb` (swap axes). */
+    #pragma omp parallel for schedule(static) default(none) shared(bb, cc, LEN_2D)
+    for (int64_t j = 8; j < LEN_2D; ++j) {
+        for (int64_t i = 8; i < LEN_2D; ++i) {
+            bb[i * LEN_2D + j] = bb[(i - 1) * LEN_2D + j] + cc[i * LEN_2D + j];
+        }
+    }
+}

@@ -1,0 +1,27 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+    if (LEN_2D <= 8) return;
+
+    /* Phase A: aa[j,i] = aa[j-1,i] + cc[j,i].
+       Dependence carried by j (row), so j is serial; i is unit-stride and independent. */
+    #pragma omp parallel
+    {
+        for (int64_t j = 8; j < LEN_2D; ++j) {
+            #pragma omp for simd schedule(static)
+            for (int64_t i = 8; i < LEN_2D; ++i) {
+                aa[j * LEN_2D + i] = aa[(j - 1) * LEN_2D + i] + cc[j * LEN_2D + i];
+            }
+        }
+    }
+
+    /* Phase B: bb[j,i] = bb[j,i-1] + cc[j,i].
+       Dependence carried by i (column), so i is serial inside each independent row j. */
+    #pragma omp parallel for schedule(static)
+    for (int64_t j = 8; j < LEN_2D; ++j) {
+        for (int64_t i = 8; i < LEN_2D; ++i) {
+            bb[j * LEN_2D + i] = bb[j * LEN_2D + (i - 1)] + cc[j * LEN_2D + i];
+        }
+    }
+}

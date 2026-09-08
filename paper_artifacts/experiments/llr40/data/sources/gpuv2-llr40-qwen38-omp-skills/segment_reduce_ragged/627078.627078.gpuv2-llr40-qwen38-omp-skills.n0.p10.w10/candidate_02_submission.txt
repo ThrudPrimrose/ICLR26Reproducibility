@@ -1,0 +1,20 @@
+#include <stdint.h>
+#include <omp.h>
+
+void segment_reduce_ragged_fp64(double *restrict out, const int64_t *restrict row_ptr,
+                                const double *restrict val, const double *restrict w,
+                                int64_t NSEG, uint8_t *workspace, int64_t workspace_size) {
+    (void)workspace; (void)workspace_size;
+    int64_t total = (NSEG > 0) ? row_ptr[NSEG] : 0;
+    #pragma omp target teams distribute parallel for \
+        map(to: row_ptr[0:NSEG+1]) \
+        map(to: val[0:total]) \
+        map(to: w[0:total]) \
+        map(from: out[0:NSEG])
+    for (int64_t s = 0; s < NSEG; s++) {
+        double acc = 0.0;
+        for (int64_t e = row_ptr[s]; e < row_ptr[s+1]; e++)
+            acc += val[e] * w[e];
+        out[s] = acc;
+    }
+}

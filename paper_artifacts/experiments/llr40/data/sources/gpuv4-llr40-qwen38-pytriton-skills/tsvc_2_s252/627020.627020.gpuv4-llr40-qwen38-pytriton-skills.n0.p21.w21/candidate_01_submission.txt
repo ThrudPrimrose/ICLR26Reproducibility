@@ -1,0 +1,27 @@
+import numpy as np
+import numba
+from numba import njit, prange
+
+@njit(parallel=True, fastmath=True, cache=False)
+def _core(a, b, c, n):
+    if n == 0:
+        return
+    a[0] = b[0] * c[0]
+    for i in prange(1, n):
+        a[i] = b[i] * c[i] + b[i - 1] * c[i - 1]
+
+def s252(a, b, c, LEN_1D):
+    _core(a, b, c, LEN_1D)
+
+# Warm up at import time: compile + threadpool, off the timer.
+def _warm():
+    n = 1 << 16
+    x = np.arange(n, dtype=np.float64)
+    y = np.arange(n, dtype=np.float64)
+    z = np.arange(n, dtype=np.float64)
+    _core(x, y, z, n)
+    # second tiny call to exercise parallel path after fork-join
+    x2 = np.ones(4, dtype=np.float64)
+    _core(x2, y[:4], z[:4], 4)
+
+_warm()

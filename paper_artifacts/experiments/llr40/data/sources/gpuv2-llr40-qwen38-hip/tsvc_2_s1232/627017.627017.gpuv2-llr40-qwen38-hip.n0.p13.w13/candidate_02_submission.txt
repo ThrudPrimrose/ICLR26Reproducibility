@@ -1,0 +1,64 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+using ll = long long;
+
+struct alignas(32) d4 { double x, y, z, w; };
+
+// Vectorized kernel: one thread per 4 consecutive columns of a row.
+// grid.x = ceil(rowv/TB), grid.y = N (rows). Element (i,j) is updated iff i >= j*VLEN.
+__global__ void __launch_bounds__(256)
+k_vec(const double* __restrict__ bb, const double* __restrict__ cc, double* __restrict__ aa,
+      ll N, ll VLEN) {
+  const ll j = ((ll)blockIdx.x * (ll)blockDim.x + (ll)threadIdx.x) * 4;
+  const ll i = blockIdx.y;
+  if (i >= (j + 3) * VLEN) {
+    // whole double4 in range
+    ll base = i * N + j;
+    const d4* b4 = reinterpret_cast<const d4*>(bb + base);
+    const d4* c4 = reinterpret_cast<const d4*>(cc + base);
+    d4 b = *b4;
+    d4 c = *c4;
+    d4 a;
+    a.x = b.x + c.x; a.y = b.y + c.y; a.z = b.z + c.z; a.w = b.w + c.w;
+    reinterpret_cast<d4*>(aa + base)[0] = a;
+  } else if (i >= j * VLEN) {
+    // straddling the boundary: per-element
+    ll base = i * N + j;
+#pragma unroll
+    for (int k = 0; k < 4; ++k) {
+      if (i >= (j + k) * VLEN) aa[base + k] = bb[base + k] + cc[base + k];
+    }
+  }
+  // else whole block out of range: untouched
+}
+
+// Tail kernel for N % 4 != 0: r trailing columns per row, scalar.
+__global__ void __launch_bounds__(256)
+k_tail(const double* __restrict__ bb, const double* __restrict__ cc, double* __restrict__ aa,
+       ll N, ll VLEN, ll r, ll j0) {
+  const ll k = (ll)blockIdx.x * (ll)blockDim.x + (ll)threadIdx.x;
+  if (k >= r) return;
+  const ll i = blockIdx.y;
+  const ll j = j0 + k;
+  if (i >= j * VLEN) {
+    ll base = i * N + j;
+    aa[base] = bb[base] + cc[base];
+  }
+}
+
+extern "C" void launch_s1232(double* __restrict__ aa, const double* __restrict__ bb,
+                             const double* __restrict__ cc, ll N, ll VLEN) {
+  if (N <= 0) return;
+  const int TB = 256;
+  const ll rowv = N >> 2;
+  const ll r = N & 3;
+  if (rowv > 0) {
+    dim3 grid((rowv + TB - 1) / TB, (unsigned)N);
+    k_vec<<<grid, TB>>>(bb, cc, aa, N, VLEN);
+  }
+  if (r > 0) {
+    dim3 grid((r + TB - 1) / TB, (unsigned)N);
+    k_tail<<<grid, TB>>>(bb, cc, aa, N, VLEN, r, N - r);
+  }
+}

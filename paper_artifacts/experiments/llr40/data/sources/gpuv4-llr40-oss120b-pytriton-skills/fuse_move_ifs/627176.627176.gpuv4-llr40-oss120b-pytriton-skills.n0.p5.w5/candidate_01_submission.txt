@@ -1,0 +1,30 @@
+import numpy as np
+
+def fuse_move_ifs(a, b, src, cond, LEN_2D, K):
+    """Optimized implementation of fuse_move_ifs using NumPy.
+    
+    Parameters
+    ----------
+    a : ndarray, shape (LEN_2D, LEN_2D)
+        Output array written where `cond[i] > 0`.
+    b : ndarray, shape (LEN_2D, LEN_2D)
+        Output array written when `K > 0`.
+    src : ndarray, shape (LEN_2D, LEN_2D)
+        Input source array.
+    cond : ndarray, shape (LEN_2D,)
+        Condition per row.
+    LEN_2D : int
+        Size of the 2D dimensions (redundant, shape of arrays).
+    K : int
+        Flag controlling the second write.
+    """
+    # Compute mask for rows where cond > 0.0
+    mask = cond > 0.0
+    # Multiply src by 2 where mask is true, writing directly into a.
+    # Using NumPy's 'where' argument avoids temporaries for unmasked rows.
+    np.multiply(src, 2.0, out=a, where=mask[:, None])
+    # If K > 0, compute b = src + 1 for the whole array.
+    if K > 0:
+        np.add(src, 1.0, out=b)
+    # In‑place operation; return nothing.
+    return None

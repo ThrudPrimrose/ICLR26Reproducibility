@@ -1,0 +1,105 @@
+/* TSVC tsvc_2_5 quasi_affine_reduce_odd: out[0] = sum(a[i] for i in 1..LEN_1D-1 step 2)
+ *
+ * The odd-indexed elements are exactly the odd lanes (1,3,5,7) of every 8-double
+ * 64B vector once the source is parsed from a 64B-aligned even-index base, so the
+ * body is 4 masked AVX-512 loads + 4 adds per 256B, threads own contiguous runs
+ * of vectors (adaptive count, <= 24), with scalar head/tail and per-thread lane
+ * partials.  A machine-wide read of this array is the speed limit (~200 GB/s);
+ * a pure-load ceiling probe matches this kernel, so there is no cheaper byte
+ * pattern to find.
+ */
+#include <stdint.h>
+#include <stddef.h>
+#include <immintrin.h>
+#include <omp.h>
+
+#ifdef __AVX512F__
+static inline double hsum512(__m512d v) {
+  __m256d hi = _mm512_extractf64x4_pd(v, 1);
+  __m256d lo = _mm512_castpd512_pd256(v);
+  hi = _mm256_add_pd(hi, lo);
+  __m128d t = _mm256_extractf128_pd(hi, 1);
+  t = _mm_add_pd(_mm256_castpd256_pd128(hi), t);
+  double d[2];
+  _mm_storeu_pd(d, t);
+  return d[0] + d[1];
+}
+#endif
+
+#if !defined(__AVX512F__)
+/* from 4 doubles (even,odd,even,odd) return 256-bit (odd,odd,0,0) */
+static inline __m256d oddpair(const double *p) {
+  __m256d v = _mm256_loadu_pd(p);
+  __m128d o = _mm_shuffle_pd(_mm256_castpd256_pd128(v), _mm256_extractf128_pd(v, 1), 5);
+  return _mm256_castpd128_pd256(o);
+}
+#endif
+
+void quasi_affine_reduce_odd_fp64(const double *restrict a, double *restrict out,
+                                  const int64_t LEN_1D) {
+  const int64_t n2 = LEN_1D / 2;   /* number of odd elements            */
+  const int64_t used = 2 * n2;     /* source doubles consumed           */
+  double s = 0.0;
+
+  if (n2 <= 0) { *out = 0.0; return; }
+
+  /* align the vector parse: 64B-aligned address AND even index */
+  int64_t h = (((uintptr_t)a & 63) && used >= 10) ?
+      (int64_t)(8 - ((uintptr_t)a & 63) / 8) : 0;
+  if (h & 1) h++;
+  if (h > used) h = used;
+
+  /* scalar head: odd indices below h */
+  for (int64_t j = 1; j < h; j += 2) s += a[j];
+
+  const int64_t nvec = (used - h) / 8;     /* full 64B vectors   */
+  const int64_t vec_start = h + 8 * nvec;  /* first tail index   */
+
+  /* ~1 MB of source per thread, capped at 24 (measured sweet spot) */
+  int64_t nt = used >> 17;
+  if (nt < 1) nt = 1;
+  if (nt > 24) nt = 24;
+
+  #pragma omp parallel num_threads(nt) reduction(+:s)
+  {
+    const int64_t T = nt;
+    const int64_t tid = (int64_t)omp_get_thread_num();
+    const int64_t q = nvec / T, r = nvec % T;
+    const int64_t lo = tid * q + (tid < r ? tid : r);
+    const int64_t hi = lo + q + (tid < r ? 1 : 0);
+
+    const double *p = a + h + 8 * lo;
+    const double *end = a + h + 8 * hi;
+
+#ifdef __AVX512F__
+    __m512d a0 = _mm512_setzero_pd(), a1 = _mm512_setzero_pd(),
+            a2 = _mm512_setzero_pd(), a3 = _mm512_setzero_pd();
+    for (; p + 32 <= end; p += 32) {
+      a0 = _mm512_add_pd(a0, _mm512_maskz_loadu_pd((__mmask8)0xAA, p));
+      a1 = _mm512_add_pd(a1, _mm512_maskz_loadu_pd((__mmask8)0xAA, p + 8));
+      a2 = _mm512_add_pd(a2, _mm512_maskz_loadu_pd((__mmask8)0xAA, p + 16));
+      a3 = _mm512_add_pd(a3, _mm512_maskz_loadu_pd((__mmask8)0xAA, p + 24));
+    }
+    for (; p < end; p += 8)
+      a0 = _mm512_add_pd(a0, _mm512_maskz_loadu_pd((__mmask8)0xAA, p));
+    s += hsum512(a0 + a1) + hsum512(a2 + a3);
+#else
+    __m256d a0 = _mm256_setzero_pd(), a1 = _mm256_setzero_pd();
+    for (; p + 8 <= end; p += 8) {
+      a0 = _mm256_add_pd(a0, oddpair(p));
+      a1 = _mm256_add_pd(a1, oddpair(p + 4));
+    }
+    for (; p < end; p += 4)
+      a0 = _mm256_add_pd(a0, oddpair(p));
+    double t0[4], t1[4];
+    _mm256_storeu_pd(t0, a0); _mm256_storeu_pd(t1, a1);
+    s += (t0[0] + t0[1]) + (t0[2] + t0[3]) + (t1[0] + t1[1]) + (t1[2] + t1[3]);
+#endif
+  }
+
+  /* scalar tail: odd indices in [vec_start, used) */
+  for (int64_t j = (vec_start & 1) ? vec_start : vec_start + 1; j < used; j += 2)
+    s += a[j];
+
+  *out = s;
+}

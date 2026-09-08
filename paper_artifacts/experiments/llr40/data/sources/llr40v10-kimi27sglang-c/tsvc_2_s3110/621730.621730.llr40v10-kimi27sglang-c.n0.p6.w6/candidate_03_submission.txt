@@ -1,0 +1,73 @@
+#include <stdint.h>
+#include <float.h>
+#include <immintrin.h>
+#include <omp.h>
+
+static inline void reduce_vmax_vidx(__m512d vmax, __m512i vidx, double *out_max, int64_t *out_idx) {
+    double maxv[8];
+    int64_t idxv[8];
+    _mm512_storeu_pd(maxv, vmax);
+    _mm512_storeu_si512((__m512i *)idxv, vidx);
+
+    double m = maxv[0];
+    int64_t ix = idxv[0];
+    for (int i = 1; i < 8; ++i) {
+        if (maxv[i] > m || (maxv[i] == m && idxv[i] < ix)) {
+            m = maxv[i];
+            ix = idxv[i];
+        }
+    }
+    *out_max = m;
+    *out_idx = ix;
+}
+
+void tsvc_2_s3110_fp64(const double *restrict aa, double *restrict bb, const int64_t LEN_2D) {
+    const int64_t n = LEN_2D * LEN_2D;
+    double gmax = -(DBL_MAX);
+    int64_t gidx = INT64_MAX;
+
+    #pragma omp parallel
+    {
+        const __m512d neg_inf = _mm512_set1_pd(-(DBL_MAX));
+        const __m512i big_idx = _mm512_set1_epi64(INT64_MAX);
+        const __m512i off = _mm512_setr_epi64(0, 1, 2, 3, 4, 5, 6, 7);
+
+        __m512d tmax = neg_inf;
+        __m512i tidx = big_idx;
+
+        double lmax = -(DBL_MAX);
+        int64_t lidx = INT64_MAX;
+
+        #pragma omp for nowait schedule(static)
+        for (int64_t k = 0; k < n - 7; k += 8) {
+            __m512d v = _mm512_loadu_pd(aa + k);
+            __mmask8 mask = _mm512_cmp_pd_mask(v, tmax, _CMP_GT_OQ);
+            tmax = _mm512_mask_blend_pd(mask, tmax, v);
+            __m512i cur_idx = _mm512_add_epi64(_mm512_set1_epi64(k), off);
+            tidx = _mm512_mask_blend_epi64(mask, tidx, cur_idx);
+        }
+
+        reduce_vmax_vidx(tmax, tidx, &lmax, &lidx);
+
+        #pragma omp critical
+        {
+            if (lmax > gmax || (lmax == gmax && lidx < gidx)) {
+                gmax = lmax;
+                gidx = lidx;
+            }
+        }
+    }
+
+    const int64_t tail_start = n - (n & 7);
+    for (int64_t k = tail_start; k < n; ++k) {
+        double v = aa[k];
+        if (v > gmax || (v == gmax && k < gidx)) {
+            gmax = v;
+            gidx = k;
+        }
+    }
+
+    int64_t xindex = gidx / LEN_2D;
+    int64_t yindex = gidx % LEN_2D;
+    bb[0] = gmax + (double)xindex + (double)yindex;
+}

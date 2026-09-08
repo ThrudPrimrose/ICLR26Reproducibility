@@ -1,0 +1,22 @@
+subroutine tsvc_2_s252_fp64(a, b, c, LEN_1D, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D
+  integer(c_int64_t), value, intent(in) :: workspace_size
+  real(c_double), intent(out) :: a(LEN_1D)
+  real(c_double), intent(in) :: b(LEN_1D), c(LEN_1D)
+  integer(c_int8_t), intent(inout) :: workspace(workspace_size)
+  integer(c_int64_t) :: i, n
+  real(c_double) :: d1, d2
+
+  n = LEN_1D
+  if (n < 1) return
+  d1 = b(1) * c(1)
+  a(1) = d1
+  if (n < 2) return
+  !$omp parallel do simd schedule(static)
+  do i = 2, n
+    d2 = b(i) * c(i)
+    a(i) = d2 + b(i - 1) * c(i - 1)
+  end do
+end subroutine tsvc_2_s252_fp64

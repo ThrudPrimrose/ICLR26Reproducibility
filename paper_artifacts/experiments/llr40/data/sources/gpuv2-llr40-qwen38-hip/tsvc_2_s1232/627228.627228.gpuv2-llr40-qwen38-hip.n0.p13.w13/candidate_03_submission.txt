@@ -1,0 +1,83 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+// V == 1 fast path: thread handles 4 consecutive j (double4). Requires N % 4 == 0.
+__global__ void ts2_v1x4(const double *__restrict__ bb, const double *__restrict__ cc,
+                         double *__restrict__ aa, long long N) {
+    long long j4 = ((long long)blockIdx.x * blockDim.x + threadIdx.x) * 4;
+    long long i  = (long long)blockIdx.y * blockDim.y + threadIdx.y;
+    if (j4 < N && i < N) {
+        if (j4 + 3 <= i) {
+            long long idx = i * (N >> 2) + (j4 >> 2);
+            double4 b = ((const double4 *)bb)[idx];
+            double4 c = ((const double4 *)cc)[idx];
+            double4 r;
+            r.x = b.x + c.x; r.y = b.y + c.y; r.z = b.z + c.z; r.w = b.w + c.w;
+            ((double4 *)aa)[idx] = r;
+        } else {
+            #pragma unroll
+            for (int t = 0; t < 4; ++t) {
+                long long j = j4 + t;
+                if (j <= i) {
+                    long long idx = i * N + j;
+                    aa[idx] = bb[idx] + cc[idx];
+                }
+            }
+        }
+    }
+}
+
+// general V, N % 4 == 0: vector path with scalar fallback on the triangle boundary
+__global__ void ts2_genx4(const double *__restrict__ bb, const double *__restrict__ cc,
+                          double *__restrict__ aa, long long N, long long V) {
+    long long j4 = ((long long)blockIdx.x * blockDim.x + threadIdx.x) * 4;
+    long long i  = (long long)blockIdx.y * blockDim.y + threadIdx.y;
+    if (j4 < N && i < N) {
+        if ((j4 + 3) * V <= i) {
+            long long idx = i * (N >> 2) + (j4 >> 2);
+            const double4 *b4 = (const double4 *)bb + idx;
+            const double4 *c4 = (const double4 *)cc + idx;
+            double4 *a4 = (double4 *)aa + idx;
+            double4 b = *b4, c = *c4, r;
+            r.x = b.x + c.x; r.y = b.y + c.y; r.z = b.z + c.z; r.w = b.w + c.w;
+            *a4 = r;
+        } else {
+            #pragma unroll
+            for (int t = 0; t < 4; ++t) {
+                long long j = j4 + t;
+                if (j * V <= i) {
+                    long long idx = i * N + j;
+                    aa[idx] = bb[idx] + cc[idx];
+                }
+            }
+        }
+    }
+}
+
+// fallback, any N
+__global__ void ts2_gen(const double *__restrict__ bb, const double *__restrict__ cc,
+                        double *__restrict__ aa, long long N, long long V) {
+    long long j = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    long long i = (long long)blockIdx.y * blockDim.y + threadIdx.y;
+    if (j < N && i < N && j * V <= i) {
+        long long idx = i * N + j;
+        aa[idx] = bb[idx] + cc[idx];
+    }
+}
+
+extern "C" void launch_ts2(const double *bb, const double *cc, double *aa, long long N, long long V) {
+    if ((N & 3) == 0) {
+        const unsigned bx = 128, by = 8;   // 1024 threads; 512 j per block row
+        dim3 block(bx, by);
+        dim3 grid((unsigned)((N + 4 * bx - 1) / (4 * bx)), (unsigned)((N + by - 1) / by));
+        if (V == 1)
+            ts2_v1x4<<<grid, block>>>(bb, cc, aa, N);
+        else
+            ts2_genx4<<<grid, block>>>(bb, cc, aa, N, V);
+    } else {
+        const unsigned bx = 128, by = 8;
+        dim3 block(bx, by);
+        dim3 grid((unsigned)((N + bx - 1) / bx), (unsigned)((N + by - 1) / by));
+        ts2_gen<<<grid, block>>>(bb, cc, aa, N, V);
+    }
+}

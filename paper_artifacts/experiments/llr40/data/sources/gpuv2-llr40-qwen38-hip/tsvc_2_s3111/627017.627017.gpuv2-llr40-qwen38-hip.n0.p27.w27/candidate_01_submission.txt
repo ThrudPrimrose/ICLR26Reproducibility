@@ -1,0 +1,98 @@
+/* Device half: parallel positive-sum reduction.
+ * Reference: b[0] = sum_{i} (a[i] > 0 ? a[i] : 0), fp64.
+ * Two kernels: block partials (grid-stride, coalesced 32B vector loads)
+ * + single-block deterministic final reduction.
+ * NOTE: on ROCm 7.2 gfx942 a __shfl_down_sync issued after __syncthreads()
+ * in the same kernel faults (HSA exception 0x1016), so warp shuffles happen
+ * only before the barrier; the 8 warp partials are summed scalar after it. */
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+#define BLOCK 256
+#define MAX_BLOCKS 4096
+
+
+__global__ void block_sum(const double *__restrict__ a, double *__restrict__ out, int64_t n) {
+    double s = 0.0;
+    const int64_t gstride = (int64_t)gridDim.x * BLOCK;
+
+    if (((uintptr_t)a & 31u) == 0) {
+        const double4 *__restrict__ a4 = (const double4 *)a;
+        const int64_t n4 = n >> 2;
+        for (int64_t i = (int64_t)blockIdx.x * BLOCK + threadIdx.x; i < n4; i += gstride) {
+            double4 v = a4[i];
+            s += ((v.x > 0.0) ? v.x : 0.0)
+               + ((v.y > 0.0) ? v.y : 0.0)
+               + ((v.z > 0.0) ? v.z : 0.0)
+               + ((v.w > 0.0) ? v.w : 0.0);
+        }
+        const int64_t base = n4 << 2;
+        for (int64_t i = (int64_t)blockIdx.x * BLOCK + threadIdx.x; i < (n - base); i += gstride) {
+            double v = a[base + i];
+            s += (v > 0.0) ? v : 0.0;
+        }
+    } else {
+        for (int64_t i = (int64_t)blockIdx.x * BLOCK + threadIdx.x; i < n; i += gstride) {
+            double v = a[i];
+            s += (v > 0.0) ? v : 0.0;
+        }
+    }
+
+#pragma unroll
+    for (int off = 16; off > 0; off >>= 1)
+        s += __shfl_down_sync(0xffffffffffffffffull, s, off);
+    __shared__ double sh[BLOCK / 32];
+    if ((threadIdx.x & 31) == 0) sh[threadIdx.x >> 5] = s;
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        double r = sh[0];
+#pragma unroll
+        for (int i = 1; i < BLOCK / 32; ++i) r += sh[i];
+        out[blockIdx.x] = r;
+    }
+}
+
+__global__ void final_sum(const double *__restrict__ partials, double *__restrict__ b, int nblocks) {
+    double s = 0.0;
+    for (int i = threadIdx.x; i < nblocks; i += BLOCK) s += partials[i];
+
+#pragma unroll
+    for (int off = 16; off > 0; off >>= 1)
+        s += __shfl_down_sync(0xffffffffffffffffull, s, off);
+    __shared__ double sh[BLOCK / 32];
+    if ((threadIdx.x & 31) == 0) sh[threadIdx.x >> 5] = s;
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        double r = sh[0];
+#pragma unroll
+        for (int i = 1; i < BLOCK / 32; ++i) r += sh[i];
+        b[0] = r;
+    }
+}
+
+static double *get_partials() {
+    static double *p = nullptr;
+    if (!p) {
+        if (hipMalloc(&p, MAX_BLOCKS * sizeof(double)) != hipSuccess) {
+            hipGetLastError();
+            p = (double *)-1;
+        }
+    }
+    return p;
+}
+
+extern "C" void tsvc2_s3111_launcher(const double *a, double *b, int64_t n) {
+    int64_t nblocks64 = (n + (int64_t)BLOCK * 4 - 1) / ((int64_t)BLOCK * 4);
+    if (nblocks64 < 1) nblocks64 = 1;
+    if (nblocks64 > MAX_BLOCKS) nblocks64 = MAX_BLOCKS;
+    const int nblocks = (int)nblocks64;
+
+    if (nblocks == 1) {
+        block_sum<<<1, BLOCK>>>(a, (double *)b, n);
+    } else {
+        double *partials = get_partials();
+        if (partials == (double *)-1) return;
+        block_sum<<<nblocks, BLOCK>>>(a, partials, n);
+        final_sum<<<1, BLOCK>>>(partials, (double *)b, nblocks);
+    }
+}

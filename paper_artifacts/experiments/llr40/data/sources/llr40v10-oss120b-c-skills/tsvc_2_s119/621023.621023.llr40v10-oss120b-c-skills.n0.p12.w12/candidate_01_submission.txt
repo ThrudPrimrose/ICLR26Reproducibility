@@ -1,0 +1,40 @@
+/* Optimized version of tsvc_2_s119_fp64 using wavefront parallelism.
+ * Original reference loops over i,j with diagonal dependence aa[i][j] = aa[i-1][j-1] + bb[i][j].
+ * This implementation processes anti-diagonals (i+j) sequentially, and parallelizes work
+ * within each anti-diagonal using OpenMP. The outer sum loop respects the dependence,
+ * while the inner loop is thread-safe because each iteration reads from the previously
+ * computed diagonal only.
+ */
+
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s119_fp64(double *restrict aa, const double *restrict bb, const int64_t LEN_2D) {
+    // The valid indices start at 1 for both i and j; indices 0 are untouched.
+    const int64_t max_idx = LEN_2D - 1; // last valid i/j index
+    // Sum index runs from 2 (1+1) up to 2*max_idx (inclusive).
+    const int64_t sum_min = 2;
+    const int64_t sum_max = 2 * max_idx;
+
+    // Parallel region reuses the thread team for all diagonals.
+    #pragma omp parallel
+    {
+        for (int64_t s = sum_min; s <= sum_max; ++s) {
+            // Determine i bounds for this anti-diagonal.
+            int64_t i_start = s - max_idx; // may be < 1
+            if (i_start < 1) i_start = 1;
+            int64_t i_end = s - 1; // j = s-i, need j>=1
+            if (i_end > max_idx) i_end = max_idx;
+
+            // Parallelise the independent iterations on this diagonal.
+            #pragma omp for schedule(static)
+            for (int64_t i = i_start; i <= i_end; ++i) {
+                int64_t j = s - i;
+                int64_t idx_ij = i * LEN_2D + j;          // destination index
+                int64_t idx_im1j = idx_ij - (LEN_2D + 1); // source from previous diagonal
+                aa[idx_ij] = aa[idx_im1j] + bb[idx_ij];
+            }
+        }
+    }
+}
+

@@ -1,0 +1,29 @@
+import os
+os.environ["NUMBA_NUM_THREADS"] = "384"
+import numpy as np
+import numba as _numba
+from numba import njit as _njit
+from numba import prange as _prange
+
+
+@_njit(parallel=True, fastmath=True, nogil=True)
+def _vpvts_par(a, b, n, S):
+    for i in _prange(n):
+        a[i] += b[i] * S
+
+
+def _warm():
+    a = np.zeros(1024, dtype=np.float64)
+    b = np.zeros(1024, dtype=np.float64)
+    _vpvts_par(a, b, 1024, 7)
+    a32 = np.zeros(1024, dtype=np.float32)
+    b32 = np.zeros(1024, dtype=np.float32)
+    _vpvts_par(a32, b32, np.int32(1024), np.int32(7))
+
+
+_warm()
+
+
+def vpvts(a, b, LEN_1D, S):
+    _vpvts_par(a, b, LEN_1D, S)
+    return None

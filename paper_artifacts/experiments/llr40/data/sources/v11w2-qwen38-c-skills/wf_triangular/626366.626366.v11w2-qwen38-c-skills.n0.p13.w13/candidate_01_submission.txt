@@ -1,0 +1,34 @@
+#include <stdint.h>
+#include <omp.h>
+#include <stdio.h>
+#define WF_B 64
+#define WF_K 24
+void wf_triangular_fp64(double *restrict a, const int64_t LEN_2D) {
+  const int64_t N=LEN_2D; if(N<2)return;
+  const int64_t B=WF_B, R=(N+B-1)/B;
+  static int once=0;
+  if(!once){once=1; printf("N=%ld B=%d K=%d\n",(long)N,(int)B,WF_K); fflush(stdout);}
+  #pragma omp parallel num_threads(WF_K)
+  {
+    for (int64_t d=0; d<2*R-1; ++d) {
+      int64_t r_lo=d-(R-1); if(r_lo<0)r_lo=0;
+      int64_t r_hi=d/2; if(r_hi>R-1)r_hi=R-1;
+      if (r_lo<=r_hi)
+        #pragma omp for schedule(static)
+        for (int64_t r=r_lo;r<=r_hi;++r) {
+          const int64_t c=d-r;
+          int64_t i_min=r*B; if(i_min<1)i_min=1;
+          int64_t i_max=(r+1)*B; if(i_max>N)i_max=N; --i_max;
+          int64_t j_min=c*B;
+          int64_t j_max=(c+1)*B; if(j_max>N)j_max=N; --j_max;
+          if(i_min>i_max||j_min>j_max)continue;
+          int64_t s_lo=i_min+(i_min>j_min?i_min:j_min), s_hi=i_max+j_max;
+          for(int64_t s=s_lo;s<=s_hi;++s){
+            int64_t il=i_min; int64_t t2=s-j_max; if(t2>il)il=t2;
+            int64_t ih=i_max; t2=s-j_min; if(t2<ih)ih=t2; t2=s/2; if(t2<ih)ih=t2;
+            for(int64_t i=il;i<=ih;++i){const int64_t j=s-i; a[i*N+j]=a[i*N+j]+a[(i-1)*N+j]+a[i*N+(j-1)];}
+          }
+        }
+    }
+  }
+}

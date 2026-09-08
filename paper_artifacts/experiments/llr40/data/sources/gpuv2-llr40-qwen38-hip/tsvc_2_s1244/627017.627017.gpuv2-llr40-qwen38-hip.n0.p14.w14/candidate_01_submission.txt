@@ -1,0 +1,28 @@
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+__global__ void shift_kernel(const double* __restrict__ a, double* __restrict__ d, long long n) {
+    long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) d[i] = a[i + 1];
+}
+
+__global__ void main_kernel(double* __restrict__ a, const double* __restrict__ b,
+                            const double* __restrict__ c, double* __restrict__ d, long long n) {
+    long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        double t = c[i] * c[i];
+        double u = b[i] * b[i];
+        double newa = b[i] + t;
+        newa = newa + u;
+        newa = newa + c[i];
+        a[i] = newa;
+        d[i] = newa + d[i];
+    }
+}
+
+void tsvc_2_s1244_launch(double* a, const double* b, const double* c, double* d, long long n) {
+    const int blockSize = 256;
+    int grid = (int)((n + blockSize - 1) / blockSize);
+    shift_kernel<<<grid, blockSize>>>(a, d, n);
+    main_kernel<<<grid, blockSize>>>(a, b, c, d, n);
+}

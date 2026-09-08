@@ -1,0 +1,11 @@
+#include <stdint.h>
+#include <omp.h>
+
+void scatter_accum_dup_fp64(double *restrict bins, const int32_t *restrict ip, const double *restrict src, const int64_t LEN_1D, uint8_t *restrict workspace, const int64_t workspace_size) {
+    #pragma omp parallel for schedule(static)
+    for (int64_t i = 0; i < LEN_1D; ++i) {
+        if (i + 8 < LEN_1D) __builtin_prefetch(&bins[ip[i + 8]], 1, 3);
+        #pragma omp atomic
+        bins[ip[i]] += src[i];
+    }
+}

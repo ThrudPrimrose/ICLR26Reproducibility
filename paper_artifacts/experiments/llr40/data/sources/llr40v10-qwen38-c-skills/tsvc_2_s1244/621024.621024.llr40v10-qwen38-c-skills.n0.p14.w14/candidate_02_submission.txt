@@ -1,0 +1,42 @@
+#include <stdint.h>
+#include <omp.h>
+
+/* d[i] = a_new[i] + a_orig[i+1]; a_new[i] = b[i] + c[i]^2 + b[i]^2 + c[i].
+ * The only cross-iteration hazard is a[i+1] (read by i, written by i+1).
+ * Inside one thread the vectorized chunk loads a[i+1] before storing a[i]
+ * (program order), so a thread's span is self-contained except for the single
+ * first element of the NEXT span, which is pre-read below and synced with
+ * one barrier. */
+void tsvc_2_s1244_fp64(double *restrict a, const double *restrict b, const double *restrict c, double *restrict d,
+                       const int64_t LEN_1D) {
+
+  const int64_t n = LEN_1D - 1; /* number of i in [0, n) */
+  if (n <= 0) return;
+
+  #pragma omp parallel
+  {
+    const int64_t T = omp_get_num_threads();
+    const int64_t tid = omp_get_thread_num();
+    const int64_t base = n / T, rem = n % T;
+    const int64_t s = tid * base + (tid < rem ? tid : rem);
+    const int64_t e = s + base + (tid < rem ? 1 : 0);
+
+    /* read the first element of this span's successor before it is overwritten */
+    const double edge = a[e];
+    #pragma omp barrier
+    if (e > s) {
+      const int64_t vec_end = e - 8 > s ? e - 8 : s;
+      for (int64_t i = s; i < vec_end; i++) {
+        const double t = b[i] + c[i] * c[i] + b[i] * b[i] + c[i];
+        a[i] = t;
+        d[i] = t + a[i + 1];
+      }
+      for (int64_t i = vec_end; i < e; i++) {
+        const double t2 = (i + 1 == e) ? edge : a[i + 1];
+        const double t = b[i] + c[i] * c[i] + b[i] * b[i] + c[i];
+        a[i] = t;
+        d[i] = t + t2;
+      }
+    }
+  }
+}

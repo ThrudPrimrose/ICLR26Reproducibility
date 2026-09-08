@@ -1,0 +1,54 @@
+#include <stdint.h>
+#include <immintrin.h>
+
+#define VSTEP 64 /* 8 x 512-bit vectors per iteration */
+
+void tsvc_2_s2275_fp64(double *restrict a, double *restrict aa, const double *restrict b, const double *restrict bb,
+                       const double *restrict c, const double *restrict cc, const double *restrict d,
+                       const int64_t LEN_2D)
+{
+  const int64_t N = LEN_2D * LEN_2D;
+#pragma omp parallel
+  {
+#pragma omp for schedule(static)
+    for (int64_t c0 = 0; c0 < N; c0 += 8192) {
+      const int64_t k1 = c0 + 8192 < N ? c0 + 8192 : N;
+      int64_t k = c0;
+      for (; k + VSTEP <= k1; k += VSTEP) {
+        __m512d va0 = _mm512_loadu_pd(aa + k + 0),  va1 = _mm512_loadu_pd(aa + k + 8);
+        __m512d va2 = _mm512_loadu_pd(aa + k + 16), va3 = _mm512_loadu_pd(aa + k + 24);
+        __m512d va4 = _mm512_loadu_pd(aa + k + 32), va5 = _mm512_loadu_pd(aa + k + 40);
+        __m512d va6 = _mm512_loadu_pd(aa + k + 48), va7 = _mm512_loadu_pd(aa + k + 56);
+        __m512d vb0 = _mm512_loadu_pd(bb + k + 0),  vb1 = _mm512_loadu_pd(bb + k + 8);
+        __m512d vb2 = _mm512_loadu_pd(bb + k + 16), vb3 = _mm512_loadu_pd(bb + k + 24);
+        __m512d vb4 = _mm512_loadu_pd(bb + k + 32), vb5 = _mm512_loadu_pd(bb + k + 40);
+        __m512d vb6 = _mm512_loadu_pd(bb + k + 48), vb7 = _mm512_loadu_pd(bb + k + 56);
+        __m512d vc0 = _mm512_loadu_pd(cc + k + 0),  vc1 = _mm512_loadu_pd(cc + k + 8);
+        __m512d vc2 = _mm512_loadu_pd(cc + k + 16), vc3 = _mm512_loadu_pd(cc + k + 24);
+        __m512d vc4 = _mm512_loadu_pd(cc + k + 32), vc4a = _mm512_loadu_pd(cc + k + 40);
+        __m512d vc6 = _mm512_loadu_pd(cc + k + 48), vc7 = _mm512_loadu_pd(cc + k + 56);
+        _mm512_storeu_pd(aa + k + 0,  _mm512_fmadd_pd(vb0, vc0, va0));
+        _mm512_storeu_pd(aa + k + 8,  _mm512_fmadd_pd(vb1, vc1, va1));
+        _mm512_storeu_pd(aa + k + 16, _mm512_fmadd_pd(vb2, vc2, va2));
+        _mm512_storeu_pd(aa + k + 24, _mm512_fmadd_pd(vb3, vc3, va3));
+        _mm512_storeu_pd(aa + k + 32, _mm512_fmadd_pd(vb4, vc4, va4));
+        _mm512_storeu_pd(aa + k + 40, _mm512_fmadd_pd(vb5, vc4a, va5));
+        _mm512_storeu_pd(aa + k + 48, _mm512_fmadd_pd(vb6, vc6, va6));
+        _mm512_storeu_pd(aa + k + 56, _mm512_fmadd_pd(vb7, vc7, va7));
+      }
+      for (; k < k1; ++k) aa[k] += bb[k] * cc[k];
+    }
+#pragma omp for schedule(static)
+    for (int64_t i0 = 0; i0 < LEN_2D; i0 += 8) {
+      const int64_t i1 = i0 + 8 < LEN_2D ? i0 + 8 : LEN_2D;
+      int64_t i = i0;
+      for (; i + 8 <= i1; i += 8) {
+        __m512d vb = _mm512_loadu_pd(b + i);
+        __m512d vc = _mm512_loadu_pd(c + i);
+        __m512d vd = _mm512_loadu_pd(d + i);
+        _mm512_storeu_pd(a + i, _mm512_fmadd_pd(vc, vd, vb));
+      }
+      for (; i < i1; ++i) a[i] = b[i] + c[i] * d[i];
+    }
+  }
+}

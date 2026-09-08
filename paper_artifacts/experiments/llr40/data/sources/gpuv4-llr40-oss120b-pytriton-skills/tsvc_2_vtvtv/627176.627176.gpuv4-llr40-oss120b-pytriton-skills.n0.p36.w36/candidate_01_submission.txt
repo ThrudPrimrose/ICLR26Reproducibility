@@ -1,0 +1,11 @@
+# Optimized implementation using Numba vectorized ufunc with parallel target
+import numpy as np
+import numba
+
+@numba.vectorize(['float64(float64,float64,float64)'], nopython=True, fastmath=True, target='parallel')
+def _mul3(x, y, z):
+    return x * y * z
+
+def vtvtv(a, b, c, LEN_1D):
+    _mul3(a, b, c, out=a)
+    return None

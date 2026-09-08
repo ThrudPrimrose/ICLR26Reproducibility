@@ -1,0 +1,49 @@
+/* TSVC tsvc_2 s2275, fp64: aa[j,i] += bb[j,i]*cc[j,i] for all i,j; a[i] = b[i]+c[i]*d[i].
+ * OpenMP target offload to GPU. All updates are elementwise and independent, so two
+ * flat loops cover the work.
+ *
+ * Two tricks:
+ *  - ONE `target data` region maps every array once; separate regions force the runtime
+ *    to re-mass-map hundreds of MB of device address space per region and are ~10x slower.
+ *  - mlock() each unique input/output buffer once (cached by pointer). HSA copies from
+ *    pageable host memory go through a slow staging path (~80GB/s); pinned host memory
+ *    copies at HBM bandwidth. mlock never changes data, so failure is harmless. */
+#define _GNU_SOURCE
+#include <stdint.h>
+#include <stddef.h>
+#include <sys/mman.h>
+#include <errno.h>
+#include <stdio.h>
+
+void tsvc_2_s2275_fp64(double *restrict a, double *restrict aa, const double *restrict b, const double *restrict bb,
+                       const double *restrict c, const double *restrict cc, const double *restrict d,
+                       const int64_t LEN_2D) {
+  const int64_t n = LEN_2D;
+  const int64_t n2 = n * n;
+
+  {
+    static void *seen[16];
+    static int n_seen = 0;
+    void *const ps[7] = { (void *)a, (void *)aa, (void *)b, (void *)bb, (void *)c, (void *)cc, (void *)d };
+    const size_t lens[7] = { (size_t)n*8, (size_t)n2*8, (size_t)n*8, (size_t)n2*8,
+                             (size_t)n*8, (size_t)n2*8, (size_t)n*8 };
+    for (int i = 0; i < 7; ++i) {
+      int known = 0;
+      for (int k = 0; k < n_seen; ++k) if (seen[k] == ps[i]) { known = 1; break; }
+      if (!known && n_seen < 16) {
+        if (mlock(ps[i], lens[i]) == 0) { seen[n_seen] = ps[i]; ++n_seen; }
+        else { fprintf(stderr, "mlock fail %p/%zu errno=%d\n", ps[i], lens[i], errno); }
+      }
+    }
+  }
+
+#pragma omp target data map(tofrom: aa[0:n2]) map(to: bb[0:n2], cc[0:n2]) map(tofrom: a[0:n]) map(to: b[0:n], c[0:n], d[0:n])
+  {
+#pragma omp target teams distribute parallel for
+    for (int64_t idx = 0; idx < n2; ++idx)
+      aa[idx] += bb[idx] * cc[idx];
+#pragma omp target teams distribute parallel for
+    for (int64_t i = 0; i < n; ++i)
+      a[i] = b[i] + c[i] * d[i];
+  }
+}

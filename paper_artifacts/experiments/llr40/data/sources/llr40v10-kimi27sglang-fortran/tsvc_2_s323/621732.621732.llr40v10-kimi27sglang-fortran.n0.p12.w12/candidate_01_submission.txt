@@ -1,0 +1,15 @@
+module tsvc_2_s323_mod
+  use, intrinsic :: iso_c_binding
+  implicit none
+contains
+  subroutine tsvc_2_s323_fp64(a, b, c, d, e, LEN_1D) bind(C, name="tsvc_2_s323_fp64")
+    real(c_double), dimension(0:*), intent(inout) :: a, b
+    real(c_double), dimension(0:*), intent(in) :: c, d, e
+    integer(c_int64_t), value :: LEN_1D
+    integer(c_int64_t) :: i
+    do i = 1_c_int64_t, LEN_1D - 1_c_int64_t
+      a(i) = b(i - 1_c_int64_t) + c(i) * d(i)
+      b(i) = a(i) + c(i) * e(i)
+    end do
+  end subroutine
+end module

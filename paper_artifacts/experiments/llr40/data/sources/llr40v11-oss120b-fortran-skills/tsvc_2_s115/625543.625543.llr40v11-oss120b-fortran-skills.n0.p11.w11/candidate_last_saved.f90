@@ -1,0 +1,17 @@
+module tsvc_2_s115_mod
+  use iso_c_binding, only: c_int64_t, c_double
+  implicit none
+contains
+  subroutine tsvc_2_s115_fp64(a, aa, len_2d) bind(C, name="tsvc_2_s115_fp64")
+    integer(c_int64_t), value, intent(in) :: len_2d
+    real(c_double), intent(inout) :: a(len_2d)
+    real(c_double), intent(in) :: aa(len_2d, len_2d)
+    integer(c_int64_t) :: j, i
+    do j = 1, len_2d-1
+!$omp simd
+        do i = j+1, len_2d
+          a(i) = a(i) - aa(i, j) * a(j)
+        end do
+    end do
+  end subroutine tsvc_2_s115_fp64
+end module tsvc_2_s115_mod

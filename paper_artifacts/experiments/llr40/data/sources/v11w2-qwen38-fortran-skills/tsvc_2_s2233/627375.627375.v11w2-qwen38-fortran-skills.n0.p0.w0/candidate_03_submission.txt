@@ -1,0 +1,46 @@
+subroutine tsvc_2_s2233_fp64(aa, bb, cc, len_2d) bind(C)
+  use iso_c_binding
+  use omp_lib
+  integer(c_int64_t), value, intent(in) :: len_2d
+  real(c_double), intent(inout) :: aa(len_2d, len_2d)
+  real(c_double), intent(inout) :: bb(len_2d, len_2d)
+  real(c_double), intent(in)    :: cc(len_2d, len_2d)
+  integer(c_int64_t) :: n, b, j, nb, wmax, i0, i1, wlen, full
+  real(c_double), allocatable :: wa(:), wb(:)
+
+  n = len_2d
+  if (n < 9) return
+  nb = max(omp_get_max_threads(), 1)
+  wmax = (n - 8 + nb - 1) / nb
+  !$omp parallel do schedule(static) private(wa, wb)
+  do b = 1, nb
+    i0 = 9 + (b - 1) * wmax
+    i1 = min(n, i0 + wmax - 1)
+    if (i0 <= n) then
+      wlen = i1 - i0 + 1
+      full = (n - 8) / 2
+      allocate(wa(wlen), wb(wlen))
+      wa(:) = aa(i0:i1, 8)
+      wb(:) = bb(i0:i1, 8)
+      do j = 9, 7 + 2*full, 2
+        wa = wa + cc(i0:i1, j)
+        aa(i0:i1, j) = wa
+        wa = wa + cc(i0:i1, j + 1)
+        aa(i0:i1, j + 1) = wa
+        wb = wb + cc(i0:i1, j)
+        bb(i0:i1, j) = wb
+        wb = wb + cc(i0:i1, j + 1)
+        bb(i0:i1, j + 1) = wb
+      end do
+      if (mod(n - 8, 2_c_int64_t) == 1) then
+        j = 9 + 2*full
+        wa = wa + cc(i0:i1, j)
+        aa(i0:i1, j) = wa
+        wb = wb + cc(i0:i1, j)
+        bb(i0:i1, j) = wb
+      end if
+      deallocate(wa, wb)
+    end if
+  end do
+
+end subroutine tsvc_2_s2233_fp64

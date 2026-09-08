@@ -1,0 +1,18 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void tsvc_2_s231_kernel(double * __restrict__ aa,
+                                               const double * __restrict__ bb,
+                                               const int64_t LEN_2D) {
+    // Each thread processes one column i
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (i >= LEN_2D) return;
+    // Load the initial element (j = 0)
+    double prev = aa[i]; // aa[0 * LEN_2D + i]
+    // Loop over rows j = 1 .. LEN_2D-1
+    for (int64_t j = 1; j < LEN_2D; ++j) {
+        double val = prev + bb[j * LEN_2D + i];
+        aa[j * LEN_2D + i] = val;
+        prev = val;
+    }
+}

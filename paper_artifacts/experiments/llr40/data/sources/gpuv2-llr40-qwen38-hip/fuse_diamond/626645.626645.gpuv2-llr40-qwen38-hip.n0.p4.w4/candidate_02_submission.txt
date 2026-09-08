@@ -1,0 +1,41 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+struct alignas(32) D4 { double x, y, z, w; };
+
+__global__ void __launch_bounds__(256)
+fd_vec(const D4 *__restrict__ a, D4 *__restrict__ out, int64_t nv) {
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < nv) {
+        D4 v = a[i];
+        D4 r;
+        double t;
+        t = v.x * v.x; r.x = (t + 1.0) * (t - 1.0);
+        t = v.y * v.y; r.y = (t + 1.0) * (t - 1.0);
+        t = v.z * v.z; r.z = (t + 1.0) * (t - 1.0);
+        t = v.w * v.w; r.w = (t + 1.0) * (t - 1.0);
+        out[i] = r;
+    }
+}
+
+__global__ void fd_tail(const double *__restrict__ a, double *__restrict__ out,
+                        int64_t base, int64_t n) {
+    int64_t i = base + threadIdx.x;
+    if (i < n) {
+        double t = a[i] * a[i];
+        out[i] = (t + 1.0) * (t - 1.0);
+    }
+}
+
+extern "C" void launch_fuse_diamond(const double *a, double *out, int64_t n) {
+    int64_t nv = n >> 2;
+    if (nv > 0) {
+        int block = 256;
+        int64_t grid = (nv + block - 1) / block;
+        fd_vec<<<(unsigned)grid, block>>>((const D4 *)a, (D4 *)out, nv);
+    }
+    int64_t rem = n & 3;
+    if (rem > 0) {
+        fd_tail<<<1, 4>>>(a, out, nv * 4, n);
+    }
+}

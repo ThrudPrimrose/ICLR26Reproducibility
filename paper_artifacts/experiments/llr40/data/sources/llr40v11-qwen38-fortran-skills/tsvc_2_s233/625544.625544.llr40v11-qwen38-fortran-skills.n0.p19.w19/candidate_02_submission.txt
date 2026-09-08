@@ -1,0 +1,46 @@
+subroutine tsvc_2_s233_fp64(aa, bb, cc, len_2d) bind(C)
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_2d
+  real(c_double), intent(inout) :: aa(len_2d, len_2d)
+  real(c_double), intent(inout) :: bb(len_2d, len_2d)
+  real(c_double), intent(in) :: cc(len_2d, len_2d)
+
+  integer(c_int64_t) :: i, j, istart, iend, lastfull, nbcol, k
+  integer, parameter :: B = 8
+
+  if (len_2d > 8) then
+
+    ! ---- Loop 1: aa(i,j) = aa(i,j-1) + cc(i,j)  (scan over j, per column i)
+    ! Column-major: j is the slow (strided) index. Coalesce by processing B
+    ! contiguous columns (unit stride) at each j step; scan stays serial in j
+    ! per block; blocks are independent -> parallel over blocks.
+    nbcol = (len_2d - 8) / B
+    lastfull = 9 + (nbcol - 1) * B
+    !$omp parallel do
+    do istart = 9, lastfull, B
+      iend = istart + B - 1
+      do j = 9, len_2d
+        aa(istart:iend, j) = aa(istart:iend, j - 1) + cc(istart:iend, j)
+      end do
+    end do
+    ! ragged tail columns
+    !$omp parallel do
+    do k = 9 + nbcol * B, len_2d
+      do j = 9, len_2d
+        aa(k, j) = aa(k, j - 1) + cc(k, j)
+      end do
+    end do
+
+    ! ---- Loop 2: bb(i,j) = bb(i-1,j) + cc(i,j)  (scan over i, per row j)
+    ! Column-major: i is the fast (unit stride) index. Swap loops so j (rows)
+    ! is the parallel outer loop and i is the unit-stride serial inner scan.
+    !$omp parallel do
+    do j = 9, len_2d
+      do i = 9, len_2d
+        bb(i, j) = bb(i - 1, j) + cc(i, j)
+      end do
+    end do
+
+  end if
+end subroutine tsvc_2_s233_fp64

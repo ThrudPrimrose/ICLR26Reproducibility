@@ -1,0 +1,68 @@
+subroutine ext_break_capture_fp64(a, out_index, out_value, LEN_1D, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D
+  integer(c_int8_t), intent(inout) :: workspace(*)
+  integer(c_int64_t), value, intent(in) :: workspace_size
+  real(c_double), intent(in) :: a(LEN_1D)
+  integer(c_int64_t), intent(out) :: out_index(1)
+  real(c_double), intent(out) :: out_value(1)
+
+  real(c_double), parameter :: K = 1.0d0
+  integer(c_int64_t), parameter :: BS = 4096
+  integer(c_int64_t), parameter :: BATCH = 4
+  integer(c_int64_t) :: nblocks, b_start, b, lo, hi, i, first, local_best
+  integer(c_int64_t) :: next_chunk, best_idx
+
+  out_index(1) = 0
+  out_value(1) = -1.0d0
+
+  if (LEN_1D <= 0) return
+
+  nblocks = (LEN_1D + BS - 1) / BS
+  next_chunk = 0
+  best_idx = LEN_1D + 1
+
+  !$omp parallel private(b_start, b, lo, hi, i, first, local_best) shared(next_chunk, best_idx)
+  do
+    !$omp atomic capture
+    b_start = next_chunk
+    next_chunk = next_chunk + BATCH
+    !$omp end atomic
+    if (b_start >= nblocks) exit
+
+    do b = b_start, min(b_start + BATCH - 1, nblocks - 1)
+      lo = b * BS + 1
+      hi = min((b + 1_c_int64_t) * BS, LEN_1D)
+
+      !$omp atomic read
+      local_best = best_idx
+      if (local_best < lo) exit
+
+      first = 0
+      do i = lo, hi
+        if (a(i) > K) then
+          first = i
+          exit
+        end if
+      end do
+
+      if (first > 0) then
+        !$omp atomic write
+        best_idx = first
+        exit
+      end if
+    end do
+
+    !$omp atomic read
+    local_best = best_idx
+    if (local_best < (b_start + BATCH) * BS) exit
+  end do
+  !$omp end parallel
+
+  if (best_idx <= LEN_1D) then
+    out_index(1) = best_idx
+    out_value(1) = a(best_idx)
+  end if
+end subroutine ext_break_capture_fp64

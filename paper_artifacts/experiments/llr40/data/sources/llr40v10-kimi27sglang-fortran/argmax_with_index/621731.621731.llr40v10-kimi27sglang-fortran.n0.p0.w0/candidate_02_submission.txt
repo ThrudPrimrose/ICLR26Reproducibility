@@ -1,0 +1,54 @@
+subroutine argmax_with_index_fp64(a, out_index, out_value, LEN_1D, workspace, workspace_bytes) bind(c, name="argmax_with_index_fp64")
+  use iso_c_binding, only: c_double, c_int64_t, c_ptr
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value :: LEN_1D
+  real(c_double), intent(in) :: a(LEN_1D)
+  integer(c_int64_t), intent(out) :: out_index(1)
+  real(c_double), intent(out) :: out_value(1)
+  type(c_ptr), value :: workspace
+  integer(c_int64_t), value :: workspace_bytes
+
+  integer :: maxt, nt, t
+  integer(c_int64_t) :: chunk, start, finish, local_idx(1)
+  real(c_double), allocatable :: vloc(:)
+  integer(c_int64_t), allocatable :: iloc(:)
+  real(c_double) :: bestv
+  integer(c_int64_t) :: besti
+
+  if (LEN_1D <= 0) then
+     out_index(1) = 0
+     out_value(1) = 0.0_c_double
+     return
+  end if
+
+  maxt = omp_get_max_threads()
+  nt = maxt
+  if (LEN_1D < int(nt, c_int64_t)) nt = int(LEN_1D, kind=4)
+
+  allocate(vloc(nt), iloc(nt))
+
+  !$omp parallel do default(none) shared(a, vloc, iloc, LEN_1D, nt) private(t, chunk, start, finish, local_idx)
+  do t = 1, nt
+     chunk = LEN_1D / int(nt, c_int64_t)
+     start = (int(t, c_int64_t) - 1) * chunk + 1
+     finish = t * chunk
+     if (t == nt) finish = LEN_1D
+     local_idx = maxloc(a(start:finish), kind=8)
+     iloc(t) = start + local_idx(1) - 1
+     vloc(t) = a(iloc(t))
+  end do
+
+  bestv = vloc(1)
+  besti = iloc(1)
+  do t = 2, nt
+     if (vloc(t) > bestv) then
+        bestv = vloc(t)
+        besti = iloc(t)
+     end if
+  end do
+
+  out_index(1) = besti
+  out_value(1) = bestv
+  deallocate(vloc, iloc)
+end subroutine argmax_with_index_fp64

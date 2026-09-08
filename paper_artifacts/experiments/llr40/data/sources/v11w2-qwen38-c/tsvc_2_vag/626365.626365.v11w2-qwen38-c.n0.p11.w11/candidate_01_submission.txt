@@ -1,0 +1,121 @@
+/* tsvc_2 vag: a[i] = b[ip[i]], ip is (verified at runtime) a permutation of [0,N).
+ * Strategy: build inverse permutation inv[j] = i where ip[i] = j (scattered 4B stores,
+ * vectorized via 512-bit i32scatter), then stream b and scatter-store a[inv[j]] = b[j].
+ * Reads of b become fully sequential (one DRAM line fetch per 8 elements instead of
+ * per element); the mapping pass is paid once. OpenMP across the available cores.
+ * Fallback for non-permutation ip: parallel vectorized gather. */
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <immintrin.h>
+#include <omp.h>
+
+#define SMALL_N 32768
+
+static int32_t *g_inv = NULL;
+static int64_t g_inv_cap = 0;
+static uint8_t *g_seen = NULL;
+static int64_t g_seen_cap = 0;
+
+static void ensure_inv(int64_t n) {
+  if (n > g_inv_cap) {
+    int64_t cap = n + n / 8 + 1024;
+    int32_t *p = (int32_t *)realloc(g_inv, (size_t)cap * 4);
+    if (!p) { g_inv = NULL; g_inv_cap = 0; return; }
+    g_inv = p; g_inv_cap = cap;
+  }
+  size_t sb = (size_t)(n >> 3) + 1;
+  if ((int64_t)sb > g_seen_cap) {
+    uint8_t *p = (uint8_t *)realloc(g_seen, sb);
+    if (!p) { g_seen = NULL; g_seen_cap = 0; return; }
+    g_seen = p; g_seen_cap = (int64_t)sb;
+  }
+  memset(g_seen, 0, sb);
+}
+
+/* gather fallback: a[i] = b[ip[i]] */
+static void gather_path(double *restrict a, const double *restrict b, const int32_t *restrict ip, int64_t n) {
+  #pragma omp parallel for schedule(static)
+  for (int64_t t0 = 0; t0 < n; t0 += 16384) {
+    int64_t end = t0 + 16384; if (end > n) end = n;
+    int64_t i = t0;
+    for (; i + 8 <= end; i += 8) {
+      __m256i idx = _mm256_loadu_si256((const __m256i *)(ip + i));
+      _mm512_storeu_pd(a + i, _mm512_i32gather_pd(idx, b, 8));
+    }
+    for (; i < end; i++) a[i] = b[ip[i]];
+  }
+}
+
+static void vagsmall(double *restrict a, const double *restrict b, const int32_t *restrict ip, int64_t n) {
+  int64_t i = 0;
+  for (; i + 8 <= n; i += 8) {
+    __m256i idx = _mm256_loadu_si256((const __m256i *)(ip + i));
+    _mm512_storeu_pd(a + i, _mm512_i32gather_pd(idx, b, 8));
+  }
+  for (; i < n; i++) a[i] = b[ip[i]];
+}
+
+void tsvc_2_vag_fp64(double *restrict a, const double *restrict b, const int32_t *restrict ip, const int64_t LEN_1D) {
+  const int64_t n = LEN_1D;
+  if (n <= SMALL_N || n < 16384) { vagsmall(a, b, ip, n); return; }
+
+  ensure_inv(n);
+  int32_t *inv = g_inv;
+  uint8_t *seen = g_seen;
+  if (!inv) { gather_path(a, b, ip, n); return; }
+
+  /* Pass A: inv[ip[i]] = i ; set seen bits (permutation verification, free in pass A). */
+  #pragma omp parallel for schedule(static)
+  for (int64_t t0 = 0; t0 < n; t0 += 16384) {
+    int64_t end = t0 + 16384; if (end > n) end = n;
+    int64_t i = t0;
+    for (; i + 16 <= end; i += 16) {
+      __m512i idx = _mm512_loadu_si512((const void *)(ip + i));
+      __m512i vals = _mm512_add_epi32(_mm512_set1_epi32((int)i),
+                     _mm512_setr_epi32(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15));
+      _mm512_i32scatter_epi32(inv, idx, vals, 4);
+    }
+    for (; i < end; i++) {
+      inv[ip[i]] = (int32_t)i;
+      seen[ip[i] >> 3] |= (uint8_t)(1u << (ip[i] & 7));
+    }
+  }
+  /* vector part above does NOT set seen; do a cheap dedicated verification pass instead */
+  {
+    int perm_ok = 1;
+    #pragma omp parallel for schedule(static) reduction(||:perm_ok)
+    for (int64_t t0 = 0; t0 < n; t0 += 16384) {
+      int64_t end = t0 + 16384; if (end > n) end = n;
+      int local_ok = 1;
+      for (int64_t i = t0; i < end; i++) {
+        int32_t v = ip[i];
+        uint8_t m = (uint8_t)(1u << (v & 7));
+        if (seen[v >> 3] & m) { local_ok = 0; }
+        seen[v >> 3] |= m;
+      }
+      perm_ok = perm_ok && local_ok;
+    }
+    if (!perm_ok) { gather_path(a, b, ip, n); return; }
+  }
+
+  /* Pass B: a[inv[j]] = b[j] with b streamed, a scattered */
+  #pragma omp parallel for schedule(static)
+  for (int64_t t0 = 0; t0 < n; t0 += 16384) {
+    int64_t end = t0 + 16384; if (end > n) end = n;
+    int64_t j = t0;
+    for (; j + 8 <= end; j += 8) {
+      __m512d v = _mm512_loadu_pd(b + j);
+      int32_t d[8];
+      _mm256_storeu_si256((__m256i *)d, _mm256_loadu_si256((const __m256i *)(inv + j)));
+      _mm256_storeu_si256((__m256i *)(d + 4), _mm256_loadu_si256((const __m256i *)(inv + j + 4)));
+      _mm_prefetch((const char *)(a + d[0]), 0);
+      double blk[8];
+      _mm512_storeu_pd(blk, v);
+      a[d[0]] = blk[0]; a[d[1]] = blk[1]; a[d[2]] = blk[2]; a[d[3]] = blk[3];
+      _mm_prefetch((const char *)(a + d[4]), 0);
+      a[d[4]] = blk[4]; a[d[5]] = blk[5]; a[d[6]] = blk[6]; a[d[7]] = blk[7];
+    }
+    for (; j < end; j++) a[inv[j]] = b[j];
+  }
+}

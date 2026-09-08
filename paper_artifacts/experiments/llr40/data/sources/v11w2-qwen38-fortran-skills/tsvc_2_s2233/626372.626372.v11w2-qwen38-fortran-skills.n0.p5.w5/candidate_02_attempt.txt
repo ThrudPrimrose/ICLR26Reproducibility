@@ -1,0 +1,33 @@
+subroutine tsvc_2_s2233_fp64(aa, bb, cc, len_2d) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_2d
+  real(c_double), intent(inout) :: aa(len_2d, len_2d)
+  real(c_double), intent(inout) :: bb(len_2d, len_2d)
+  real(c_double), intent(in)    :: cc(len_2d, len_2d)
+  integer(c_int64_t) :: n, lo, hi, t, i, j
+  integer :: nt
+
+  n = len_2d
+  if (n < 9) return
+
+  ! numpy aa[j,i] = aa[j-1,i] + cc[j,i]  and  bb[i,j] = bb[i-1,j] + cc[i,j]
+  ! Fortran layout: F(p,q) = flat (q-1)*N + (p-1) = numpy[q-1,p-1]
+  ! Both chains become:  X(p,q) = X(p,q-1) + cc(p,q),  X = aa, bb
+  !   parallel over p (first index = contiguous), chain over q (strided).
+  ! Each thread owns a contiguous p block [lo,hi]; per chain step q it does
+  ! elementwise contiguous work over its block (auto-vectorizable).
+  !$omp parallel
+  nt = omp_get_num_threads()
+  t = omp_get_thread_num()
+  lo = 9 + (n - 8) * t / nt
+  hi = 9 + (n - 8) * (t + 1) / nt - 1
+  do j = 9, n
+    do i = lo, hi
+      aa(i, j) = aa(i, j - 1) + cc(i, j)
+      bb(i, j) = bb(i, j - 1) + cc(i, j)
+    end do
+  end do
+  !$omp end parallel
+end subroutine tsvc_2_s2233_fp64

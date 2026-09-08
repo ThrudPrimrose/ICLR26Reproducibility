@@ -1,0 +1,35 @@
+#include <stdint.h>
+#include <omp.h>
+
+#ifndef BLOCK
+#define BLOCK 256
+#endif
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+    const int64_t L = LEN_2D;
+
+    /* aa[j,i] = aa[j-1,i] + cc[j,i]
+       Independent over columns i; recurrence is along rows j.
+       Process each contiguous column block on its own thread, then walk
+       rows sequentially and vectorise over the columns in the block. */
+    #pragma omp parallel for schedule(static)
+    for (int64_t i0 = 8; i0 < L; i0 += BLOCK) {
+        int64_t i1 = i0 + BLOCK;
+        if (i1 > L) i1 = L;
+        for (int64_t j = 8; j < L; ++j) {
+            #pragma omp simd
+            for (int64_t i = i0; i < i1; ++i) {
+                aa[j * L + i] = aa[(j - 1) * L + i] + cc[j * L + i];
+            }
+        }
+    }
+
+    /* bb[i,j] = bb[i-1,j] + cc[i,j]
+       Recurrence along rows i; vectorise over contiguous columns j. */
+    for (int64_t i = 8; i < L; ++i) {
+        #pragma omp simd
+        for (int64_t j = 8; j < L; ++j) {
+            bb[i * L + j] = bb[(i - 1) * L + j] + cc[i * L + j];
+        }
+    }
+}

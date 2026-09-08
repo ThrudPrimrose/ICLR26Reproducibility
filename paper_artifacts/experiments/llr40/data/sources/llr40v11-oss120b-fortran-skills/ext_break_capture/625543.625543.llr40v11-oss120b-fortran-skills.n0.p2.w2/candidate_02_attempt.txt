@@ -1,0 +1,53 @@
+subroutine ext_break_capture_fp64(a, out_index, out_value, LEN_1D) bind(C)
+   use iso_c_binding
+   implicit none
+   integer(c_int64_t), value, intent(in) :: LEN_1D
+   real(c_double), intent(in) :: a(LEN_1D)
+   integer(c_int64_t), intent(out) :: out_index
+   real(c_double), intent(out) :: out_value
+   integer(c_int64_t) :: i
+   real(c_double), allocatable :: a_local(:)
+   integer(c_int64_t) :: i_copy
+   ! Initialize outputs
+   out_index = -1_c_int64_t
+   out_value = -1.0d0
+
+   if (LEN_1D > 0_c_int64_t) then
+      allocate(a_local(LEN_1D + 1024_c_int64_t))
+      do i_copy = 1_c_int64_t, LEN_1D
+        a_local(i_copy) = a(i_copy)
+      end do
+      a_local(LEN_1D+1:LEN_1D+1024) = -1.0d0
+   else
+      allocate(a_local(1024))
+      a_local(1:1024) = -1.0d0
+   end if
+
+   if (LEN_1D > 0_c_int64_t) then
+      if (LEN_1D == 1_c_int64_t) then
+         if (a_local(1) > 1.0d0) then
+            out_index = 0_c_int64_t
+            out_value = a_local(1)
+         end if
+      else
+      i = 0_c_int64_t
+         do while (i < LEN_1D - 1_c_int64_t)
+            if (a_local(i+1) > 1.0d0) then
+               out_index = i
+               out_value = a_local(i+1)
+               exit
+            end if
+            i = i + 1_c_int64_t
+         end do
+         if (out_index == -1_c_int64_t) then
+            if (a_local(LEN_1D) > 1.0d0) then
+               out_index = LEN_1D - 1_c_int64_t
+               out_value = a_local(LEN_1D)
+            end if
+         end if
+      end if
+   end if
+
+   deallocate(a_local)
+
+end subroutine ext_break_capture_fp64

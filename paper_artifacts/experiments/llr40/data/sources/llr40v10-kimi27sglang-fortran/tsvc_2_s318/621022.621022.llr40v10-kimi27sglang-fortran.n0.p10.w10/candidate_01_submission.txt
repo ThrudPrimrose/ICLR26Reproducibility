@@ -1,0 +1,63 @@
+module tsvc_2_s318_mod
+  use iso_c_binding
+  implicit none
+
+  type :: maxloc_t
+    real(c_double) :: maxv
+    integer(c_int64_t) :: idx
+  end type maxloc_t
+
+contains
+
+  pure function maxloc_combine(a, b) result(res)
+    type(maxloc_t), intent(in) :: a, b
+    type(maxloc_t) :: res
+    if (a%maxv > b%maxv) then
+      res = a
+    else if (b%maxv > a%maxv) then
+      res = b
+    else
+      if (a%idx < b%idx) then
+        res = a
+      else
+        res = b
+      end if
+    end if
+  end function maxloc_combine
+
+  pure function maxloc_init() result(res)
+    type(maxloc_t) :: res
+    res%maxv = -huge(1.0_c_double)
+    res%idx = huge(1_c_int64_t)
+  end function maxloc_init
+
+  subroutine tsvc_2_s318_fp64(a, result, LEN_1D, inc) bind(c, name='tsvc_2_s318_fp64')
+    real(c_double), intent(in) :: a(*)
+    real(c_double), intent(out) :: result(*)
+    integer(c_int64_t), value, intent(in) :: LEN_1D, inc
+
+    integer(c_int64_t) :: i
+    type(maxloc_t) :: best
+
+    !$omp declare reduction(maxloc : maxloc_t : omp_out = maxloc_combine(omp_out, omp_in)) initializer(omp_priv = maxloc_init())
+
+    best = maxloc_t(abs(a(1)), 0_c_int64_t)
+
+    !$omp parallel do reduction(maxloc:best) schedule(static) if(LEN_1D > 1024)
+    do i = 2_c_int64_t, LEN_1D
+      block
+        real(c_double) :: v
+        integer(c_int64_t) :: k
+        k = inc * (i - 1_c_int64_t)
+        v = abs(a(k + 1))
+        if (v > best%maxv) then
+          best%maxv = v
+          best%idx = i - 1_c_int64_t
+        end if
+      end block
+    end do
+    !$omp end parallel do
+
+    result(1) = best%maxv + dble(best%idx)
+  end subroutine tsvc_2_s318_fp64
+end module tsvc_2_s318_mod

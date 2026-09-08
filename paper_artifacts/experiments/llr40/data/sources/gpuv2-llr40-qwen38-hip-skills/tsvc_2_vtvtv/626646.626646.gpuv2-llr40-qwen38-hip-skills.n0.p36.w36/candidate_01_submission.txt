@@ -1,0 +1,69 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define HIP_CHECK(x) do { \
+    hipError_t e_ = (x); \
+    if (e_ != hipSuccess) { \
+        fprintf(stderr, "HIP error %s (%s:%d)\n", hipGetErrorString(e_), __FILE__, __LINE__); \
+        abort(); \
+    } \
+} while (0)
+
+__global__ void vtvtv_vec4(double4* __restrict__ a, const double4* __restrict__ b,
+                           const double4* __restrict__ c, const long n4) {
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    const long stride = (long)gridDim.x * blockDim.x;
+    for (; i < n4; i += stride) {
+        double4 av = a[i];
+        double4 bv = b[i];
+        double4 cv = c[i];
+        a[i] = make_double4(av.x * bv.x * cv.x, av.y * bv.y * cv.y,
+                            av.z * bv.z * cv.z, av.w * bv.w * cv.w);
+    }
+}
+
+__global__ void vtvtv_tail(double* __restrict__ a, const double* __restrict__ b,
+                           const double* __restrict__ c, const long n) {
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    const long stride = (long)gridDim.x * blockDim.x;
+    for (; i < n; i += stride) a[i] = a[i] * b[i] * c[i];
+}
+
+void tsvc_2_vtvtv_launch(double* a, const double* b, const double* c, int64_t n) {
+    if (n <= 0) return;
+    const int block = 256;
+
+    // Query device once for a good max-resident block count.
+    static int maxBlocks = 0;
+    if (maxBlocks == 0) {
+        int dev = 0;
+        hipDeviceProp_t prop;
+        HIP_CHECK(hipGetDevice(&dev));
+        HIP_CHECK(hipGetDeviceProperties(&prop, dev));
+        maxBlocks = prop.multiProcessorCount * prop.maxBlocksPerMultiProcessor;
+        if (maxBlocks < 1) maxBlocks = 2432;
+    }
+
+    bool aligned = (((uintptr_t)a | (uintptr_t)b | (uintptr_t)c) % 32) == 0;
+    long n4 = n / 4;
+    long rem = n - 4 * n4;
+
+    if (!aligned) {
+        long blocks = (n + block - 1) / block;
+        if (blocks > maxBlocks) blocks = maxBlocks;
+        if (blocks < 1) blocks = 1;
+        vtvtv_tail<<<(int)blocks, block>>>(a, b, c, n);
+    } else {
+        if (rem) vtvtv_tail<<<1, (int)rem>>>(a + 4 * n4, b + 4 * n4, c + 4 * n4, rem);
+        if (n4 > 0) {
+            long blocks = (n4 + block - 1) / block;
+            if (blocks > maxBlocks) blocks = maxBlocks;
+            if (blocks < 1) blocks = 1;
+            vtvtv_vec4<<<(int)blocks, block>>>((double4*)a, (const double4*)b, (const double4*)c, n4);
+        }
+    }
+    HIP_CHECK(hipGetLastError());
+    HIP_CHECK(hipDeviceSynchronize());
+}

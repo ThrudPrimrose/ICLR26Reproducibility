@@ -1,0 +1,32 @@
+import numpy as np
+import numba
+from numba import njit, prange
+
+
+@njit(parallel=True, fastmath=True)
+def _s1244(a, b, c, d, m):
+    # d[i] = new_a[i] + old_a[i+1]; compute d first, while a is still unmodified.
+    for i in prange(m):
+        d[i] = b[i] + c[i] * c[i] + b[i] * b[i] + c[i] + a[i + 1]
+    # now safe to overwrite a (nothing reads a anymore)
+    for i in prange(m):
+        a[i] = b[i] + c[i] * c[i] + b[i] * b[i] + c[i]
+
+
+def s1244(a, b, c, d, LEN_1D):
+    m = LEN_1D - 1
+    if m <= 0:
+        return None
+    if a.dtype == np.float64 and a.flags.c_contiguous and b.flags.c_contiguous \
+            and c.flags.c_contiguous and d.flags.c_contiguous:
+        _s1244(a, b, c, d, m)
+    else:
+        for i in range(m):
+            a[i] = b[i] + c[i] * c[i] + b[i] * b[i] + c[i]
+            d[i] = a[i] + a[i + 1]
+    return None
+
+
+# import-time warmup: compile + thread pool start, outside the timed section
+_z = np.zeros(65536)
+_s1244(_z.copy(), _z.copy(), _z.copy(), _z.copy(), 65535)

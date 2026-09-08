@@ -1,0 +1,238 @@
+#include <stdint.h>
+#include <immintrin.h>
+#include <cmath>
+#include <limits>
+#include <algorithm>
+#include <climits>
+#include <omp.h>
+
+extern "C" void argmax_with_index_fp64(const double *__restrict__ a,
+                                       int64_t *__restrict__ out_index,
+                                       double *__restrict__ out_value,
+                                       const int64_t LEN_1D) {
+    if (LEN_1D <= 0) return;
+
+    if (std::isnan(a[0])) {
+        out_value[0] = a[0];
+        out_index[0] = 0;
+        return;
+    }
+
+    double global_x = a[0];
+    int64_t global_idx = 0;
+
+    constexpr int64_t PARALLEL_THRESHOLD = 8192;
+
+    if (LEN_1D < PARALLEL_THRESHOLD) {
+        int64_t i = 1;
+
+#if defined(__AVX512F__)
+        __m512d vmax = _mm512_set1_pd(global_x);
+        __m512i vidx = _mm512_set1_epi64(global_idx);
+        const __m512i voffset = _mm512_set_epi64(7, 6, 5, 4, 3, 2, 1, 0);
+
+        for (; i + 8 <= LEN_1D; i += 8) {
+            __m512d va = _mm512_loadu_pd(a + i);
+            __mmask8 mask = _mm512_cmp_pd_mask(va, vmax, _CMP_GT_OQ);
+            vmax = _mm512_mask_max_pd(vmax, mask, va, vmax);
+            __m512i new_idx = _mm512_add_epi64(_mm512_set1_epi64(i), voffset);
+            vidx = _mm512_mask_blend_epi64(mask, vidx, new_idx);
+        }
+
+        alignas(64) double max_arr[8];
+        alignas(64) int64_t idx_arr[8];
+        _mm512_store_pd(max_arr, vmax);
+        _mm512_store_si512((__m512i *)idx_arr, vidx);
+        for (int k = 1; k < 8; ++k) {
+            if (max_arr[k] > global_x ||
+                (max_arr[k] == global_x && idx_arr[k] < global_idx)) {
+                global_x = max_arr[k];
+                global_idx = idx_arr[k];
+            }
+        }
+#elif defined(__AVX2__)
+        __m256d vmax = _mm256_set1_pd(global_x);
+        __m256i vidx = _mm256_set1_epi64x(global_idx);
+        const __m256i voffset = _mm256_set_epi64x(3, 2, 1, 0);
+
+        for (; i + 4 <= LEN_1D; i += 4) {
+            __m256d va = _mm256_loadu_pd(a + i);
+            __m256d cmp = _mm256_cmp_pd(va, vmax, _CMP_GT_OQ);
+            __m256d blend_val = _mm256_blendv_pd(vmax, va, cmp);
+            __m256i new_idx = _mm256_add_epi64(_mm256_set1_epi64x(i), voffset);
+            __m256i blend_idx = _mm256_castpd_si256(
+                _mm256_blendv_pd(_mm256_castsi256_pd(vidx),
+                                 _mm256_castsi256_pd(new_idx), cmp));
+            vmax = blend_val;
+            vidx = blend_idx;
+        }
+
+        alignas(32) double max_arr[4];
+        alignas(32) int64_t idx_arr[4];
+        _mm256_store_pd(max_arr, vmax);
+        _mm256_store_si256((__m256i *)idx_arr, vidx);
+        for (int k = 1; k < 4; ++k) {
+            if (max_arr[k] > global_x ||
+                (max_arr[k] == global_x && idx_arr[k] < global_idx)) {
+                global_x = max_arr[k];
+                global_idx = idx_arr[k];
+            }
+        }
+#else
+        __m128d vmax = _mm_set1_pd(global_x);
+        __m128i vidx = _mm_set1_epi64x(global_idx);
+        const __m128i voffset = _mm_set_epi64x(1, 0);
+
+        for (; i + 2 <= LEN_1D; i += 2) {
+            __m128d va = _mm_loadu_pd(a + i);
+            __m128d cmp = _mm_cmpgt_pd(va, vmax);
+            __m128d blend_val = _mm_blendv_pd(vmax, va, cmp);
+            __m128i new_idx = _mm_add_epi64(_mm_set1_epi64x(i), voffset);
+            __m128i blend_idx = _mm_castpd_si128(
+                _mm_blendv_pd(_mm_castsi128_pd(vidx),
+                              _mm_castsi128_pd(new_idx), cmp));
+            vmax = blend_val;
+            vidx = blend_idx;
+        }
+
+        double max_arr[2];
+        int64_t idx_arr[2];
+        _mm_storeu_pd(max_arr, vmax);
+        _mm_storeu_si128((__m128i *)idx_arr, vidx);
+        for (int k = 1; k < 2; ++k) {
+            if (max_arr[k] > global_x ||
+                (max_arr[k] == global_x && idx_arr[k] < global_idx)) {
+                global_x = max_arr[k];
+                global_idx = idx_arr[k];
+            }
+        }
+#endif
+
+        for (; i < LEN_1D; ++i) {
+            if (a[i] > global_x) {
+                global_x = a[i];
+                global_idx = i;
+            }
+        }
+    } else {
+        const int max_threads = omp_get_max_threads();
+        double *local_vals = static_cast<double *>(__builtin_alloca(max_threads * sizeof(double)));
+        int64_t *local_idxs = static_cast<int64_t *>(__builtin_alloca(max_threads * sizeof(int64_t)));
+
+#pragma omp parallel
+        {
+            int tid = omp_get_thread_num();
+            int nthreads = omp_get_num_threads();
+            int64_t chunk = (LEN_1D + nthreads - 1) / nthreads;
+            int64_t start = static_cast<int64_t>(tid) * chunk;
+            int64_t end = std::min(start + chunk, LEN_1D);
+
+            double local_x = -std::numeric_limits<double>::infinity();
+            int64_t local_idx = INT64_MAX;
+            int64_t i = start;
+
+#if defined(__AVX512F__)
+            __m512d vmax = _mm512_set1_pd(local_x);
+            __m512i vidx = _mm512_set1_epi64(local_idx);
+            const __m512i voffset = _mm512_set_epi64(7, 6, 5, 4, 3, 2, 1, 0);
+
+            for (; i + 8 <= end; i += 8) {
+                __m512d va = _mm512_loadu_pd(a + i);
+                __mmask8 mask = _mm512_cmp_pd_mask(va, vmax, _CMP_GT_OQ);
+                vmax = _mm512_mask_max_pd(vmax, mask, va, vmax);
+                __m512i new_idx = _mm512_add_epi64(_mm512_set1_epi64(i), voffset);
+                vidx = _mm512_mask_blend_epi64(mask, vidx, new_idx);
+            }
+
+            alignas(64) double max_arr[8];
+            alignas(64) int64_t idx_arr[8];
+            _mm512_store_pd(max_arr, vmax);
+            _mm512_store_si512((__m512i *)idx_arr, vidx);
+            for (int k = 0; k < 8; ++k) {
+                if (max_arr[k] > local_x ||
+                    (max_arr[k] == local_x && idx_arr[k] < local_idx)) {
+                    local_x = max_arr[k];
+                    local_idx = idx_arr[k];
+                }
+            }
+#elif defined(__AVX2__)
+            __m256d vmax = _mm256_set1_pd(local_x);
+            __m256i vidx = _mm256_set1_epi64x(local_idx);
+            const __m256i voffset = _mm256_set_epi64x(3, 2, 1, 0);
+
+            for (; i + 4 <= end; i += 4) {
+                __m256d va = _mm256_loadu_pd(a + i);
+                __m256d cmp = _mm256_cmp_pd(va, vmax, _CMP_GT_OQ);
+                __m256d blend_val = _mm256_blendv_pd(vmax, va, cmp);
+                __m256i new_idx = _mm256_add_epi64(_mm256_set1_epi64x(i), voffset);
+                __m256i blend_idx = _mm256_castpd_si256(
+                    _mm256_blendv_pd(_mm256_castsi256_pd(vidx),
+                                     _mm256_castsi256_pd(new_idx), cmp));
+                vmax = blend_val;
+                vidx = blend_idx;
+            }
+
+            alignas(32) double max_arr[4];
+            alignas(32) int64_t idx_arr[4];
+            _mm256_store_pd(max_arr, vmax);
+            _mm256_store_si256((__m256i *)idx_arr, vidx);
+            for (int k = 0; k < 4; ++k) {
+                if (max_arr[k] > local_x ||
+                    (max_arr[k] == local_x && idx_arr[k] < local_idx)) {
+                    local_x = max_arr[k];
+                    local_idx = idx_arr[k];
+                }
+            }
+#else
+            __m128d vmax = _mm_set1_pd(local_x);
+            __m128i vidx = _mm_set1_epi64x(local_idx);
+            const __m128i voffset = _mm_set_epi64x(1, 0);
+
+            for (; i + 2 <= end; i += 2) {
+                __m128d va = _mm_loadu_pd(a + i);
+                __m128d cmp = _mm_cmpgt_pd(va, vmax);
+                __m128d blend_val = _mm_blendv_pd(vmax, va, cmp);
+                __m128i new_idx = _mm_add_epi64(_mm_set1_epi64x(i), voffset);
+                __m128i blend_idx = _mm_castpd_si128(
+                    _mm_blendv_pd(_mm_castsi128_pd(vidx),
+                                  _mm_castsi128_pd(new_idx), cmp));
+                vmax = blend_val;
+                vidx = blend_idx;
+            }
+
+            double max_arr[2];
+            int64_t idx_arr[2];
+            _mm_storeu_pd(max_arr, vmax);
+            _mm_storeu_si128((__m128i *)idx_arr, vidx);
+            for (int k = 0; k < 2; ++k) {
+                if (max_arr[k] > local_x ||
+                    (max_arr[k] == local_x && idx_arr[k] < local_idx)) {
+                    local_x = max_arr[k];
+                    local_idx = idx_arr[k];
+                }
+            }
+#endif
+
+            for (; i < end; ++i) {
+                if (a[i] > local_x) {
+                    local_x = a[i];
+                    local_idx = i;
+                }
+            }
+
+            local_vals[tid] = local_x;
+            local_idxs[tid] = local_idx;
+        }
+
+        for (int t = 0; t < omp_get_max_threads(); ++t) {
+            if (local_vals[t] > global_x ||
+                (local_vals[t] == global_x && local_idxs[t] < global_idx)) {
+                global_x = local_vals[t];
+                global_idx = local_idxs[t];
+            }
+        }
+    }
+
+    out_value[0] = global_x;
+    out_index[0] = global_idx;
+}

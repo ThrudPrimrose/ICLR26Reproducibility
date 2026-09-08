@@ -1,0 +1,30 @@
+"""TSVC tsvc_2 kernel ``s311`` -- fp64 sequential sum into sum_out[0].
+
+Python-arm submission. In-place ABI: writes sum_out[0], returns None.
+The core loop is a numba-compiled scalar reduction with the EXACT operation
+order of the reference (left fold), warmed at import time (untimed).
+"""
+import numpy as np
+from numba import njit
+
+
+@njit(cache=False)
+def _seq_sum(a, n):
+    s = 0.0
+    for i in range(n):
+        s += a[i]
+    return s
+
+
+# Warm the JIT at import time (runs before the timer starts).
+_warm = np.zeros(1 << 20, dtype=np.float64)
+_seq_sum(_warm, _warm.shape[0])
+del _warm
+
+
+def s311(a, sum_out, LEN_1D):
+    sum_out[0] = _seq_sum(a, LEN_1D)
+    return None
+
+
+tsvc_2_s311_fp64 = s311

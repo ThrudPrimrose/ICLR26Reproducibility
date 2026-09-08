@@ -1,0 +1,12 @@
+subroutine tsvc_2_s323_fp64(a, b, c, d, e, len_1d) bind(C, name='tsvc_2_s323_fp64')
+  use iso_c_binding, only: c_double, c_int64_t
+  implicit none
+  real(c_double), intent(inout), dimension(*) :: a, b
+  real(c_double), intent(in),    dimension(*) :: c, d, e
+  integer(c_int64_t), value, intent(in)       :: len_1d
+  integer(c_int64_t) :: i
+  do i = 2_c_int64_t, len_1d
+    a(i) = b(i-1) + c(i)*d(i)
+    b(i) = a(i) + c(i)*e(i)
+  end do
+end subroutine tsvc_2_s323_fp64

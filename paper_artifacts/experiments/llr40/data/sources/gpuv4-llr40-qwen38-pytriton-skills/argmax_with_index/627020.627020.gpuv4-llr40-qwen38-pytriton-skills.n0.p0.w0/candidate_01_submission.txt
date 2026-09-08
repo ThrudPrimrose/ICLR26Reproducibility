@@ -1,0 +1,7 @@
+import numpy as np
+
+def argmax_with_index(a, out_value, out_index, LEN_1D):
+    i = int(np.argmax(a[:LEN_1D]))
+    out_value[0] = a[i]
+    out_index[0] = i
+    return None

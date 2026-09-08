@@ -1,0 +1,29 @@
+subroutine quasi_affine_reduce_odd_fp64(a, out, len_1d) bind(C)
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value :: len_1d
+  real(c_double), intent(in) :: a(len_1d)
+  real(c_double), intent(out) :: out(1)
+  integer(c_int64_t) :: n, i
+  real(c_double) :: s
+
+  n = len_1d / 2
+  if (n <= 0) then
+    out(1) = 0.0d0
+    return
+  end if
+  if (n < 131072) then
+    s = 0.0d0
+    do i = 1, n
+      s = s + a(2*i)
+    end do
+    out(1) = s
+    return
+  end if
+  s = 0.0d0
+  !$omp parallel do reduction(+:s) schedule(static)
+  do i = 1, n
+    s = s + a(2*i)
+  end do
+  out(1) = s
+end subroutine

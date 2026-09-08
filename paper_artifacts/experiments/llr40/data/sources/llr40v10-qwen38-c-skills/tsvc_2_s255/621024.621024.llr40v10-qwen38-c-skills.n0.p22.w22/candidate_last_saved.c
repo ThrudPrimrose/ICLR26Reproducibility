@@ -1,0 +1,94 @@
+#include <stdint.h>
+#include <omp.h>
+#include <stddef.h>
+#ifdef __AVX512F__
+#include <immintrin.h>
+#endif
+
+/*
+ * Reference (serial):
+ *   x = b[N-1]; y = b[N-2];
+ *   for i in 0..N-1: a[i] = (b[i] + x + y) * 0.333;  y = x;  x = b[i];
+ *
+ * The scalar carry (x, y) is a sliding window over b: for i >= 2 it holds
+ * exactly x = b[i-1], y = b[i-2] (plain copies, no rounding).  Only the first
+ * two iterations see the wrap-around values b[N-1], b[N-2].  Peeling them
+ * leaves an independent loop:  a[i] = (b[i] + b[i-1] + b[i-2]) * 0.333
+ * with the reference's left-to-right add order (bit-exact).
+ *
+ * AVX-512 path: within each thread the 8-element blocks run in order, so the
+ * "previous block" is carried in a register (p = v) -- ONE load and ONE store
+ * per 8 elements, the minimum possible traffic.  Two blocks are interleaved
+ * per iteration to keep two loads in flight.  The main range starts at a 64B
+ * boundary of a so every store is a full cache line.  Each thread owns a
+ * contiguous run of blocks (no cross-thread dependence: p only ever holds
+ * values loaded from b by the same thread).
+ */
+
+#ifdef __AVX512F__
+
+static const __m512i IDX_P1 = {15, 0, 1, 2, 3, 4, 5, 6};  /* [p7, v0..v6]    */
+static const __m512i IDX_P2 = {14, 15, 0, 1, 2, 3, 4, 5}; /* [p6, p7, v0..v5]*/
+
+#endif /* __AVX512F__ */
+
+void tsvc_2_s255_fp64(double *restrict a, const double *restrict b,
+                      const int64_t LEN_1D) {
+  if (LEN_1D <= 0) return;
+
+  const double x0 = b[LEN_1D - 1];
+  const double y0 = b[LEN_1D - 2];
+
+  a[0] = (b[0] + x0 + y0) * 0.333;
+  if (LEN_1D == 1) return;
+  a[1] = (b[1] + b[0] + x0) * 0.333;
+  if (LEN_1D == 2) return;
+
+#ifdef __AVX512F__
+  /* first vector block i must satisfy i >= 8 (its previous block b[i-8..i-1]
+     must lie inside b) and a+i 64B aligned: with a at least 8B aligned,
+     (offset(a)/8 + i) % 8 == 0  */
+  const int64_t m = ((int64_t)(uintptr_t)a / 8) & 7;
+  int64_t first = 8 + ((8 - m) & 7);
+  if (first > LEN_1D) first = LEN_1D;
+
+  for (int64_t i = 2; i < first; i++)
+    a[i] = (b[i] + b[i - 1] + b[i - 2]) * 0.333;
+
+  const int64_t last = first + (LEN_1D > first ? (LEN_1D - first) / 16 * 16 : 0);
+  if (last > first) {
+    const __m512d c = _mm512_set1_pd(0.333);
+    #pragma omp parallel
+    {
+      const int64_t nblk = (last - first) / 16;
+      const int64_t nt = omp_get_num_threads();
+      const int64_t tid = omp_get_thread_num();
+      const int64_t c0 = (nblk * tid) / nt;
+      const int64_t c1 = (nblk * (tid + 1)) / nt;
+      if (c1 > c0) {
+        int64_t i = first + c0 * 16;
+        const int64_t iend = first + c1 * 16;
+        __m512d p = _mm512_loadu_pd(b + i - 8);
+        for (; i < iend; i += 16) {
+          __m512d v1 = _mm512_loadu_pd(b + i);
+          __m512d v2 = _mm512_loadu_pd(b + i + 8);
+          __m512d s = _mm512_add_pd(v1, _mm512_permutex2var_pd(v1, IDX_P1, p));
+          s = _mm512_add_pd(s, _mm512_permutex2var_pd(v1, IDX_P2, p));
+          _mm512_storeu_pd(a + i, _mm512_mul_pd(s, c));
+          s = _mm512_add_pd(v2, _mm512_permutex2var_pd(v2, IDX_P1, v1));
+          s = _mm512_add_pd(s, _mm512_permutex2var_pd(v2, IDX_P2, v1));
+          _mm512_storeu_pd(a + i + 8, _mm512_mul_pd(s, c));
+          p = v2;
+        }
+      }
+    }
+  }
+
+  for (int64_t i = last; i < LEN_1D; i++)
+    a[i] = (b[i] + b[i - 1] + b[i - 2]) * 0.333;
+#else
+  #pragma omp parallel for schedule(static)
+  for (int64_t i = 2; i < LEN_1D; i++)
+    a[i] = (b[i] + b[i - 1] + b[i - 2]) * 0.333;
+#endif
+}

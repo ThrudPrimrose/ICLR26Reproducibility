@@ -1,0 +1,147 @@
+import os
+
+import numpy as np
+
+_AFF = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else (os.cpu_count() or 8)
+_T = max(1, _AFF)
+os.environ.setdefault('NUMBA_NUM_THREADS', str(_T))
+os.environ.setdefault('OMP_NUM_THREADS', str(_T))
+
+import numba  # noqa: E402,F401
+from numba import njit, prange  # noqa: E402
+import numba.np.ufunc.parallel as _npar  # noqa: E402
+
+try:
+    _npar.set_num_threads(_T)
+except Exception:
+    pass
+
+_B = 16384
+
+
+@njit(parallel=True)
+def _phase1(src, m, cnt, N):
+    nb = (N + _B - 1) // _B
+    for b in prange(nb):
+        lo = b * _B
+        hi = lo + _B
+        if hi > N:
+            hi = N
+        c = 0
+        for i in range(lo, hi):
+            v = src[i] > 0.0
+            m[i] = v
+            if v:
+                c += 1
+        cnt[b] = c
+
+
+@njit(parallel=True)
+def _phase2(src, weight, packed, m, off, N):
+    nb = (N + _B - 1) // _B
+    for b in prange(nb):
+        lo = b * _B
+        hi = lo + _B
+        if hi > N:
+            hi = N
+        cur = off[b]
+        for i in range(lo, hi):
+            if m[i]:
+                packed[cur] = src[i] * weight[i]
+                cur += 1
+
+
+@njit
+def _phase1s(src, m, cnt, N):
+    nb = (N + _B - 1) // _B
+    for b in range(nb):
+        lo = b * _B
+        hi = lo + _B
+        if hi > N:
+            hi = N
+        c = 0
+        for i in range(lo, hi):
+            v = src[i] > 0.0
+            m[i] = v
+            if v:
+                c += 1
+        cnt[b] = c
+
+
+@njit
+def _phase2s(src, weight, packed, m, off, N):
+    nb = (N + _B - 1) // _B
+    for b in range(nb):
+        lo = b * _B
+        hi = lo + _B
+        if hi > N:
+            hi = N
+        cur = off[b]
+        for i in range(lo, hi):
+            if m[i]:
+                packed[cur] = src[i] * weight[i]
+                cur += 1
+
+
+_PAR_OK = True
+
+
+def compact_threshold_pack(src, weight, packed, out_count, LEN_1D):
+    global _PAR_OK
+    N = LEN_1D
+    if N == 0:
+        out_count[0] = 0
+        return None
+    if not src.flags.c_contiguous:
+        src = np.ascontiguousarray(src)
+    if not weight.flags.c_contiguous:
+        weight = np.ascontiguousarray(weight)
+    m = np.empty(N, dtype=np.bool_)
+    nb = (N + _B - 1) // _B
+    cnt = np.empty(nb, dtype=np.int64)
+    if _PAR_OK:
+        try:
+            _phase1(src, m, cnt, N)
+            off = np.empty(nb, dtype=np.int64)
+            np.cumsum(cnt, out=off)
+            off -= cnt
+            _phase2(src, weight, packed, m, off, N)
+        except Exception:
+            _PAR_OK = False
+            m = np.empty(N, dtype=np.bool_)
+            cnt = np.empty(nb, dtype=np.int64)
+            _phase1s(src, m, cnt, N)
+            off = np.empty(nb, dtype=np.int64)
+            np.cumsum(cnt, out=off)
+            off -= cnt
+            _phase2s(src, weight, packed, m, off, N)
+    else:
+        _phase1s(src, m, cnt, N)
+        off = np.empty(nb, dtype=np.int64)
+        np.cumsum(cnt, out=off)
+        off -= cnt
+        _phase2s(src, weight, packed, m, off, N)
+    out_count[0] = int(cnt.sum())
+    return None
+
+
+# Warm everything at import time (untimed): compile the kernels for the exact
+# runtime signature and initialize the thread pool.
+try:
+    _n0 = 3 * _B + 7
+    _rng = np.random.default_rng(0)
+    _s = _rng.uniform(-1.0, 1.0, _n0)
+    _w = _rng.uniform(-1.0, 1.0, _n0)
+    _p = np.zeros(_n0)
+    _oc = np.zeros(1, dtype=np.int64)
+    compact_threshold_pack(_s, _w, _p, _oc, _n0)
+    compact_threshold_pack(-_s, _w, _p, _oc, _n0)
+    # serial fallbacks too (cheap once compiled)
+    _m = np.empty(_n0, dtype=np.bool_)
+    _c = np.empty((_n0 + _B - 1) // _B, dtype=np.int64)
+    _o = np.empty_like(_c)
+    _phase1s(_s, _m, _c, _n0)
+    _phase2s(_s, _w, _p, _m, _o, _n0)
+    del _s, _w, _p, _oc, _m, _c, _o, _n0
+except Exception:
+    pass

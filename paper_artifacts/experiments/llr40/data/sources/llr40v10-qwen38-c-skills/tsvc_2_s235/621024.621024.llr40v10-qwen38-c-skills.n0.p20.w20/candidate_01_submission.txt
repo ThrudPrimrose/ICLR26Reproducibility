@@ -1,0 +1,54 @@
+/* TSVC tsvc_2 s235 -- optimized.
+ *
+ * Reference semantics:
+ *   for i: a[i] += b[i]*c[i];
+ *   for i: for j=1..N-1: aa[j*N+i] = aa[(j-1)*N+i] + bb[j*N+i]*a[i];
+ *
+ * Dependence analysis:
+ *   - Phase 1 (a update): no dependence at all -> fully parallel + vectorizable.
+ *   - Phase 2: for a FIXED column i, aa[j] depends on aa[j-1] (serial scan along
+ *     j, the ROW index). Columns i do not touch each other at all: aa[(j-1)*N+i]
+ *     is written by no other i, and a[i] is read-only in phase 2. So the axis
+ *     carrying the dependence is j; the axis i is fully independent and is the
+ *     unit-stride axis in row-major storage (aa[idx + i]).
+ *
+ * Rewrite (distribution): parallelize over strips of columns i. Inside one
+ * strip the j scan stays serial, and the innermost loop walks consecutive i,
+ * i.e. unit stride for every access -> streaming + vectorized, and each
+ * thread's (j-1) row segment is read straight back from L1 (just written).
+ * Operation order per column is unchanged => bit-identical to the reference.
+ */
+
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s235_fp64(double *restrict a, double *restrict aa, const double *restrict b, const double *restrict bb,
+                      const double *restrict c, const int64_t LEN_2D) {
+  const int64_t N = LEN_2D;
+  if (N <= 0) return;
+
+  /* Phase 1: a[i] += b[i] * c[i] -- independent, unit stride. */
+#pragma omp parallel for schedule(static)
+  for (int64_t i = 0; i < N; ++i)
+    a[i] += b[i] * c[i];
+
+  /* Phase 2: column strips; serial j inside, contiguous i innermost. */
+  const int64_t nt = omp_get_max_threads();
+  int64_t W = (N + (nt < 1 ? 1 : nt) - 1) / (nt < 1 ? 1 : nt);
+  W = (W + 7) & ~(int64_t)7;
+  if (W < 64) W = 64;
+  if (W > N) W = N;
+
+#pragma omp parallel for schedule(static)
+  for (int64_t i0 = 0; i0 < N; i0 += W) {
+    int64_t i1 = i0 + W;
+    if (i1 > N) i1 = N;
+    for (int64_t j = 1; j < N; ++j) {
+      double *restrict ra = aa + j * N;
+      const double *restrict pa = aa + (j - 1) * N;
+      const double *restrict rb = bb + j * N;
+      for (int64_t i = i0; i < i1; ++i)
+        ra[i] = pa[i] + rb[i] * a[i];
+    }
+  }
+}

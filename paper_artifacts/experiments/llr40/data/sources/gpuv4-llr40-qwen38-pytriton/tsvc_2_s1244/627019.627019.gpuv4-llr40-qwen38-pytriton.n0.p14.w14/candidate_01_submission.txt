@@ -1,0 +1,22 @@
+import numba as nb
+import numpy as np
+from numba.np.ufunc import parallel as npar
+
+def _s1244(a, b, c, d, LEN_1D):
+    for i in nb.prange(LEN_1D - 1):
+        d[i] = (b[i] + c[i]*c[i] + b[i]*b[i] + c[i]) + a[i+1]
+    for i in nb.prange(LEN_1D - 1):
+        a[i] = b[i] + c[i]*c[i] + b[i]*b[i] + c[i]
+
+_k = nb.njit(parallel=True)(_s1244)
+
+def s1244(a, b, c, d, LEN_1D):
+    _k(a, b, c, d, LEN_1D)
+
+# Warm the 24-thread path at import time so nothing lands in the timed call.
+try:
+    npar.set_num_threads(24)
+except Exception:
+    pass
+_t = 8
+_k(np.zeros(_t), np.zeros(_t), np.zeros(_t), np.zeros(_t), _t)

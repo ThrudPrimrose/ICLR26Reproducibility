@@ -1,0 +1,17 @@
+subroutine tsvc_2_s119_fp64(aa, bb, n) bind(C, name='tsvc_2_s119_fp64')
+  use iso_c_binding
+  implicit none
+  type(c_ptr), value :: aa
+  type(c_ptr), value, intent(in) :: bb
+  integer(c_int64_t), value, intent(in) :: n
+  real(c_double), pointer :: a(:), b(:)
+  integer(c_int64_t) :: i, j, idx
+  call c_f_pointer(aa, a, [n*n])
+  call c_f_pointer(bb, b, [n*n])
+  do i = 1, n-1
+    do j = 1, n-1
+      idx = i*n + j
+      a(idx+1) = a(idx - n) + b(idx+1)
+    end do
+  end do
+end subroutine

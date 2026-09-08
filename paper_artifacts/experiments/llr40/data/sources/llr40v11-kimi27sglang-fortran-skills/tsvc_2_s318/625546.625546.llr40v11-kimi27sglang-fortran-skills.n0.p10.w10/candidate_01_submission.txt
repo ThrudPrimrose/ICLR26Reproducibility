@@ -1,0 +1,78 @@
+subroutine tsvc_2_s318_fp64(a, result, LEN_1D, inc, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D, inc, workspace_size
+  real(c_double), intent(in) :: a(0:LEN_1D*inc-1)
+  real(c_double), intent(out) :: result(1)
+  integer(c_int8_t), intent(inout) :: workspace(workspace_size)
+  integer(c_int64_t) :: i, k, index
+  integer(c_int64_t) :: lo, hi, t, nt
+  real(c_double) :: maxv, v, local_max
+  integer(c_int64_t) :: local_idx
+  integer(c_int64_t), allocatable :: idxs(:)
+  real(c_double), allocatable :: maxvs(:)
+
+  maxv = abs(a(0))
+  index = 0
+
+  if (LEN_1D > 4096) then
+    nt = omp_get_max_threads()
+    allocate(maxvs(0:nt-1), idxs(0:nt-1))
+    maxvs(0) = maxv
+    idxs(0) = 0
+
+    !$omp parallel private(t, lo, hi, i, k, local_max, local_idx)
+    t = omp_get_thread_num()
+    lo = (LEN_1D * t) / nt
+    hi = (LEN_1D * (t + 1)) / nt - 1
+    if (lo == 0) then
+      local_max = abs(a(0))
+      local_idx = 0
+      k = inc
+      do i = 1, hi
+        v = abs(a(k))
+        if (v > local_max) then
+          local_idx = i
+          local_max = v
+        end if
+        k = k + inc
+      end do
+    else
+      k = lo * inc
+      local_max = abs(a(k))
+      local_idx = lo
+      do i = lo, hi
+        v = abs(a(k))
+        if (v > local_max) then
+          local_idx = i
+          local_max = v
+        end if
+        k = k + inc
+      end do
+    end if
+    maxvs(t) = local_max
+    idxs(t) = local_idx
+    !$omp end parallel
+
+    do i = 0, nt - 1
+      if (maxvs(i) > maxv) then
+        maxv = maxvs(i)
+        index = idxs(i)
+      end if
+    end do
+    deallocate(maxvs, idxs)
+  else
+    k = inc
+    do i = 1, LEN_1D-1
+      v = abs(a(k))
+      if (v > maxv) then
+        index = i
+        maxv = v
+      end if
+      k = k + inc
+    end do
+  end if
+
+  result(1) = maxv + dble(index)
+end subroutine tsvc_2_s318_fp64

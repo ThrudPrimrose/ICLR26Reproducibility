@@ -1,0 +1,65 @@
+! Parallel inclusive prefix sum for TSVC s3112.
+! The serial loop is memory-latency bound on one core; the fuzzed inputs are
+! large enough that using a moderate OpenMP team gives a large speedup.
+! We use a manual two-pass parallel scan: per-thread partial sums, an exclusive
+! scan of those partials, then each thread rescans its chunk with the proper
+! offset.  The number of active threads is capped at 24; larger counts gain
+! nothing on this memory-bound kernel and add fork/barrier cost.
+subroutine tsvc_2_s3112_fp64(a, b, n) bind(C, name="tsvc_2_s3112_fp64")
+  use iso_c_binding, only: c_int64_t, c_double
+  use omp_lib, only: omp_get_max_threads, omp_get_thread_num
+  implicit none
+  integer(c_int64_t), value, intent(in) :: n
+  real(c_double), intent(in) :: a(n)
+  real(c_double), intent(out) :: b(n)
+  integer(c_int64_t) :: i, lo, hi
+  integer :: nt_env, nt_used, t, j
+  real(c_double) :: s, run
+  real(c_double) :: part(0:32)
+
+  if (n <= 0) return
+
+  nt_env = omp_get_max_threads()
+  nt_used = nt_env
+  if (nt_used > 24) nt_used = 24
+
+  ! For tiny inputs just run the serial prefix sum.
+  if (n < 4096 .or. nt_used <= 1) then
+     s = 0.0d0
+     do i = 1, n
+        s = s + a(i)
+        b(i) = s
+     end do
+     return
+  end if
+
+  part(0:nt_used) = 0.0d0
+
+  !$omp parallel private(t, lo, hi, run, i) num_threads(nt_used)
+  t = omp_get_thread_num()
+  lo = (n * int(t, kind=c_int64_t)) / int(nt_used, kind=c_int64_t) + 1
+  hi = (n * int(t + 1, kind=c_int64_t)) / int(nt_used, kind=c_int64_t)
+
+  ! First pass: local sum of this thread's chunk.
+  run = 0.0d0
+  do i = lo, hi
+     run = run + a(i)
+  end do
+  part(t + 1) = run
+
+  !$omp barrier
+  !$omp single
+  ! Exclusive scan of the per-thread totals.
+  do j = 1, nt_used
+     part(j) = part(j) + part(j - 1)
+  end do
+  !$omp end single
+
+  ! Second pass: local prefix scan with the offset from previous chunks.
+  run = part(t)
+  do i = lo, hi
+     run = run + a(i)
+     b(i) = run
+  end do
+  !$omp end parallel
+end subroutine tsvc_2_s3112_fp64

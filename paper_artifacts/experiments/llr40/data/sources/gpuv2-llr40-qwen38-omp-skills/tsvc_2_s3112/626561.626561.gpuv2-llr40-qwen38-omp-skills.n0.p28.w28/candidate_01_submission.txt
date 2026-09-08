@@ -1,0 +1,18 @@
+#include <stdint.h>
+#include <stdio.h>
+#include <omp.h>
+
+void tsvc_2_s3112_fp64(const double *restrict a, double *restrict b, const int64_t LEN_1D)
+{
+  int on_device = 0;
+  #pragma omp target map(from: on_device)
+  on_device = !omp_is_initial_device();
+
+  printf("PROBE LEN_1D=%ld max_threads=%d nprocs=%d on_device=%d a0=%f a1=%f alast=%f\n",
+         (long)LEN_1D, omp_get_max_threads(), omp_get_num_procs(), on_device,
+         a[0], LEN_1D>1?a[1]:0.0, a[LEN_1D-1]);
+  fflush(stdout);
+
+  double sum = 0.0;
+  for (int64_t i = 0; i < LEN_1D; ++i) { sum += a[i]; b[i] = sum; }
+}

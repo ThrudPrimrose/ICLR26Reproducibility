@@ -1,0 +1,25 @@
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+__device__ __forceinline__ double mul_plain(double x, double y) {
+  double r;
+  asm("v_mul_f64 %0, %1, %2" : "=v"(r) : "v"(x), "v"(y));
+  return r;
+}
+
+extern "C" __global__ void __launch_bounds__(256)
+fuse_diamond_kernel(const double * __restrict__ a, double * __restrict__ out, int64_t n) {
+  int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < n) {
+    double t = mul_plain(a[i], a[i]);
+    out[i] = (t + 1.0) * (t - 1.0);
+  }
+}
+
+extern "C" void fuse_diamond_launch(const double *a, double *out, int64_t n) {
+  if (n <= 0) return;
+  const int threads = 256;
+  int64_t blocks = (n + threads - 1) / threads;
+  if (blocks > 2147483647LL) blocks = 2147483647LL;
+  fuse_diamond_kernel<<<(unsigned)blocks, threads>>>(a, out, n);
+}

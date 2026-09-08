@@ -1,0 +1,57 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s115_fp64(double *restrict a, const double *restrict aa, const int64_t LEN_2D) {
+    const int64_t B = 512;
+    const int64_t n = LEN_2D;
+    if (n <= B) {
+        #pragma omp parallel
+        {
+            for (int64_t j = 0; j < n; j++) {
+                const double aj = a[j];
+                const double *restrict row = aa + j * n;
+                #pragma omp for simd schedule(static)
+                for (int64_t i = j + 1; i < n; i++) {
+                    a[i] -= row[i] * aj;
+                }
+            }
+        }
+        return;
+    }
+    const int64_t nt = (n + B - 1) / B;
+    #pragma omp parallel
+    {
+        for (int64_t s = 0; s < 2 * nt - 1; s++) {
+            const int64_t tj_min = s < nt ? 0 : s - (nt - 1);
+            const int64_t tj_max = s < nt ? s : nt - 1;
+            #pragma omp for schedule(static)
+            for (int64_t tj = tj_min; tj <= tj_max; tj++) {
+                const int64_t ti = s - tj;
+                if (ti < tj || ti >= nt) continue;
+                const int64_t jb = tj * B;
+                const int64_t je = jb + B < n ? jb + B : n;
+                const int64_t ib = ti * B;
+                const int64_t ie = ib + B < n ? ib + B : n;
+                if (ti == tj) {
+                    for (int32_t j = jb; j < je; j++) {
+                        const double aj = a[j];
+                        const double *restrict row = aa + j * n;
+                        #pragma omp simd
+                        for (int64_t i = j + 1; i < ie; i++) {
+                            a[i] -= row[i] * aj;
+                        }
+                    }
+                } else {
+                    for (int32_t j = jb; j < je; j++) {
+                        const double aj = a[j];
+                        const double *restrict row = aa + j * n;
+                        #pragma omp simd
+                        for (int64_t i = ib; i < ie; i++) {
+                            a[i] -= row[i] * aj;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

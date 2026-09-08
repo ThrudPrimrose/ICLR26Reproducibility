@@ -1,0 +1,25 @@
+module ext_war_unit_mod
+  use iso_c_binding
+  implicit none
+contains
+  subroutine ext_war_unit_fp64(a, b, LEN_1D) bind(C, name="ext_war_unit_fp64")
+    real(c_double), intent(inout) :: a(*)
+    real(c_double), intent(in)    :: b(*)
+    integer(c_int64_t), value    :: LEN_1D
+    integer(c_int64_t) :: i
+    real(c_double), allocatable :: tmp(:)
+    if (LEN_1D <= 1_c_int64_t) return
+    allocate(tmp(LEN_1D))
+    !$omp parallel private(i)
+    !$omp do schedule(static)
+    do i = 1_c_int64_t, LEN_1D
+        tmp(i) = a(i)
+    end do
+    !$omp do schedule(static)
+    do i = 1_c_int64_t, LEN_1D-1_c_int64_t
+        a(i) = tmp(i+1) + b(i)
+    end do
+    !$omp end parallel
+    deallocate(tmp)
+  end subroutine ext_war_unit_fp64
+end module ext_war_unit_mod

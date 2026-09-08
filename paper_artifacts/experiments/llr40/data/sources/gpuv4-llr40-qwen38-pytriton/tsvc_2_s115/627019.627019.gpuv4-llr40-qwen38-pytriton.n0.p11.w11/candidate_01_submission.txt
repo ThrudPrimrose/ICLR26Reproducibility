@@ -1,0 +1,18 @@
+import numpy as np
+import numba
+
+@numba.njit
+def _k(a, aa, N):
+    for j in range(N):
+        for i in range(j+1, N):
+            a[i] = a[i] - aa[j, i] * a[j]
+
+def s115(a, aa, LEN_2D):
+    _k(a, aa, int(LEN_2D))
+    return None
+
+# Warm up the JIT at import time (before the measurement clock).
+_d = np.zeros(64, dtype=np.float64)
+_dd = np.zeros((64, 64), dtype=np.float64)
+s115(_d, _dd, 64)
+del _d, _dd

@@ -1,0 +1,28 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s115_fp64(double *restrict a, const double *restrict aa, const int64_t LEN_2D) {
+  #pragma omp parallel
+  {
+    const int nt = omp_get_num_threads();
+    const int64_t threshold = 8LL * nt;
+    for (int64_t j = 0; j < LEN_2D; j++) {
+      const double aj = a[j];
+      const int64_t trip = LEN_2D - j - 1;
+      if (trip > threshold) {
+        #pragma omp for simd schedule(static) simdlen(8)
+        for (int64_t i = j + 1; i < LEN_2D; i++) {
+          a[i] -= aa[j * LEN_2D + i] * aj;
+        }
+      } else {
+        #pragma omp single
+        {
+          #pragma omp simd simdlen(8)
+          for (int64_t i = j + 1; i < LEN_2D; i++) {
+            a[i] -= aa[j * LEN_2D + i] * aj;
+          }
+        }
+      }
+    }
+  }
+}

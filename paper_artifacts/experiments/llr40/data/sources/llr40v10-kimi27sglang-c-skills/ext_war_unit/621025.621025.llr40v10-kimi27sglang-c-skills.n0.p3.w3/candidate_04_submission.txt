@@ -1,0 +1,35 @@
+#include <stdint.h>
+#include <omp.h>
+
+void ext_war_unit_fp64(double *restrict a, const double *restrict b, const int64_t LEN_1D) {
+    const int64_t n = LEN_1D - 1;
+    if (n <= 0) return;
+
+    /* Serial fallback for small inputs: thread-team overhead dominates. */
+    if (n < 256 * omp_get_max_threads()) {
+        for (int64_t i = 0; i < n; ++i) {
+            a[i] = a[i + 1] + b[i];
+        }
+        return;
+    }
+
+    #pragma omp parallel
+    {
+        const int nt = omp_get_num_threads();
+        const int tid = omp_get_thread_num();
+        const int64_t chunk = (n + nt - 1) / nt;
+        const int64_t start = tid * chunk;
+        int64_t end = (tid + 1) * chunk;
+        if (end > n) end = n;
+
+        if (start < end) {
+            const double boundary = a[end];
+            #pragma omp barrier
+            #pragma omp simd
+            for (int64_t i = start; i < end - 1; ++i) {
+                a[i] = a[i + 1] + b[i];
+            }
+            a[end - 1] = boundary + b[end - 1];
+        }
+    }
+}

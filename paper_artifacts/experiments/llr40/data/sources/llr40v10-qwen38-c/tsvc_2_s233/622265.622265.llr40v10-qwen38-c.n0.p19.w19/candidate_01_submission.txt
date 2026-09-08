@@ -1,0 +1,93 @@
+#include <stdint.h>
+#include <immintrin.h>
+#include <omp.h>
+
+static const long idx1[8] = {0,0,1,2,3,4,5,6};
+static const long idx2[8] = {0,0,0,1,2,3,4,5};
+static const long idx4[8] = {0,0,0,0,0,1,2,3};
+
+void tsvc_2_s233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+  const int64_t L = LEN_2D;
+  const int64_t n = L - 8;
+  if (n <= 0) return;
+  const __m512i i1 = _mm512_loadu_si512(idx1);
+  const __m512i i2 = _mm512_loadu_si512(idx2);
+  const __m512i i4 = _mm512_loadu_si512(idx4);
+
+  #pragma omp parallel
+  {
+    const int nt = omp_get_num_threads();
+    const int tid = omp_get_thread_num();
+
+    // Part A: independent per column; 8-column zmm running sum, 2 streams per thread.
+    {
+      const int64_t nfull = n / 8;      // full 8-column blocks
+      const int64_t rem = n - 8 * nfull;
+      for (int64_t b = 2 * (int64_t)tid; b < nfull; b += 2 * (int64_t)nt) {
+        const int64_t i0a = 8 * b;
+        const int64_t i0b = (b + 1 < nfull) ? 8 * (b + 1) : -1;
+        double *a0a = aa + 7 * L + 8 + i0a;
+        double *a0b = (i0b >= 0) ? aa + 7 * L + 8 + i0b : 0;
+        __m512d runa = _mm512_loadu_pd(a0a);
+        __m512d runb = (i0b >= 0) ? _mm512_loadu_pd(a0b) : _mm512_setzero_pd();
+        const double *ca = cc + 8 + i0a;
+        const double *cb = (i0b >= 0) ? cc + 8 + i0b : 0;
+        for (int64_t j = 0; j < L - 8; ++j) {
+          runa = _mm512_add_pd(runa, _mm512_loadu_pd(ca + (int64_t)(j + 8) * L));
+          _mm512_storeu_pd(a0a + (int64_t)(j + 1) * L, runa);
+          if (i0b >= 0) {
+            runb = _mm512_add_pd(runb, _mm512_loadu_pd(cb + (int64_t)(j + 8) * L));
+            _mm512_storeu_pd(a0b + (int64_t)(j + 1) * L, runb);
+          }
+        }
+      }
+      if (rem > 0 && tid == 0) {
+        const int64_t i0 = 8 * nfull;
+        double *a0 = aa + 7 * L + 8 + i0;
+        double run[8];
+        for (int64_t t = 0; t < rem; ++t) run[t] = a0[t];
+        for (int64_t j = 8; j < L; ++j) {
+          const double *c = cc + j * L + 8 + i0;
+          double *o = a0 + (j - 7) * L;
+          for (int64_t t = 0; t < rem; ++t) { run[t] += c[t]; o[t] = run[t]; }
+        }
+      }
+    }
+
+    // Part B: independent per row; zmm prefix with carry, 4-row interleaving.
+    {
+      const int CH = 4;
+      for (int64_t j0 = 8 + tid; j0 < L; j0 += (int64_t)nt * CH) {
+        const int64_t valid = (L - 1 - j0) / nt + 1;
+        const int act = (valid < CH) ? (int)valid : CH;
+        double carry[CH];
+        const double *c[CH];
+        double *o[CH];
+        for (int h = 0; h < act; ++h) {
+          int64_t j = j0 + (int64_t)h * nt;
+          carry[h] = bb[j * L + 7];
+          c[h] = cc + j * L + 8;
+          o[h] = bb + j * L + 8;
+        }
+        for (int64_t k = 0; k + 8 <= n; k += 8) {
+          for (int h = 0; h < act; ++h) {
+            __m512d p = _mm512_loadu_pd(c[h] + k);
+            __m512d a = _mm512_add_pd(p, _mm512_maskz_permutex2var_pd(0xFE, p, i1, p));
+            __m512d b = _mm512_add_pd(a, _mm512_maskz_permutex2var_pd(0xFC, a, i2, a));
+            p = _mm512_add_pd(b, _mm512_maskz_permutex2var_pd(0xF0, b, i4, b));
+            p = _mm512_add_pd(p, _mm512_set1_pd(carry[h]));
+            _mm512_storeu_pd(o[h] + k, p);
+            double buf[8];
+            _mm512_storeu_pd(buf, p);
+            carry[h] = buf[7];
+          }
+        }
+        for (int h = 0; h < act; ++h) {
+          int64_t k = n - (n % 8);
+          if (k < 8) k = 0;
+          for (; k < n; ++k) { carry[h] += c[h][k]; o[h][k] = carry[h]; }
+        }
+      }
+    }
+  }
+}

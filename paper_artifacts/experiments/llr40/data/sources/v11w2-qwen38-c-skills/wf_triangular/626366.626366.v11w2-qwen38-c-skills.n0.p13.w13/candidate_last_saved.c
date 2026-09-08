@@ -1,0 +1,32 @@
+#include <stdint.h>
+#include <omp.h>
+#define WF_B 32
+void wf_triangular_fp64(double *restrict a, const int64_t LEN_2D) {
+  const int64_t N = LEN_2D;
+  if (N < 2) return;
+  const int64_t B = WF_B, R = (N + B - 1) / B;
+  #pragma omp parallel
+  {
+    for (int64_t d = 0; d < 2*R - 1; ++d) {
+      int64_t r_lo = d - (R - 1); if (r_lo < 0) r_lo = 0;
+      int64_t r_hi = d / 2; if (r_hi > R - 1) r_hi = R - 1;
+      if (r_lo <= r_hi) {
+        #pragma omp for schedule(static)
+        for (int64_t r = r_lo; r <= r_hi; ++r) {
+          const int64_t c = d - r;
+          int64_t i_min = r*B; if (i_min < 1) i_min = 1;
+          int64_t i_max = (r+1)*B; if (i_max > N) i_max = N; --i_max;
+          int64_t j_min = c*B;
+          int64_t j_max = (c+1)*B; if (j_max > N) j_max = N; --j_max;
+          if (i_min > i_max || j_min > j_max) continue;
+          for (int64_t i = i_min; i <= i_max; ++i) {
+            int64_t jj = i > j_min ? i : j_min;
+            for (int64_t j = jj; j <= j_max; ++j) {
+              a[i*N + j] = a[i*N + j] + a[(i-1)*N + j] + a[i*N + (j-1)];
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+#include <stdint.h>
+#include <omp.h>
+
+void fuse_stencil_through_transient_fp64(const double *restrict a, double *restrict out, const int64_t LEN_1D) {
+    const int64_t n = LEN_1D;
+    #pragma omp parallel for simd schedule(static)
+    for (int64_t i = 1; i < n - 2; ++i) {
+        __builtin_prefetch(a + i + 64, 0, 3);
+        double t0 = a[i - 1] + a[i] + a[i + 1];
+        double t1 = a[i] + a[i + 1] + a[i + 2];
+        out[i] = t0 * t1;
+    }
+}

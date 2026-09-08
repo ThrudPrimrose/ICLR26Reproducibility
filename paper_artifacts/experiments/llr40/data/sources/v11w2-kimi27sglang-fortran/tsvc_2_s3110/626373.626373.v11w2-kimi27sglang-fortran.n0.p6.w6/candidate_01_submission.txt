@@ -1,0 +1,55 @@
+subroutine tsvc_2_s3110_fp64(aa, bb, LEN_2D) bind(c)
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), intent(in), value :: LEN_2D
+  real(c_double), intent(in) :: aa(0:LEN_2D-1, 0:LEN_2D-1)
+  real(c_double), intent(out) :: bb(0:*)
+
+  type :: maxloc_t
+    real(c_double) :: val
+    integer(c_int64_t) :: xi
+    integer(c_int64_t) :: yi
+  end type
+
+  type(maxloc_t) :: global_max
+  integer(c_int64_t) :: i, j
+  real(c_double) :: chksum
+
+  !$omp declare reduction(maxloc : maxloc_t : &
+  !$omp   omp_out = maxloc_merge(omp_out, omp_in)) &
+  !$omp   initializer(omp_priv = maxloc_t(-huge(1.0_c_double), 0_c_int64_t, 0_c_int64_t))
+
+  global_max = maxloc_t(aa(0, 0), 0_c_int64_t, 0_c_int64_t)
+
+  !$omp parallel do private(i, j) reduction(maxloc:global_max) schedule(static)
+  do i = 0, LEN_2D - 1
+    do j = 0, LEN_2D - 1
+      if (aa(j, i) > global_max%val) then
+        global_max%val = aa(j, i)
+        global_max%xi = i
+        global_max%yi = j
+      end if
+    end do
+  end do
+  !$omp end parallel do
+
+  chksum = global_max%val + dble(global_max%xi) + dble(global_max%yi)
+  bb(0) = chksum
+
+contains
+  pure function maxloc_merge(a, b) result(r)
+    type(maxloc_t), intent(in) :: a, b
+    type(maxloc_t) :: r
+    if (b%val > a%val) then
+      r = b
+    else if (b%val == a%val) then
+      if (b%xi < a%xi .or. (b%xi == a%xi .and. b%yi < a%yi)) then
+        r = b
+      else
+        r = a
+      end if
+    else
+      r = a
+    end if
+  end function maxloc_merge
+end subroutine tsvc_2_s3110_fp64

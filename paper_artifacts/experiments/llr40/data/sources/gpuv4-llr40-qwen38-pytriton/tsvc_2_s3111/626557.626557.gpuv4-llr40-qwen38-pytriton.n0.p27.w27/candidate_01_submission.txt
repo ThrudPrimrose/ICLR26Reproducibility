@@ -1,0 +1,31 @@
+import os
+import numpy as np
+from numba import njit, prange, set_num_threads
+
+
+@njit(fastmath=True, parallel=True)
+def _sumpos(a, n):
+    s = 0.0
+    for i in prange(n):
+        if a[i] > 0.0:
+            s += a[i]
+    return s
+
+
+try:
+    _ncpu = len(os.sched_getaffinity(0))
+except Exception:
+    _ncpu = os.cpu_count() or 1
+set_num_threads(max(1, _ncpu))
+
+
+def s3111(a, b, LEN_1D):
+    n = LEN_1D if LEN_1D < a.size else a.size
+    b[0] = _sumpos(np.ascontiguousarray(a[:n]), n)
+    return None
+
+
+# Compile + thread-pool warmup at import time (not timed).
+_warm = np.linspace(-1.0, 1.0, 8192)
+_sumpos(_warm, _warm.size)
+del _warm

@@ -1,0 +1,24 @@
+subroutine tsvc_2_s323_fp64(a, b, c, d, e, LEN_1D) bind(C)
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D
+  real(c_double), intent(inout) :: a(LEN_1D)
+  real(c_double), intent(inout) :: b(LEN_1D)
+  real(c_double), intent(in) :: c(LEN_1D)
+  real(c_double), intent(in) :: d(LEN_1D)
+  real(c_double), intent(in) :: e(LEN_1D)
+  integer(c_int64_t) :: i
+  real(c_double) :: sum
+
+  ! Compute prefix sum of c(i)*(d(i)+e(i)) and update b(i) and a(i) in one pass
+  sum = 0.0d0
+  !$omp parallel do reduction(inscan, +: sum)
+  do i = 2, LEN_1D
+    sum = sum + c(i) * (d(i) + e(i))
+    !$omp scan inclusive(sum)
+    b(i) = b(1) + sum
+    a(i) = b(i) - c(i) * e(i)
+  end do
+  !$omp end parallel do
+  ! a(1) and b(1) remain unchanged
+end subroutine tsvc_2_s323_fp64

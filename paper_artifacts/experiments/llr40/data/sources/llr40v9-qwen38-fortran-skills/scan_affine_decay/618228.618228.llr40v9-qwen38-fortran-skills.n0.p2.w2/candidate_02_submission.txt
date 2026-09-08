@@ -1,0 +1,58 @@
+subroutine scan_affine_decay_fp64(c, x, y, len_1d, workspace, workspace_size) bind(C, name="scan_affine_decay_fp64")
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_1d
+  real(c_double), intent(in) :: c(len_1d)
+  real(c_double), intent(in) :: x(len_1d)
+  real(c_double), intent(inout) :: y(len_1d)
+  integer(c_int64_t), value, intent(in) :: workspace_size
+  integer(c_int8_t), intent(inout) :: workspace(workspace_size)
+
+  integer, parameter :: BS = 4096
+  integer :: n, nb, blk, i, i0, i1
+  real(c_double) :: rA, rB, rS
+  real(c_double), allocatable :: Ab(:), Bb(:), Sb(:)
+
+  n = len_1d
+  if (n < 2) return
+  nb = (n - 1 + BS - 1) / BS
+  allocate(Ab(nb), Bb(nb), Sb(nb))
+
+  ! pass 1: per-block affine map (A_b, B_b) of the scan inside the block
+  !$omp parallel do schedule(static)
+  do blk = 1, nb
+    rA = 1.0d0
+    rB = 0.0d0
+    i0 = 2 + (blk - 1) * BS
+    i1 = min(1 + blk * BS, n)
+    do i = i0, i1
+      rA = rA * c(i)
+      rB = rB * c(i) + x(i)
+    end do
+    Ab(blk) = rA
+    Bb(blk) = rB
+  end do
+  !$omp end parallel do
+
+  ! pass 2: serial scan over block maps
+  rS = y(1)
+  do blk = 1, nb
+    Sb(blk) = rS
+    rS = Ab(blk) * rS + Bb(blk)
+  end do
+
+  ! pass 3: per-block rescan from the known block-start value
+  !$omp parallel do schedule(static)
+  do blk = 1, nb
+    rS = Sb(blk)
+    i0 = 2 + (blk - 1) * BS
+    i1 = min(1 + blk * BS, n)
+    do i = i0, i1
+      rS = rS * c(i) + x(i)
+      y(i) = rS
+    end do
+  end do
+  !$omp end parallel do
+
+  deallocate(Ab, Bb, Sb)
+end subroutine scan_affine_decay_fp64

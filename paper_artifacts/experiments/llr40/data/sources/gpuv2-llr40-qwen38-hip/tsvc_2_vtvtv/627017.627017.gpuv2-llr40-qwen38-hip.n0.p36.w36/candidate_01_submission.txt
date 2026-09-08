@@ -1,0 +1,17 @@
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+// a[i] = a[i] * b[i] * c[i], one double per thread.
+__global__ void __launch_bounds__(512) vtvtv_k1(
+    double* __restrict__ a, const double* __restrict__ b,
+    const double* __restrict__ c, int64_t n) {
+  int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < n) a[i] = a[i] * b[i] * c[i];
+}
+
+void vtvtv_launch(double* a, const double* b, const double* c, int64_t n) {
+  const int block = 512;
+  int64_t grid = (n + block - 1) / block;
+  if (grid < 1) grid = 1;
+  vtvtv_k1<<<(unsigned)grid, block>>>(a, b, c, n);
+}

@@ -1,0 +1,33 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+// In-place a[i] += b[i]*S.  One double4 per thread, plus fused scalar tail
+// handled by the first `tail` threads of block 0.  Single launch.
+__global__ void vpvts_kernel(double4* __restrict__ a4, const double4* __restrict__ b4,
+                             const long n4, const long tail, const double S) {
+    const long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n4) {
+        double4 bv = b4[i];
+        double4 av = a4[i];
+        av.x += bv.x * S;
+        av.y += bv.y * S;
+        av.z += bv.z * S;
+        av.w += bv.w * S;
+        a4[i] = av;
+    }
+    if (blockIdx.x == 0 && threadIdx.x < tail) {
+        double* __restrict__ a = (double*)a4;
+        const double* __restrict__ b = (const double*)b4;
+        const long t = n4 * 4 + threadIdx.x;
+        a[t] += b[t] * S;
+    }
+}
+
+void vpvts_launch(double* a, const double* b, long n, double S) {
+    const long n4 = n / 4;
+    const long tail = n - n4 * 4;
+    const int T = 256;
+    long blocks = (n4 + T - 1) / T;
+    if (blocks < 1) blocks = 1;
+    vpvts_kernel<<<dim3((unsigned)blocks), T>>>((double4*)a, (const double4*)b, n4, tail, S);
+}

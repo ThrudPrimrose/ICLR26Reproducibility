@@ -1,0 +1,53 @@
+import numpy as np
+import numba
+from numba import prange
+
+
+@numba.njit(parallel=True, fastmath=True)
+def _kernel(a, b, c, d, aa, bb, cc):
+    N = aa.shape[0]
+    for j in prange(N):
+        for i in range(N):
+            aa[j, i] += bb[j, i] * cc[j, i]
+    for i in prange(N):
+        a[i] = b[i] + c[i] * d[i]
+
+
+def _warm():
+    n = 128
+    a = np.zeros(n)
+    b = np.ones(n)
+    c = np.ones(n)
+    d = np.ones(n)
+    aa = np.zeros((n, n))
+    bb = np.ones((n, n))
+    cc = np.ones((n, n))
+    _kernel(a, b, c, d, aa, bb, cc)
+
+
+_warm()
+
+
+def s2275(a, b, c, d, aa, bb, cc, LEN_2D):
+    if (
+        aa.flags["C_CONTIGUOUS"]
+        and bb.flags["C_CONTIGUOUS"]
+        and cc.flags["C_CONTIGUOUS"]
+        and a.flags["C_CONTIGUOUS"]
+        and b.flags["C_CONTIGUOUS"]
+        and c.flags["C_CONTIGUOUS"]
+        and d.flags["C_CONTIGUOUS"]
+    ):
+        _kernel(a, b, c, d, aa, bb, cc)
+    else:
+        a_c = np.ascontiguousarray(a)
+        b_c = np.ascontiguousarray(b)
+        c_c = np.ascontiguousarray(c)
+        d_c = np.ascontiguousarray(d)
+        aa_c = np.ascontiguousarray(aa)
+        bb_c = np.ascontiguousarray(bb)
+        cc_c = np.ascontiguousarray(cc)
+        _kernel(a_c, b_c, c_c, d_c, aa_c, bb_c, cc_c)
+        a[...] = a_c
+        aa[...] = aa_c
+    return None

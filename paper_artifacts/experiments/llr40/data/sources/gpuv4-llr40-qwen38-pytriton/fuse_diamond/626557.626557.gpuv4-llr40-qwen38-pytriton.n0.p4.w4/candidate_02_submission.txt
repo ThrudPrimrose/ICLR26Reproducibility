@@ -1,0 +1,41 @@
+"""Fused single-pass numba implementation of TSVC fuse_diamond.
+
+out[i] = (a[i]*a[i] + 1) * (a[i]*a[i] - 1)
+Serial for small n, numba prange (all cores) for large n. JIT warmed at import time.
+"""
+import numpy as np
+from numba import njit, prange
+
+@njit(nogil=True)
+def _fuse_ser(a, out, n):
+    for i in range(n):
+        t = a[i] * a[i]
+        out[i] = (t + 1.0) * (t - 1.0)
+
+@njit(parallel=True, nogil=True)
+def _fuse_par(a, out, n):
+    for i in prange(n):
+        t = a[i] * a[i]
+        out[i] = (t + 1.0) * (t - 1.0)
+
+# warm both specializations at import time (compile cost not charged to timed calls)
+_w = np.ones(1 << 20, dtype=np.float64)
+_ww = np.empty(1 << 20, dtype=np.float64)
+_fuse_ser(_w, _ww, 1 << 20)
+_fuse_par(_w, _ww, 1 << 20)
+del _w, _ww
+
+_THRESHOLD = 1 << 23  # 8.4M elements: below this, prange overhead not worth it
+
+def fuse_diamond(out, a, LEN_1D):
+    n = int(LEN_1D)
+    if a.ndim == 1 and a.flags.c_contiguous and out.flags.c_contiguous:
+        if n >= _THRESHOLD:
+            _fuse_par(a, out, n)
+        else:
+            _fuse_ser(a, out, n)
+    else:
+        ac = np.ascontiguousarray(a)
+        oc = np.empty_like(ac)
+        _fuse_ser(ac, oc, n)
+        out[...] = oc

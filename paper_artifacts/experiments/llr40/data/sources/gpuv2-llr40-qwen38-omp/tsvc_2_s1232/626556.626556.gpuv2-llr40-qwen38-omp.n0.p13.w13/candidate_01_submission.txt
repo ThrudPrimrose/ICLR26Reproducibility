@@ -1,0 +1,17 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s1232_fp64(double *restrict aa, const double *restrict bb, const double *restrict cc, const int64_t LEN_2D,
+                       const int64_t VLEN) {
+  const int64_t N = LEN_2D;
+  #pragma omp target map(tofrom: aa[0:N*N]) map(to: bb[0:N*N], cc[0:N*N])
+  {
+    #pragma omp teams distribute
+    for (int64_t j = 0; j < N; ++j) {
+      #pragma omp parallel for
+      for (int64_t i = j * VLEN; i < N; ++i) {
+        aa[i * N + j] = bb[i * N + j] + cc[i * N + j];
+      }
+    }
+  }
+}

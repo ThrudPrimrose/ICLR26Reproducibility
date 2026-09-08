@@ -1,0 +1,44 @@
+"""Optimized implementation of the TSVC_2 kernel ``s1232``.
+
+This version avoids allocating an ``LEN_2D``×``LEN_2D`` boolean mask, which can become
+prohibitively large for the hidden benchmark size.  Instead it loops over the columns ``j`` and
+adds the slices ``bb[i:, j]`` and ``cc[i:, j]`` directly into ``aa[i:, j]`` where ``i = j * VLEN``.
+The loop is lightweight because the heavy work is performed by NumPy's vectorised ``add`` which
+writes in‑place using the ``out`` argument.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+
+def s1232(
+    aa: np.ndarray,
+    bb: np.ndarray,
+    cc: np.ndarray,
+    LEN_2D: int,
+    VLEN: int,
+) -> None:
+    """In‑place kernel for TSVC_2 ``s1232``.
+
+    Parameters
+    ----------
+    aa, bb, cc:
+        ``LEN_2D``×``LEN_2D`` arrays of the same dtype. ``aa`` is the output buffer.
+    LEN_2D:
+        Size of each dimension.
+    VLEN:
+        Vector length factor used in the lower‑bound condition.
+    """
+    # Loop over each column ``j``; compute the start row ``i_start`` for that column.
+    # ``np.add`` with ``out=`` writes directly into the destination slice without a temporary.
+    for j in range(LEN_2D):
+        i_start = j * VLEN
+        if i_start >= LEN_2D:
+            # No rows satisfy the condition for this column.
+            continue
+        # Add the slices and store the result in ``aa`` in place.
+        np.add(bb[i_start:, j], cc[i_start:, j], out=aa[i_start:, j])
+    # No explicit ``return`` needed; returning ``None`` signals in‑place semantics.
+    return None
+

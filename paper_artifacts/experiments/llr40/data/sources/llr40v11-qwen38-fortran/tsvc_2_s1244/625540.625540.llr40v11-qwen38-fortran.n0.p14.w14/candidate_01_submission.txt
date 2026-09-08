@@ -1,0 +1,35 @@
+! TSVC tsvc_2 kernel s1244 (1-based, N = LEN_1D):
+!   a(i) = b(i) + c(i)^2 + b(i)^2 + c(i)   for i = 1..N-1
+!   d(i) = a(i)_new + a(i+1)_OLD           for i = 1..N-1
+! The reference loop updates a(i) BEFORE d(i) reads a(i+1), so d(i) always
+! sees the ORIGINAL a(i+1) (its own update happens one iteration later).
+! a(N) is never written.  Pass 1 (d) must complete before pass 2 (a update).
+! Traffic: 16N (b,c) + 8N (a read) + 8N (d) + 16N (b,c) + 8N (a) = 56 B/elt.
+subroutine tsvc_2_s1244_fp64(pa, pb, pc, pd, len_1d) bind(C, name='tsvc_2_s1244_fp64')
+  use iso_c_binding
+  implicit none
+  type(c_ptr), value :: pa, pb, pc, pd
+  integer(c_int64_t), value :: len_1d
+  real(c_double), dimension(:), pointer :: a, b, c, d
+  integer(c_int64_t) :: n, i
+
+  n = len_1d - 1
+  if (n < 1) return
+
+  call c_f_pointer(pa, a, [len_1d])
+  call c_f_pointer(pb, b, [len_1d])
+  call c_f_pointer(pc, c, [len_1d])
+  call c_f_pointer(pd, d, [len_1d])
+
+  ! d(i) = g(i) + a_orig(i+1); reads a before it is touched
+  !$omp parallel do schedule(static)
+  do i = 1, n
+    d(i) = b(i) + c(i)*c(i) + b(i)*b(i) + c(i) + a(i+1)
+  end do
+
+  ! a(i) = g(i)
+  !$omp parallel do schedule(static)
+  do i = 1, n
+    a(i) = b(i) + c(i)*c(i) + b(i)*b(i) + c(i)
+  end do
+end subroutine tsvc_2_s1244_fp64

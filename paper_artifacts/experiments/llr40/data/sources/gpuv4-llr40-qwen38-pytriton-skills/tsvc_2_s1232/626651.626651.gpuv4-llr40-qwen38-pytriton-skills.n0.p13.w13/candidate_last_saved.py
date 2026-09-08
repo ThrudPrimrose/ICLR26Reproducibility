@@ -1,0 +1,26 @@
+import numpy as np
+import numba as nb
+from numba import prange
+
+@nb.njit(parallel=True, fastmath=True)
+def _s1232(aa, bb, cc, N, V):
+    M = N // V
+    for b in prange(M + 1):
+        r0 = b * V
+        if r0 >= N:
+            continue
+        r1 = r0 + V
+        if r1 > N:
+            r1 = N
+        jm = b + 1
+        for i in range(r0, r1):
+            for j in range(jm):
+                aa[i, j] = bb[i, j] + cc[i, j]
+
+_dummy = np.zeros((128, 128))
+_s1232(_dummy.copy(), _dummy, _dummy, 128, 8)
+del _dummy
+
+def s1232(aa, bb, cc, LEN_2D, VLEN):
+    _s1232(aa, bb, cc, int(LEN_2D), int(VLEN))
+    return None

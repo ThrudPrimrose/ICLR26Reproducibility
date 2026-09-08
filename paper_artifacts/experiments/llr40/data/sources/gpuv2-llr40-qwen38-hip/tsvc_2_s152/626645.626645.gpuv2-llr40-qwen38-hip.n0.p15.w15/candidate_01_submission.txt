@@ -1,0 +1,34 @@
+// Device half: kernels + launcher.
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+namespace tsvc152 {
+
+// Separate rounded multiply (prevents FMA contraction under -ffp-contract=fast).
+__device__ __forceinline__ double mul_rn(double x, double y) {
+    double r;
+    asm volatile("v_mul_f64 %0, %1, %2" : "=v"(r) : "v"(x), "v"(y));
+    return r;
+}
+
+__global__ void s152_s8(double *a, double *b, const double *c, const double *d,
+                        const double *e, long long n) {
+    long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    long long stride = (long long)gridDim.x * blockDim.x;
+    for (; i < n; i += stride) {
+        double t = d[i] * e[i];
+        b[i] = t;
+        a[i] = a[i] + mul_rn(t, c[i]);
+    }
+}
+
+void launch_s152(double *a, double *b, const double *c, const double *d,
+                 const double *e, long long n) {
+    const int threads = 512;
+    if (n <= 0) return;
+    long long want = (n + threads - 1) / threads;
+    int blocks = want > 262144 ? 262144 : (int)want;
+    s152_s8<<<blocks, threads>>>(a, b, c, d, e, n);
+}
+
+} // namespace tsvc152

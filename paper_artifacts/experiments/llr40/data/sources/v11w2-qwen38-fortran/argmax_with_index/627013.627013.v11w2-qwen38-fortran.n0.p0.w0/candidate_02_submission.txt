@@ -1,0 +1,153 @@
+module amki
+  use iso_c_binding
+  implicit none
+contains
+
+  subroutine scan4(a, lo, hi, mv, mp)
+    real(c_double), intent(in) :: a(:)
+    integer(c_int64_t), intent(in) :: lo, hi
+    real(c_double), intent(out) :: mv
+    integer(c_int64_t), intent(out) :: mp
+
+    real(c_double) :: v(4)
+    integer(c_int64_t) :: p(4), it, l, nrem, np, pm
+
+    nrem = hi - lo + 1
+    np = min(nrem, 4_8)
+    do l = 1, 4
+      if (l <= np) then
+        v(l) = a(lo + l - 1)
+        p(l) = lo + l - 1
+      else
+        v(l) = -HUGE(1.0d0)
+        p(l) = huge(1_8)
+      end if
+    end do
+    it = lo + np
+    do while (it + 3 <= hi)
+      if (a(it) > v(1)) then
+        v(1) = a(it)
+        p(1) = it
+      end if
+      if (a(it + 1) > v(2)) then
+        v(2) = a(it + 1)
+        p(2) = it + 1
+      end if
+      if (a(it + 2) > v(3)) then
+        v(3) = a(it + 2)
+        p(3) = it + 2
+      end if
+      if (a(it + 3) > v(4)) then
+        v(4) = a(it + 3)
+        p(4) = it + 3
+      end if
+      it = it + 4
+    end do
+    do l = it, hi
+      if (a(l) > v(l - it + 1)) then
+        v(l - it + 1) = a(l)
+        p(l - it + 1) = l
+      end if
+    end do
+    mv = v(1)
+    pm = p(1)
+    do l = 2, 4
+      if (v(l) > mv) then
+        mv = v(l)
+        pm = p(l)
+      else if (mv > v(l)) then
+        ! keep
+      else if (p(l) < pm) then
+        mv = v(l)
+        pm = p(l)
+      end if
+    end do
+    mp = pm
+  end subroutine scan4
+end module amki
+
+subroutine argmax_with_index_fp64(a, out_index, out_value, len_1d) bind(C, name="argmax_with_index_fp64")
+  use iso_c_binding
+  use, intrinsic :: ieee_arithmetic
+  use amki
+  implicit none
+  integer(c_int64_t), value :: len_1d
+  real(c_double), intent(in)  :: a(len_1d)
+  integer(c_int64_t), intent(out) :: out_index
+  real(c_double), intent(out) :: out_value
+
+  real(c_double) :: x
+  integer(c_int64_t) :: idx, i
+
+  ! Leading NaN: the reference scan would be stuck at NaN forever.
+  if (ieee_is_nan(a(1))) then
+    out_value = a(1)
+    out_index = 1
+    return
+  end if
+
+  if (len_1d < 262144) then
+    x = a(1)
+    idx = 1
+    do i = 2, len_1d
+      if (a(i) > x) then
+        x = a(i)
+        idx = i
+      end if
+    end do
+    out_value = x
+    out_index = idx
+    return
+  end if
+
+  call par_argmax(a, len_1d, x, idx)
+  out_value = x
+  out_index = idx
+end subroutine argmax_with_index_fp64
+
+subroutine par_argmax(a, n, x, idx)
+  use iso_c_binding
+  use omp_lib
+  use amki
+  implicit none
+  integer(c_int64_t), intent(in) :: n
+  real(c_double), intent(in) :: a(n)
+  real(c_double), intent(out) :: x
+  integer(c_int64_t), intent(out) :: idx
+
+  real(c_double) :: pv(1024)
+  integer(c_int64_t) :: pp(1024)
+  integer(c_int64_t) :: i, chunk, lo, hi, tx
+  integer :: nt, s, t
+
+  nt = omp_get_max_threads()
+  if (nt < 1) nt = 1
+!$omp parallel do num_threads(nt) shared(a, n, pv, pp) private(s, chunk, lo, hi, tx, i)
+  do s = 0, nt - 1
+     chunk = (n - 1) / nt + 1
+     lo = int(s, 8) * chunk + 1
+     hi = min(n, int(s + 1, 8) * chunk)
+     tx = s + 1
+     if (lo > hi) then
+        pv(tx) = -HUGE(1.0d0)
+        pp(tx) = huge(1_8)
+        cycle
+     end if
+     call scan4(a, lo, hi, pv(tx), pp(tx))
+  end do
+!$omp end parallel do
+
+  x = -HUGE(1.0d0)
+  idx = huge(1_8)
+  do t = 1, nt
+    if (pv(t) > x) then
+      x = pv(t)
+      idx = pp(t)
+    else if (x > pv(t)) then
+      cycle
+    else if (pp(t) < idx) then
+      x = pv(t)
+      idx = pp(t)
+    end if
+  end do
+end subroutine par_argmax

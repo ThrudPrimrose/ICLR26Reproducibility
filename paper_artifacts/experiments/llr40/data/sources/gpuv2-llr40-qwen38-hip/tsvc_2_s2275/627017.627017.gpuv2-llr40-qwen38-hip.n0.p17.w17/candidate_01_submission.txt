@@ -1,0 +1,24 @@
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+__global__ void fma2d_kernel(double *aa, const double *bb, const double *cc, size_t N) {
+    size_t idx = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    size_t stride = (size_t)gridDim.x * blockDim.x;
+    for (; idx < N; idx += stride) {
+        aa[idx] = aa[idx] + bb[idx] * cc[idx];
+    }
+}
+__global__ void fma1d_kernel(double *a, const double *b, const double *c, const double *d, size_t n) {
+    size_t idx = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) a[idx] = b[idx] + c[idx] * d[idx];
+}
+void tsvc_2_launcher(double *a, double *aa, const double *b, const double *bb,
+                     const double *c, const double *cc, const double *d, int64_t LEN_2D) {
+    size_t N = (size_t)LEN_2D * (size_t)LEN_2D;
+    size_t n1 = (size_t)LEN_2D;
+    int block = 256;
+    int grid2 = (int)((N + block - 1) / block);
+    int grid1 = (int)((n1 + block - 1) / block);
+    fma2d_kernel<<<grid2, block>>>(aa, bb, cc, N);
+    fma1d_kernel<<<grid1, block>>>(a, b, c, d, n1);
+}

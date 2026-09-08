@@ -1,0 +1,47 @@
+# TSVC tsvc_2 s3111: b[0] = sum(a[i] for i in range(LEN_1D) if a[i] > 0.0)
+# Strategy: numba fastmath reduction (vectorized FMA chains) + prange parallelism.
+# Threads pinned to the container's actual affinity set; JIT warmed at import.
+import os
+
+_K = max(1, min(len(os.sched_getaffinity(0)), 64))
+os.environ.setdefault("NUMBA_NUM_THREADS", str(_K))
+import numpy as np
+import numba as nb
+from numba import prange
+
+try:
+    nb.set_num_threads(_K)
+except Exception:
+    pass
+
+@nb.njit(fastmath=True)
+def _serial(a, n):
+    s = 0.0
+    for i in range(n):
+        if a[i] > 0.0:
+            s += a[i]
+    return s
+
+@nb.njit(fastmath=True, parallel=True)
+def _par(a, n):
+    s = 0.0
+    for i in prange(n):
+        if a[i] > 0.0:
+            s += a[i]
+    return s
+
+_PAR_MIN = 1 << 18
+
+
+def s3111(a, b, LEN_1D):
+    n = int(LEN_1D)
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    b[0] = _par(a, n) if n >= _PAR_MIN else _serial(a, n)
+
+
+# warm up: compile both paths + exercise the thread pool before the clock starts
+_w = np.zeros(1 << 17)
+_wb = np.zeros(2)
+s3111(_w, _wb, _w.shape[0])
+_w2 = np.random.rand(1 << 21)
+s3111(_w2, _wb, _w2.shape[0])

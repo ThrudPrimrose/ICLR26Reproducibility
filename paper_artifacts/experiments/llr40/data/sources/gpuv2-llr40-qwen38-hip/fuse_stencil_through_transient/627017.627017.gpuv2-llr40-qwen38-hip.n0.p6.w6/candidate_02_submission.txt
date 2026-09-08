@@ -1,0 +1,16 @@
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+#define BLOCK 256
+
+__global__ void fst_kernel(const double* __restrict__ a, double* __restrict__ out, long long n) {
+    long long i = (long long)blockIdx.x * BLOCK + threadIdx.x;
+    if (i < 1 || i >= n - 2) return;
+    out[i] = (a[i-1] + a[i] + a[i+1]) * (a[i] + a[i+1] + a[i+2]);
+}
+
+void fst_launch(const double* a, double* out, long long n) {
+    if (n < 4) return;
+    long long grid = (n + BLOCK - 1) / BLOCK;
+    fst_kernel<<<(unsigned)grid, BLOCK>>>(a, out, n);
+}

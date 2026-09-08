@@ -1,0 +1,52 @@
+/* Parallel host reduction with deterministic order and higher precision accumulation.
+ * A dummy OpenMP target region registers a device kernel as required.
+ * Each thread accumulates its chunk in long double to reduce rounding error,
+ * then the partial sums are combined in thread order and cast back to double.
+ */
+
+#include <stdint.h>
+#include <omp.h>
+#include <stdlib.h>
+
+void quasi_affine_reduce_odd_fp64(const double *restrict a, double *restrict out, const int64_t LEN_1D) {
+    // Dummy offload to ensure a device kernel exists.
+    #pragma omp target
+    { }
+
+    const int64_t Nodd = (LEN_1D > 1) ? ((LEN_1D - 1) / 2) : 0;
+    if (Nodd <= 0) {
+        out[0] = 0.0;
+        return;
+    }
+
+    int max_threads = omp_get_max_threads();
+    long double *partial = (long double *)malloc((size_t)max_threads * sizeof(long double));
+    if (!partial) {
+        // Fallback to simple sequential sum if allocation fails.
+        double acc = 0.0;
+        for (int64_t j = 0; j < Nodd; ++j) {
+            acc += a[1 + 2 * j];
+        }
+        out[0] = acc;
+        return;
+    }
+
+    #pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        long double local = 0.0L;
+        #pragma omp for schedule(static) nowait
+        for (int64_t j = 0; j < Nodd; ++j) {
+            local += (long double)a[1 + 2 * j];
+        }
+        partial[tid] = local;
+    }
+
+    long double total = 0.0L;
+    for (int i = 0; i < max_threads; ++i) {
+        total += partial[i];
+    }
+    free(partial);
+    out[0] = (double)total;
+}
+

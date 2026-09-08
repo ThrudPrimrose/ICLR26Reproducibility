@@ -1,0 +1,13 @@
+subroutine argmax_with_index_fp64(a, out_index, out_value, LEN_1D) bind(C, name='argmax_with_index_fp64')
+  use iso_c_binding
+  implicit none
+  real(c_double), intent(in) :: a(*)
+  integer(c_int64_t), intent(out) :: out_index(*)
+  real(c_double), intent(out) :: out_value(*)
+  integer(c_int64_t), intent(in), value :: LEN_1D
+  integer(c_int64_t) :: idx
+
+  idx = maxloc(a(1:LEN_1D), dim=1)
+  out_value(1) = a(idx)
+  out_index(1) = idx
+end subroutine argmax_with_index_fp64

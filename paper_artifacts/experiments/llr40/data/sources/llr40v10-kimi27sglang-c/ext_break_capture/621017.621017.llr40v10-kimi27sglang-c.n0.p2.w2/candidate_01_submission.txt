@@ -1,0 +1,85 @@
+#include <stdint.h>
+#include <immintrin.h>
+
+static inline int64_t scan_block(const double *restrict a, int64_t start, int64_t end, double k) {
+    const __m512d vk = _mm512_set1_pd(k);
+    int64_t i = start;
+    for (; i + 8 <= end; i += 8) {
+        __m512d va = _mm512_loadu_pd(a + i);
+        __mmask8 m = _mm512_cmp_pd_mask(va, vk, _CMP_GT_OQ);
+        if (m) {
+            int lane = __builtin_ctzll((unsigned long long)m);
+            return i + lane;
+        }
+    }
+    for (; i < end; ++i) {
+        if (a[i] > k) return i;
+    }
+    return INT64_MAX;
+}
+
+void ext_break_capture_fp64(const double *restrict a, int64_t *restrict out_index,
+                            double *restrict out_value, const int64_t LEN_1D) {
+    const double k = 1.0;
+
+    if (LEN_1D <= 0) {
+        out_index[0] = -1;
+        out_value[0] = -1.0;
+        return;
+    }
+
+    // For small inputs just do a sequential vector scan.
+    if (LEN_1D < 4096) {
+        int64_t idx = scan_block(a, 0, LEN_1D, k);
+        if (idx < LEN_1D) {
+            out_index[0] = idx;
+            out_value[0] = a[idx];
+        } else {
+            out_index[0] = -1;
+            out_value[0] = -1.0;
+        }
+        return;
+    }
+
+    int64_t best = INT64_MAX;
+
+    // Block size tuned to amortise scheduling while allowing early stop.
+    const int64_t BLOCK = 16384;
+    const int64_t num_blocks = (LEN_1D + BLOCK - 1) / BLOCK;
+
+    #pragma omp parallel
+    {
+        #pragma omp for schedule(dynamic, 1)
+        for (int64_t b = 0; b < num_blocks; ++b) {
+            int64_t start = b * BLOCK;
+            int64_t end = start + BLOCK;
+            if (end > LEN_1D) end = LEN_1D;
+
+            int64_t cur_best;
+            #pragma omp atomic read
+            cur_best = best;
+            if (cur_best <= start) continue;
+
+            int64_t local = scan_block(a, start, end, k);
+            if (local < LEN_1D) {
+                int64_t old = cur_best;
+                while (local < old) {
+                    int64_t expected = old;
+                    if (__atomic_compare_exchange_n(&best, &expected, local,
+                                                    0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED)) {
+                        break;
+                    }
+                    old = expected;
+                }
+            }
+        }
+    }
+
+    if (best < LEN_1D) {
+        out_index[0] = best;
+        out_value[0] = a[best];
+    } else {
+        out_index[0] = -1;
+        out_value[0] = -1.0;
+    }
+}

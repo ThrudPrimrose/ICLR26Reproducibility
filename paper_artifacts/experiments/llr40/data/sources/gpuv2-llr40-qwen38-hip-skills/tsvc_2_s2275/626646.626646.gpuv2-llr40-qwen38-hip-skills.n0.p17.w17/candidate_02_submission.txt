@@ -1,0 +1,36 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+#define NTLD(p) __builtin_nontemporal_load(p)
+#define NTST(v, p) __builtin_nontemporal_store(v, p)
+
+__global__ __launch_bounds__(256)
+void tsvc2_body(double* __restrict__ a, double* __restrict__ aa,
+                const double* __restrict__ b, const double* __restrict__ bb,
+                const double* __restrict__ c, const double* __restrict__ cc,
+                const double* __restrict__ d, const long long n2, const long long len)
+{
+    const long long t = (long long)blockIdx.x * 256 + threadIdx.x;
+    const long long i = t * 2;
+    if (i + 2 <= n2) {
+        double2 av{NTLD(aa + i), NTLD(aa + i + 1)}, bv{NTLD(bb + i), NTLD(bb + i + 1)},
+                cv{NTLD(cc + i), NTLD(cc + i + 1)};
+        double2 r;
+        r.x = av.x + bv.x * cv.x;
+        r.y = av.y + bv.y * cv.y;
+        NTST(r.x, aa + i);
+        NTST(r.y, aa + i + 1);
+    } else if (i < n2) {
+        NTST(NTLD(aa + i) + NTLD(bb + i) * NTLD(cc + i), aa + i);
+    }
+    if (t < len) a[t] = b[t] + c[t] * d[t];
+}
+
+void tsvc2_launch(double* a, double* aa, const double* b, const double* bb,
+                  const double* c, const double* cc, const double* d, const int64_t LEN_2D)
+{
+    const long long n2 = (long long)LEN_2D * LEN_2D;
+    long long blocks = ((n2 + 1) / 2 + 255) / 256;
+    if (blocks < 1) blocks = 1;
+    tsvc2_body<<<(unsigned)blocks, 256>>>(a, aa, b, bb, c, cc, d, n2, (long long)LEN_2D);
+}

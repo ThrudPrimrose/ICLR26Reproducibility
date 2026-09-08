@@ -1,0 +1,143 @@
+"""Optimized tsvc_2 s252 (python arm).
+
+Reference:
+    t = 0.0
+    for i in range(n):
+        s = b[i] * c[i]
+        a[i] = s + t
+        t = s
+` t ` at iteration i is exactly s from iteration i-1, so
+    a[i] = b[i]*c[i] + b[i-1]*c[i-1]
+(a distance-1 shift, no true loop-carried dependence).  Same ops, same order:
+bit-identical to the reference.
+
+Primary path: a C kernel (AVX-512 autovectorized by GCC, OpenMP-blocked)
+compiled and dlopen'd at import time (untimed).  Fallback: numba prange.
+"""
+import ctypes
+import os
+import subprocess
+import sys
+import tempfile
+
+import numpy as np
+import numba
+from numba import prange
+
+
+_C_SRC = r"""
+#include <stdint.h>
+#include <omp.h>
+void k_fp64(double *restrict a, const double *restrict b, const double *restrict c, const int64_t n) {
+    if (n <= 0) return;
+    a[0] = b[0] * c[0];
+    #pragma omp parallel for schedule(static)
+    for (int64_t i = 1; i < n; ++i) {
+        a[i] = b[i] * c[i] + b[i-1] * c[i-1];
+    }
+}
+"""
+
+_C_FN = None
+
+
+def _c_ok(arr):
+    return arr.dtype == np.float64 and arr.ndim == 1 and arr.flags["C_CONTIGUOUS"]
+
+
+def _build_c():
+    global _C_FN
+    d = tempfile.mkdtemp(prefix="s252k_")
+    csrc = os.path.join(d, "k.c")
+    lib = os.path.join(d, "libk.so")
+    with open(csrc, "w") as f:
+        f.write(_C_SRC)
+    last = None
+    for cc in ("cc", "gcc", "clang"):
+        try:
+            r = subprocess.run(
+                [cc, "-O3", "-march=native", "-fopenmp", "-ffp-contract=off",
+                 "-shared", "-fPIC", "-o", lib, csrc],
+                capture_output=True, timeout=300)
+            if r.returncode == 0 and os.path.exists(lib):
+                break
+            last = "rc%d %s" % (r.returncode, r.stderr[:200])
+        except Exception as e:
+            last = repr(e)
+    else:
+        return "no compiler: %s" % last
+    try:
+        dl = ctypes.CDLL(lib)
+        fn = dl.k_fp64
+        fn.argtypes = [ctypes.c_void_p] * 3 + [ctypes.c_int64]
+        fn.restype = None
+        # verify bit-exact vs reference on a small case + warm OMP pool
+        rng = np.random.default_rng(12345)
+        m = 100003
+        b = rng.standard_normal(m)
+        c = rng.standard_normal(m)
+        ref = np.empty(m)
+        t = 0.0
+        for i in range(m):
+            s = b[i] * c[i]
+            ref[i] = s + t
+            t = s
+        out = np.empty(m)
+        fn(out.ctypes.data, b.ctypes.data, c.ctypes.data, m)
+        if not np.array_equal(ref, out):
+            return "c mismatch"
+        # keep path alive
+        _C_FN = (fn, lib)
+        return None
+    except Exception as e:
+        return repr(e)
+
+
+_err = _build_c()
+if _err is not None:
+    _C_FN = None
+
+
+@numba.njit(parallel=True)
+def _s252(a, b, c):
+    n = a.shape[0]
+    if n > 0:
+        a[0] = b[0] * c[0]
+    for i in prange(1, n):
+        a[i] = b[i] * c[i] + b[i - 1] * c[i - 1]
+
+
+def _s252_np(a, b, c):
+    s = b * c
+    if a.shape[0] > 0:
+        a[1:] = s[1:] + s[:-1]
+        a[0] = s[0]
+
+
+def s252(a, b, c, LEN_1D):
+    n = a.shape[0]
+    if n == 0:
+        return None
+    if _C_FN is not None and _c_ok(a) and _c_ok(b) and _c_ok(c):
+        try:
+            _C_FN[0](a.ctypes.data, b.ctypes.data, c.ctypes.data, n)
+            return None
+        except Exception:
+            pass
+    try:
+        _s252(a, b, c)
+    except Exception:
+        _s252_np(a, b, c)
+    return None
+
+
+def _warm():
+    d64 = np.arange(32, dtype=np.float64)
+    d32 = np.arange(32, dtype=np.float32)
+    di64 = np.arange(32, dtype=np.int64)
+    _s252(d64, d64, d64)
+    _s252(d32, d32, d32)
+    _s252(di64, di64, di64)
+
+
+_warm()

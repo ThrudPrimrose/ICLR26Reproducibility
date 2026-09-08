@@ -1,0 +1,29 @@
+#include <stdint.h>
+
+void tsvc_2_s233_fp64(double *restrict aa, double *restrict bb,
+                      const double *restrict cc, const int64_t LEN_2D) {
+    const int64_t N = LEN_2D;
+    const int64_t N2 = N * N;
+
+    #pragma omp target data map(tofrom: aa[0:N2]) map(tofrom: bb[0:N2]) map(to: cc[0:N2])
+    {
+        /* aa: parallel over column i, serial scan over row j (seed row 7) */
+        #pragma omp target teams distribute parallel for
+        for (int64_t i = 8; i < N; ++i) {
+            double acc = aa[7 * N + i];
+            for (int64_t j = 8; j < N; ++j) {
+                acc += cc[j * N + i];
+                aa[j * N + i] = acc;
+            }
+        }
+        /* bb: parallel over row j, serial scan over column i (seed column 7) */
+        #pragma omp target teams distribute parallel for
+        for (int64_t j = 8; j < N; ++j) {
+            double acc = bb[j * N + 7];
+            for (int64_t i = 8; i < N; ++i) {
+                acc += cc[j * N + i];
+                bb[j * N + i] = acc;
+            }
+        }
+    }
+}

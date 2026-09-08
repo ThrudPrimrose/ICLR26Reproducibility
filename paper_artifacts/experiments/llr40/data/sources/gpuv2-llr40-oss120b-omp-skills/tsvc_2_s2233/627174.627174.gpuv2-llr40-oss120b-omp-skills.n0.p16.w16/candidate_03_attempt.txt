@@ -1,0 +1,35 @@
+/* Hand port of the TSVC tsvc_2 C++ microkernel ``s2233`` (s2233_d_single.cpp), fp64
+ * single-invocation variant, to C23 under the v2 C-ABI.
+ *
+ * Adapted from TSVC_2 -- Test Suite for Vectorizing Compilers (github.com/UoB-HPC/TSVC_2),
+ * NCSA/MIT license (UIUC).
+ */
+
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+    // Dummy target region to ensure a device kernel is generated.
+    #pragma omp target
+    {
+        // No operation.
+    }
+
+    // First recurrence: column-wise prefix sum on aa using cc as addend.
+    // Parallelize across columns (i) because each column is independent.
+    #pragma omp parallel for schedule(static) default(none) shared(aa, cc, LEN_2D)
+    for (int64_t i = 8; i < LEN_2D; ++i) {
+        for (int64_t j = 8; j < LEN_2D; ++j) {
+            aa[j * LEN_2D + i] = aa[(j - 1) * LEN_2D + i] + cc[j * LEN_2D + i];
+        }
+    }
+
+    // Second recurrence: row-wise prefix sum on bb using cc.
+    // Parallelize across rows (j) by swapping loop order.
+    #pragma omp parallel for schedule(static) default(none) shared(bb, cc, LEN_2D)
+    for (int64_t j = 8; j < LEN_2D; ++j) {
+        for (int64_t i = 8; i < LEN_2D; ++i) {
+            bb[i * LEN_2D + j] = bb[(i - 1) * LEN_2D + j] + cc[i * LEN_2D + j];
+        }
+    }
+}

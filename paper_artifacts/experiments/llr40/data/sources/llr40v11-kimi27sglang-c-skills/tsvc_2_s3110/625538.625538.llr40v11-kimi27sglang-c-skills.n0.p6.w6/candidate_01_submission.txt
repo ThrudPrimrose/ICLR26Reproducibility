@@ -1,0 +1,51 @@
+#include <stdint.h>
+#include <math.h>
+#include <omp.h>
+
+typedef struct {
+    double v;
+    int64_t i;
+    int64_t j;
+} maxloc_t;
+
+static inline maxloc_t combine_maxloc(maxloc_t a, maxloc_t b) {
+    if (a.v > b.v) return a;
+    if (b.v > a.v) return b;
+    // equal value: preserve the first occurrence (smallest i, then smallest j)
+    if (a.i < b.i) return a;
+    if (b.i < a.i) return b;
+    if (a.j <= b.j) return a;
+    return b;
+}
+
+#pragma omp declare reduction(maxloc : maxloc_t : omp_out = combine_maxloc(omp_out, omp_in)) \
+    initializer(omp_priv = {-INFINITY, 0, 0})
+
+void tsvc_2_s3110_fp64(const double *restrict aa, double *restrict bb, const int64_t LEN_2D) {
+    maxloc_t m = {-INFINITY, 0, 0};
+
+    #pragma omp parallel for reduction(maxloc : m) schedule(static)
+    for (int64_t i = 0; i < LEN_2D; ++i) {
+        const double *restrict row = aa + i * LEN_2D;
+
+        // value-only max reduction can be vectorized
+        double rowmax = row[0];
+        for (int64_t j = 1; j < LEN_2D; ++j) {
+            double v = row[j];
+            if (v > rowmax) rowmax = v;
+        }
+
+        // locate first column where the row maximum occurs
+        int64_t rowj = 0;
+        for (int64_t j = 0; j < LEN_2D; ++j) {
+            if (row[j] == rowmax) {
+                rowj = j;
+                break;
+            }
+        }
+
+        m = combine_maxloc(m, (maxloc_t){rowmax, i, rowj});
+    }
+
+    bb[0] = m.v + (double)m.i + (double)m.j;
+}

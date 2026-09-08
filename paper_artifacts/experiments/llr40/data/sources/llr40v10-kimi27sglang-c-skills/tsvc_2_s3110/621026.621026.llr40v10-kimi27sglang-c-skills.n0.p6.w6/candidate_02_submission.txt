@@ -1,0 +1,44 @@
+#include <stdint.h>
+#include <float.h>
+#include <omp.h>
+
+void tsvc_2_s3110_fp64(const double *restrict aa, double *restrict bb, const int64_t LEN_2D) {
+    if (LEN_2D <= 0) {
+        bb[0] = 0.0;
+        return;
+    }
+
+    const int64_t n = LEN_2D;
+    double gmaxv = -DBL_MAX;
+    int64_t gidx = INT64_MAX;
+
+    #pragma omp parallel
+    {
+        double lmaxv = -DBL_MAX;
+        int64_t lidx = INT64_MAX;
+
+        #pragma omp for schedule(static)
+        for (int64_t i = 0; i < n; ++i) {
+            for (int64_t j = 0; j < n; ++j) {
+                const int64_t k = i * n + j;
+                const double v = aa[k];
+                if (v > lmaxv) {
+                    lmaxv = v;
+                    lidx = k;
+                }
+            }
+        }
+
+        #pragma omp critical
+        {
+            if (lmaxv > gmaxv || (lmaxv == gmaxv && lidx < gidx)) {
+                gmaxv = lmaxv;
+                gidx = lidx;
+            }
+        }
+    }
+
+    const int64_t xindex = gidx / n;
+    const int64_t yindex = gidx % n;
+    bb[0] = gmaxv + (double)xindex + (double)yindex;
+}

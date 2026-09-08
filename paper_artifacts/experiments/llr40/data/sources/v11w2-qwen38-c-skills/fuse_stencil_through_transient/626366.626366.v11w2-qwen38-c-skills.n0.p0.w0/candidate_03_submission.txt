@@ -1,0 +1,63 @@
+#include <stdint.h>
+#include <immintrin.h>
+#include <omp.h>
+
+static inline double body(const double *restrict a, int64_t i) {
+  return (a[i - 1] + a[i] + a[i + 1]) * (a[i] + a[i + 1] + a[i + 2]);
+}
+
+static int64_t peel_head(const double *restrict a, double *restrict out, int64_t end) {
+  int64_t i = 1;
+  while (i < end && ((uintptr_t)(out + i) & 63) != 0) {
+    out[i] = body(a, i);
+    ++i;
+  }
+  return i;
+}
+
+static void tail8(const double *restrict a, double *restrict out, int64_t i, int64_t end) {
+  for (; i < end; ++i)
+    out[i] = body(a, i);
+}
+
+static inline void vec8(const double *restrict a, double *restrict out, int64_t i) {
+  const double *restrict p = a + i - 1;
+  __m512d l0 = _mm512_loadu_pd(p);
+  __m512d l1 = _mm512_loadu_pd(p + 1);
+  __m512d l2 = _mm512_loadu_pd(p + 2);
+  __m512d l3 = _mm512_loadu_pd(p + 3);
+  __m512d t = _mm512_add_pd(l0, l1);
+  t = _mm512_add_pd(t, l2);
+  __m512d s = _mm512_add_pd(l1, l2);
+  s = _mm512_add_pd(s, l3);
+  _mm512_stream_pd(out + i, _mm512_mul_pd(t, s));
+}
+
+static void serial_run(const double *restrict a, double *restrict out, int64_t start, int64_t end) {
+  int64_t i = start;
+  for (; i + 8 <= end; i += 8)
+    vec8(a, out, i);
+  tail8(a, out, i, end);
+}
+
+void fuse_stencil_through_transient_fp64(const double *restrict a, double *restrict out, const int64_t LEN_1D) {
+  const int64_t end = LEN_1D - 2;
+  if (end <= 1) return;
+  const int64_t start = peel_head(a, out, end);
+  const int64_t nblocks = (end - start) / 8;
+  if (LEN_1D < 131072 || !__builtin_cpu_supports("avx512f")) {
+    serial_run(a, out, start, end);
+    return;
+  }
+  const int64_t nq = nblocks / 4;
+  #pragma omp parallel for schedule(static)
+  for (int64_t b = 0; b < nq; ++b) {
+    vec8(a, out, start + 8 * (b + 0 * nq));
+    vec8(a, out, start + 8 * (b + 1 * nq));
+    vec8(a, out, start + 8 * (b + 2 * nq));
+    vec8(a, out, start + 8 * (b + 3 * nq));
+  }
+  for (int64_t b = nq * 4; b < nblocks; ++b)
+    vec8(a, out, start + 8 * b);
+  tail8(a, out, start + 8 * nblocks, end);
+}

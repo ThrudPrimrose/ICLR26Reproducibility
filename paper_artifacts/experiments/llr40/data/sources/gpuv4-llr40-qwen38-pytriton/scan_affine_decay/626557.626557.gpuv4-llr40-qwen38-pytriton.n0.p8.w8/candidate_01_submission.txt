@@ -1,0 +1,91 @@
+"""scan_affine_decay: y[i] = c[i]*y[i-1] + x[i], variable coefficient (blocked parallel scan).
+
+Two-phase CPU strategy (numba, multithreaded):
+  phase 1 (parallel): each block serially scans its range, keeping the affine aggregate
+                      (A_b = prod c, C_b = the carried additive part) of the block.
+  phase 2 (serial):   scan the T aggregates to get each block's starting seed.
+  phase 3 (parallel): each block re-runs the serial recurrence from its seed, writing y.
+All numba work is compiled at import time (warmup call) so the timed call is pure execution.
+"""
+import os
+
+import numpy as np
+import numba
+from numba import njit, prange
+
+_F64 = np.dtype(np.float64)
+
+try:
+    _AFF = len(os.sched_getaffinity(0))
+except Exception:
+    _AFF = os.cpu_count() or 1
+_TP = max(1, _AFF)
+numba.set_num_threads(_TP)
+
+
+@njit(boundscheck=False, fastmath=True)
+def _scan_serial(y, c, x, n):
+    for i in range(1, n):
+        y[i] = c[i] * y[i - 1] + x[i]
+
+
+@njit(parallel=True, boundscheck=False, fastmath=True)
+def _scan_par(y, c, x, n, T):
+    m = n - 1
+    A = np.empty(T)
+    C = np.empty(T)
+    for t in prange(T):
+        lo = m * t // T
+        hi = m * (t + 1) // T
+        p = 1.0
+        w = 0.0
+        for j in range(lo, hi):
+            p = p * c[j + 1]
+            w = w * c[j + 1] + x[j + 1]
+        A[t] = p
+        C[t] = w
+    S = np.empty(T)
+    s = y[0]
+    for t in range(T):
+        S[t] = s
+        s = A[t] * s + C[t]
+    for t in prange(T):
+        lo = m * t // T
+        hi = m * (t + 1) // T
+        yy = S[t]
+        for j in range(lo, hi):
+            yy = c[j + 1] * yy + x[j + 1]
+            y[j + 1] = yy
+
+
+def _ok(a):
+    return a.dtype is _F64 and a.ndim == 1 and a.flags.c_contiguous
+
+
+def scan_affine_decay(y, c, x, LEN_1D):
+    n = int(LEN_1D)
+    if n < 2:
+        return None
+    yv = y if _ok(y) else np.ascontiguousarray(y)
+    cv = c if _ok(c) else np.ascontiguousarray(c)
+    xv = x if _ok(x) else np.ascontiguousarray(x)
+    if n <= 1 << 15:
+        _scan_serial(yv, cv, xv, n)
+    else:
+        _scan_par(yv, cv, xv, n, 2 * _TP)
+    if yv is not y:
+        y[...] = yv
+    return None
+
+
+# ---- import-time warmup: pay the numba compile cost before the clock starts ----
+def _warm():
+    N = 1 << 20
+    y = np.zeros(N)
+    c = np.full(N, 0.5)
+    x = np.ones(N)
+    _scan_par(y, c, x, N, 2 * _TP)
+    M = 1024
+    _scan_serial(y[:M], c[:M], x[:M], M)
+
+_warm()

@@ -1,0 +1,29 @@
+// Device half: pair-odd fused stencil kernel + launcher.
+// Thread t computes out[2t+1] and out[2t+2] from one double4 + one scalar load.
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void k_pair_odd(const double * __restrict__ a, double * __restrict__ out, int64_t n) {
+    int64_t count = n - 3;               // valid outputs i in [1, count]
+    int64_t t = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (count >= 2 && t <= (count - 2) / 2) {
+        double4 v = *(const double4 *)(a + 2 * t);
+        double e = a[2 * t + 4];
+        double o1 = ((v.x + v.y) + v.z) * ((v.y + v.z) + v.w);
+        double o2 = ((v.y + v.z) + v.w) * ((v.z + v.w) + e);
+        out[2 * t + 1] = o1;
+        out[2 * t + 2] = o2;
+    }
+    if (t == 0 && (count & 1)) {
+        out[count] = (a[count-1] + a[count] + a[count+1]) * (a[count] + a[count+1] + a[count+2]);
+    }
+}
+
+extern "C" void launch_fuse_stencil(const double *a, double *out, int64_t n, hipStream_t stream) {
+    int64_t count = n - 3;
+    if (count <= 0) return;
+    const int block = 256;
+    int64_t T = (count - 2) / 2 + 1;
+    int64_t grid = (T + block - 1) / block;
+    k_pair_odd<<<(unsigned)grid, block, 0, stream>>>(a, out, n);
+}

@@ -1,0 +1,42 @@
+/* TSVC tsvc_2 s1244 -- 2-pass parallel rewrite.
+ *
+ * Reference (sequential):
+ *   for (i = 0; i < LEN_1D-1; i++) {
+ *     a[i] = b[i] + c[i]*c[i] + b[i]*b[i] + c[i];
+ *     d[i] = a[i] + a[i+1];
+ *   }
+ *
+ * Dependence analysis:
+ *   - a[i] depends only on b[i], c[i]  -> no inter-iteration dependence.
+ *   - d[i] reads a[i+1].  a[i+1] is only written by iteration i+1 (later),
+ *     so the read is an ANTI-dependence on the pre-loop value:
+ *     d[i] = f(b[i],c[i]) + a_old[i+1].
+ *
+ * Splitting the body into two loops removes the anti-dependence:
+ *   pass 1 (parallel): d[i] = f(b[i],c[i]) + a[i+1]   (a still holds old values)
+ *   pass 2 (parallel): a[i] = f(b[i],c[i])
+ * Both passes stream each element once; total traffic equals the reference.
+ */
+
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s1244_fp64(double *restrict a, const double *restrict b, const double *restrict c, double *restrict d,
+                       const int64_t LEN_1D) {
+
+  const int64_t n = LEN_1D - 1;
+  if (n <= 0) return;
+
+  #pragma omp parallel
+  {
+    #pragma omp for schedule(static)
+    for (int64_t i = 0; i < n; i++) {
+      d[i] = b[i] + c[i] * c[i] + b[i] * b[i] + c[i] + a[i + 1];
+    }
+
+    #pragma omp for schedule(static)
+    for (int64_t i = 0; i < n; i++) {
+      a[i] = b[i] + c[i] * c[i] + b[i] * b[i] + c[i];
+    }
+  }
+}

@@ -1,0 +1,38 @@
+#include <hip/hip_runtime.h>
+
+__global__ void s1232_kernel(double* __restrict__ aa,
+                             const double* __restrict__ bb,
+                             const double* __restrict__ cc,
+                             long long N, long long VLEN, long long J) {
+  long long t = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+  long long i = (long long)blockIdx.y * blockDim.y + threadIdx.y;
+  if (i >= N) return;
+  long long row = i * N;
+  long long jalign = (4LL - (row & 3)) & 3;
+  if (t == 0) {
+    for (long long p = 0; p < jalign; ++p)
+      if (p < J && p * VLEN <= i) {
+        long long idx = row + p;
+        aa[idx] = bb[idx] + cc[idx];
+      }
+  }
+  long long j = jalign + 4 * t;
+  if (j >= J) return;
+  if ((j + 3) * VLEN <= i && j + 3 < J) {
+    const double4* b4 = (const double4*)(bb + row + j);
+    const double4* c4 = (const double4*)(cc + row + j);
+    double4* a4 = (double4*)(aa + row + j);
+    double4 b = *b4, c = *c4;
+    double4 r;
+    r.x = b.x + c.x; r.y = b.y + c.y; r.z = b.z + c.z; r.w = b.w + c.w;
+    *a4 = r;
+  } else {
+    for (long long q = 0; q < 4; ++q) {
+      long long jj = j + q;
+      if (jj < J && jj * VLEN <= i) {
+        long long idx = row + jj;
+        aa[idx] = bb[idx] + cc[idx];
+      }
+    }
+  }
+}

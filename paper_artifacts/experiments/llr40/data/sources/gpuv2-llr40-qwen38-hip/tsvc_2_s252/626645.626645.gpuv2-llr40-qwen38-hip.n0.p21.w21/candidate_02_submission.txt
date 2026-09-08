@@ -1,0 +1,22 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+// a[i] = b[i]*c[i] + (i>0 ? b[i-1]*c[i-1] : 0)  -- the serial recurrence unrolled:
+// t enters each iteration as the PREVIOUS s, so no cross-thread dependence remains.
+__global__ void tsvc_2_s252_kernel(const double *__restrict b, const double *__restrict c,
+                                   double *__restrict a, int64_t n) {
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        double s = b[i] * c[i];
+        double p = (i > 0) ? b[i - 1] * c[i - 1] : 0.0;
+        a[i] = s + p;
+    }
+}
+
+extern "C" void tsvc_2_s252_launch(const double *b, const double *c, double *a, int64_t n) {
+    if (n <= 0) return;
+    const int block = 256;
+    int64_t grid = (n + block - 1) / block;
+    if (grid > 2147483647LL) grid = 2147483647LL;
+    tsvc_2_s252_kernel<<<(unsigned)grid, block>>>(b, c, a, n);
+}

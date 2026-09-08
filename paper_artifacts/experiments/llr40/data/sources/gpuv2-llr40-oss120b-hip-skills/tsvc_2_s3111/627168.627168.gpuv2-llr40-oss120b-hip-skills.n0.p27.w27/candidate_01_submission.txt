@@ -1,0 +1,24 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+extern "C" __global__ void sum_kernel_fp64(const double* __restrict__ a, double* __restrict__ partial_sums, int64_t LEN) {
+    double sum = 0.0;
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    int stride = blockDim.x * gridDim.x;
+    for (int64_t i = tid; i < LEN; i += stride) {
+        double v = a[i];
+        if (v > 0.0) sum += v;
+    }
+    extern __shared__ double sdata[];
+    int lane = threadIdx.x;
+    sdata[lane] = sum;
+    __syncthreads();
+    for (int offset = blockDim.x / 2; offset > 0; offset >>= 1) {
+        if (lane < offset) {
+            sdata[lane] += sdata[lane + offset];
+        }
+        __syncthreads();
+    }
+    if (lane == 0) {
+        partial_sums[blockIdx.x] = sdata[0];
+    }
+}

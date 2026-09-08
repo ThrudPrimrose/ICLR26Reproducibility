@@ -1,0 +1,26 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void tsvc_2_s3111_kernel(const double * __restrict__ a, double * __restrict__ b, int64_t LEN_1D) {
+    extern __shared__ double sdata[];
+    int tid = threadIdx.x;
+    int64_t idx = blockIdx.x * blockDim.x + tid;
+    double val = 0.0;
+    if (idx < LEN_1D) {
+        double ai = a[idx];
+        if (ai > 0.0) {
+            val = ai;
+        }
+    }
+    sdata[tid] = val;
+    __syncthreads();
+    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            sdata[tid] += sdata[tid + s];
+        }
+        __syncthreads();
+    }
+    if (tid == 0) {
+        atomicAdd(b, sdata[0]);
+    }
+}

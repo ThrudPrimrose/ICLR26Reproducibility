@@ -1,0 +1,17 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void matrix_update_kernel(double *aa, const double *bb, const double *cc, int64_t LEN_2D) {
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    int64_t total = LEN_2D * LEN_2D;
+    if (idx < total) {
+        aa[idx] = aa[idx] + bb[idx] * cc[idx];
+    }
+}
+
+__global__ void vector_update_kernel(double *a, const double *b, const double *c, const double *d, int64_t LEN_2D) {
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (i < LEN_2D) {
+        a[i] = b[i] + c[i] * d[i];
+    }
+}

@@ -1,0 +1,61 @@
+#include <stdint.h>
+#include <omp.h>
+#include <immintrin.h>
+
+/* TSVC tsvc_2 s1244:
+ * for i in [0, LEN_1D-2]:  a[i] = b[i] + c[i]*c[i] + b[i]*b[i] + c[i]
+ *                           d[i] = a[i] + a[i+1]
+ * CRITICAL: d[i] is computed in the same loop that later writes a[i+1],
+ * so a[i+1] is still the ORIGINAL input value: d[i] = a_new[i] + a_orig[i+1].
+ * The loop is therefore elementwise parallel (with in-thread read-ahead
+ * ordering). a[LEN_1D-1] is never written.
+ *
+ * Single-pass AVX2 (4 x fp64): each thread owns a contiguous block
+ * [i0, i1]; in the prologue (before any store to a) it reads the original
+ * a[i1+1] into `saved`; a barrier separates prologue from body. In the body
+ * a[i+1] reads for i+1 <= i1 are in-thread program-order safe (the load of
+ * a[i+1] precedes the store of a[i+1]), and the i = i1 element uses `saved`.
+ */
+void tsvc_2_s1244_fp64(double *restrict a, const double *restrict b, const double *restrict c,
+                       double *restrict d, const int64_t LEN_1D) {
+  const int64_t n = LEN_1D - 1;
+  if (n <= 0) return;
+
+  #pragma omp parallel
+  {
+    const int nt  = omp_get_num_threads();
+    const int tid = omp_get_thread_num();
+
+    const int64_t block = n / nt;
+    const int64_t rem   = n % nt;
+    const int64_t i0 = tid * block + (tid < rem ? tid : rem);
+    const int64_t len = block + (tid < rem ? 1 : 0);
+
+    if (len > 0) {
+      const int64_t i1 = i0 + len - 1;
+      const double saved = a[i1 + 1];  /* original, read before any store */
+      #pragma omp barrier
+      int64_t i = i0;
+      for (; i + 4 <= i1; i += 4) {
+        const __m256d va = _mm256_loadu_pd(a + i);   /* original a[i..i+3] */
+        const __m256d vb = _mm256_loadu_pd(b + i);
+        const __m256d vc = _mm256_loadu_pd(c + i);
+        __m256d an = _mm256_mul_pd(vc, vc);
+        an = _mm256_fmadd_pd(vb, vb, an);
+        an = _mm256_add_pd(an, vb);
+        an = _mm256_add_pd(an, vc);
+        const double *const va_p = (const double *)&va;
+        const __m256d a_next = _mm256_set_pd(a[i + 4], va_p[3], va_p[2], va_p[1]);
+        _mm256_storeu_pd(a + i, an);
+        _mm256_storeu_pd(d + i, _mm256_add_pd(an, a_next));
+      }
+      for (; i <= i1; i++) {
+        const double an = b[i] + c[i] * c[i] + b[i] * b[i] + c[i];
+        a[i] = an;
+        d[i] = an + (i + 1 <= i1 ? a[i + 1] : saved);
+      }
+    } else {
+      #pragma omp barrier
+    }
+  }
+}

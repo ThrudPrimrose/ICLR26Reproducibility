@@ -1,0 +1,94 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <time.h>
+#include <omp.h>
+
+static double *blkA = NULL;
+static double *blkB = NULL;
+static double *carv = NULL;
+static int     sntb = 0;
+static int     probed = 0;
+
+static double now_ms(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (double)t.tv_sec * 1000.0 + (double)t.tv_nsec / 1e6;
+}
+
+static void ensure(int ntb) {
+    if (ntb <= sntb) return;
+    free(blkA); free(blkB); free(carv);
+    sntb = ntb;
+    blkA = (double *)malloc(sizeof(double) * ntb);
+    blkB = (double *)malloc(sizeof(double) * ntb);
+    carv = (double *)malloc(sizeof(double) * ntb);
+    memset(blkA, 0, sizeof(double) * ntb);
+    memset(blkB, 0, sizeof(double) * ntb);
+    memset(carv, 0, sizeof(double) * ntb);
+}
+
+void scan_affine_decay_fp64(const double *restrict c, const double *restrict x,
+                            double *restrict y, const int64_t LEN_1D) {
+    long long n = (long long)LEN_1D;
+    if (n <= 0) return;
+    if (n == 1) { y[0] = x[0]; return; }
+    if (n < (1LL << 20)) {
+        y[0] = x[0];
+        for (long long i = 1; i < n; i++) y[i] = c[i] * y[i - 1] + x[i];
+        return;
+    }
+
+    int T = omp_get_max_threads();
+    long long K = (long long)T;
+    ensure(T);
+
+    double t0 = now_ms();
+    int probe = !probed;
+    probed = 1;
+    double t1, t2, t3;
+
+    /* Pass 1: per block, affine map (A_k, B_k) of the whole block. */
+    #pragma omp parallel for schedule(static)
+    for (long long k = 0; k < K; k++) {
+        long long b0 = (n / K) * k;
+        long long b1 = (k + 1 == K) ? n : (n / K) * (k + 1);
+        double a = 1.0, z = 0.0;
+        for (long long i = b0; i < b1; i++) {
+            double ci = c[i];
+            a = ci * a;
+            z = ci * z + x[i];
+        }
+        blkA[k] = a;
+        blkB[k] = z;
+    }
+    t1 = now_ms();
+
+    /* Combine: serial scan over block affine pairs -> carry-in values. */
+    double v = 0.0;
+    for (long long k = 0; k < K; k++) {
+        carv[k] = v;
+        v = blkA[k] * v + blkB[k];
+    }
+    t2 = now_ms();
+
+    /* Pass 2: re-run the recurrence per block from its carry-in. */
+    #pragma omp parallel for schedule(static)
+    for (long long k = 0; k < K; k++) {
+        long long b0 = (n / K) * k;
+        long long b1 = (k + 1 == K) ? n : (n / K) * (k + 1);
+        double vv = carv[k];
+        for (long long i = b0; i < b1; i++) {
+            vv = c[i] * vv + x[i];
+            y[i] = vv;
+        }
+    }
+    t3 = now_ms();
+
+    if (probe) {
+        printf("n=%lld K=%lld pass1=%.3f ms combine=%.4f ms pass2=%.3f ms total=%.3f ms\n",
+               n, K, t1 - t0, t2 - t1, t3 - t2, t3 - t0);
+        fflush(stdout);
+    }
+}

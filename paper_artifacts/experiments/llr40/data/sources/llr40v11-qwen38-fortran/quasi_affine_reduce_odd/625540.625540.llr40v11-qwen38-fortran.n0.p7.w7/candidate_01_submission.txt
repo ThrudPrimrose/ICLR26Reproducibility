@@ -1,0 +1,36 @@
+! TSVC quasi_affine_reduce_odd -- sum(a[i] for i in range(1, LEN_1D, 2))  (C 0-based)
+! In Fortran 1-based indexing that is a(2), a(4), ..., a(2*m) with m = LEN_1D/2.
+! C ABI: void quasi_affine_reduce_odd_fp64(const double *a, double *out, int64_t LEN_1D)
+subroutine quasi_affine_reduce_odd_fp64(a, out, len_1d) bind(C, name="quasi_affine_reduce_odd_fp64")
+  use, intrinsic :: iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_1d
+  real(c_double),           intent(in)  :: a(len_1d)
+  real(c_double),           intent(out) :: out(1)
+
+  real(c_double) :: acc, s0, s1, s2, s3
+  integer(c_int64_t) :: m, g, j
+
+  m = len_1d / 2
+  g = m / 4
+  acc = 0.0d0
+  s0 = 0.0d0; s1 = 0.0d0; s2 = 0.0d0; s3 = 0.0d0
+
+  !$omp parallel do schedule(static) reduction(+:acc, s0, s1, s2, s3)
+  do j = 2, 8*g - 6, 8
+    s0 = s0 + a(j)
+    s1 = s1 + a(j+2)
+    s2 = s2 + a(j+4)
+    s3 = s3 + a(j+6)
+  end do
+  !$omp end parallel do
+
+  ! remainder: at most 3 elements (m mod 4), indices 8*g+2 .. 2*m step 2
+  !$omp parallel do schedule(static) reduction(+:acc)
+  do j = 8*g + 2, 2*m, 2
+    acc = acc + a(j)
+  end do
+  !$omp end parallel do
+
+  out(1) = s0 + s1 + s2 + s3 + acc
+end subroutine quasi_affine_reduce_odd_fp64

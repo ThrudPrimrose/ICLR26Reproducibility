@@ -1,0 +1,25 @@
+#include <stdint.h>
+#include <math.h>
+#include <limits.h>
+#include <omp.h>
+
+typedef struct { double v; int64_t i; } vi;
+
+#pragma omp declare reduction(maxidx : vi : \
+    omp_out = (omp_in.v > omp_out.v || (omp_in.v == omp_out.v && omp_in.i < omp_out.i)) ? omp_in : omp_out) \
+    initializer(omp_priv = (vi){-INFINITY, INT64_MAX})
+
+void argmax_with_index_fp64(const double *restrict a, int64_t *restrict out_index,
+                            double *restrict out_value, const int64_t LEN_1D) {
+    vi best = {a[0], 0};
+    #pragma omp parallel for reduction(maxidx:best) schedule(static)
+    for (int64_t i = 1; i < LEN_1D; ++i) {
+        double ai = a[i];
+        if (ai > best.v) {
+            best.v = ai;
+            best.i = i;
+        }
+    }
+    out_value[0] = best.v;
+    out_index[0] = best.i;
+}

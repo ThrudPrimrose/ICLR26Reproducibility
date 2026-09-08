@@ -1,0 +1,16 @@
+#include <stdint.h>
+
+/* Difference-diagonal stencil:  a[i,j] = a[i,j] + a[i-1,j] + a[i-1,j+1]
+ * Row-major. The stencil reads only the previous row, so each row is an
+ * independent unit-stride vector update; rows form a one-deep serial chain.
+ * Single-core streaming: 24 unique bytes/element, at the memory ceiling. */
+void wf_diff_skew_fp64(double *restrict a, const int64_t LEN_2D) {
+  const int64_t L = LEN_2D;
+  for (int64_t i = 1; i < L; ++i) {
+    double *restrict row  = a + i * L;
+    const double *restrict prev = a + (i - 1) * L;
+    for (int64_t j = 0; j < L - 1; ++j) {
+      row[j] = row[j] + prev[j] + prev[j + 1];
+    }
+  }
+}

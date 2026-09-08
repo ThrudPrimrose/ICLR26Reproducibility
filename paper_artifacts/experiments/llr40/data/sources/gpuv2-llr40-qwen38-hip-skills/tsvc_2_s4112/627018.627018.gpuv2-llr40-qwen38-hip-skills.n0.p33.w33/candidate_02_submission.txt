@@ -1,0 +1,27 @@
+// Device half of tsvc_2_s4112 (geometry b=256, one elem per thread)
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define T2_HIP_CHECK(call)                                                            do {                                                                                  const hipError_t t2_e_ = (call);                                                  if (t2_e_ != hipSuccess) {                                                            std::fprintf(stderr, "HIP error %s: %s (line %d)\n", #call,                                    hipGetErrorString(t2_e_), __LINE__);                                 std::abort();                                                                 }                                                                             } while (0)
+
+extern "C" __global__ void __launch_bounds__(256)
+tsvc_2_s4112_gather(double *__restrict__ a, const double *__restrict__ b,
+                    const int32_t *__restrict__ ip, const int64_t n) {
+    const int64_t i = (int64_t)blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+    if (i < n) {
+        a[i] += b[ip[i]] * 2.0;
+    }
+}
+
+extern "C" void tsvc_2_s4112_launch(double *a, const double *b, const int32_t *ip, int64_t n) {
+    if (n <= 0) return;
+    constexpr int kBlock = 256;
+    int64_t grid = (n + kBlock - 1) / kBlock;
+    constexpr int64_t kMaxGrid = 4194304;
+    if (grid > kMaxGrid) grid = kMaxGrid;
+    tsvc_2_s4112_gather<<<(int)grid, kBlock>>>(a, b, ip, n);
+    T2_HIP_CHECK(hipGetLastError());
+    T2_HIP_CHECK(hipDeviceSynchronize());
+}

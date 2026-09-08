@@ -1,0 +1,39 @@
+// Device half: s2233 -- aa column scans + bb column scans share one cc read.
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+extern "C" __global__ void __launch_bounds__(256)
+s2233_kernel(const double* __restrict__ cc,
+             double* __restrict__ aa,
+             double* __restrict__ bb,
+             int64_t n)
+{
+    const int64_t c = (int64_t)blockIdx.x * blockDim.x + threadIdx.x; // 0-based col-8 offset
+    if (c >= n - 8) return;
+    const int64_t col = c + 8;
+
+    const double* ccp = cc + col;      // cc[j, col], row stride n
+    double* aap = aa + col;
+    double* bbp = bb + col;
+
+    double a_prev = aap[7 * n];
+    double b_prev = bbp[7 * n];
+
+    int64_t j = 8;
+    for (; j < n; ++j) {
+        double v = ccp[j * n];
+        a_prev += v;
+        b_prev += v;
+        aap[j * n] = a_prev;
+        bbp[j * n] = b_prev;
+    }
+}
+
+extern "C" void tsvc2s2233_launch(const double* cc, double* aa, double* bb, int64_t n)
+{
+    const int64_t ncol = n - 8;
+    if (ncol <= 0) return;
+    const int block = 256;
+    const int grid = (int)((ncol + block - 1) / block);
+    s2233_kernel<<<grid, block>>>(cc, aa, bb, n);
+}

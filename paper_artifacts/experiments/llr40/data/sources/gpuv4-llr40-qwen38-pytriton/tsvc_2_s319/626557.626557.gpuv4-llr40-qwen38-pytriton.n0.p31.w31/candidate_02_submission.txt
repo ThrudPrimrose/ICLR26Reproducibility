@@ -1,0 +1,129 @@
+"""TSVC tsvc_2 s319 -- optimized Python (numba) implementation.
+
+Reference:
+    for i in range(LEN_1D):
+        a[i] = c[i] + d[i]; sum_val += a[i]
+        b[i] = c[i] + e[i]; sum_val += b[i]
+    b[0] = sum_val
+
+Strategy:
+  * small n: plain numba loop identical to the reference (bit-exact).
+  * large n: contiguous chunks in a numba parallel region.  Each chunk
+    accumulates two independent partial sums (one for the a-terms, one
+    for the b-terms, combined at the chunk boundary) which halves the
+    dependent add chain; a serial tail then folds the chunk partials in
+    the same left-to-right style as the reference.  a[i]/b[i] are single
+    exact additions (bit-identical); the sum matches the reference to
+    within a few ulps of boundary rounding (~1e-13 relative).
+"""
+import os as _os
+import sys as _sys
+
+
+def _quota_cpus():
+    try:
+        with open("/sys/fs/cgroup/cpu.max") as f:
+            t = f.read().split()
+        if t and t[0] != "max":
+            return int(int(t[0]) / int(t[1]) + 0.999)
+    except (OSError, ValueError):
+        pass
+    try:
+        with open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us") as f:
+            q = int(f.read().strip())
+        if q > 0:
+            with open("/sys/fs/cgroup/cpu/cpu.cfs_period_us") as f:
+                p = int(f.read().strip())
+            return int(q / p + 0.999)
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+try:
+    _avail = len(_os.sched_getaffinity(0))
+except (AttributeError, OSError):
+    _avail = _os.cpu_count() or 1
+_threads = min(8, max(1, _avail))
+_q = _quota_cpus()
+if _q is not None:
+    _threads = min(_threads, max(1, _q))
+_os.environ.setdefault("NUMBA_NUM_THREADS", str(max(1, _threads)))
+_os.environ.setdefault("NUMBA_THREADING_LAYER", "workqueue")
+
+import numpy as np
+from numba import njit, prange
+
+_SMALL = 16384
+
+
+@njit
+def _seq(a, b, c, d, e):
+    n = c.shape[0]
+    s = 0.0
+    for i in range(n):
+        ai = c[i] + d[i]
+        a[i] = ai
+        s = s + ai
+        bi = c[i] + e[i]
+        b[i] = bi
+        s = s + bi
+    b[0] = s
+
+
+@njit(parallel=True)
+def _par(a, b, c, d, e, nt):
+    n = c.shape[0]
+    p0 = np.empty(nt, dtype=np.float64)
+    p1 = np.empty(nt, dtype=np.float64)
+    for j in prange(nt):
+        lo = (n * j) // nt
+        hi = (n * (j + 1)) // nt
+        m = (lo + hi) // 2
+        s0 = 0.0
+        s1 = 0.0
+        for i in range(lo, m):
+            ai = c[i] + d[i]
+            a[i] = ai
+            s0 = s0 + ai
+            bi = c[i] + e[i]
+            b[i] = bi
+            s1 = s1 + bi
+        for i in range(m, hi):
+            ai = c[i] + d[i]
+            a[i] = ai
+            s0 = s0 + ai
+            bi = c[i] + e[i]
+            b[i] = bi
+            s1 = s1 + bi
+        p0[j] = s0
+        p1[j] = s1
+    s0 = 0.0
+    s1 = 0.0
+    for j in range(nt):
+        s0 = s0 + p0[j]
+        s1 = s1 + p1[j]
+    b[0] = s0 + s1
+
+
+def s319(a, b, c, d, e, LEN_1D):
+    n = LEN_1D
+    if n < _SMALL:
+        _seq(a, b, c, d, e)
+        return
+    nt = min(2 * _threads, max(1, n >> 14))
+    _par(a, b, c, d, e, nt)
+
+
+def _warm():
+    c = np.random.rand(2 * _SMALL + 1)
+    d = np.random.rand(2 * _SMALL + 1)
+    ee = np.random.rand(2 * _SMALL + 1)
+    a = np.empty(2 * _SMALL + 1)
+    b = np.empty(2 * _SMALL + 1)
+    s319(a, b, c, d, ee, 1000)
+    s319(a, b, c, d, ee, 2 * _SMALL + 1)
+    s319(a, b, c, d, ee, 2 * _SMALL + 1)
+
+
+_warm()

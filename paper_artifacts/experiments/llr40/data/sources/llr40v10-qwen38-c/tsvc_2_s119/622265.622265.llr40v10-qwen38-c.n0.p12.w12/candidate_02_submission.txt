@@ -1,0 +1,67 @@
+#include <stdint.h>
+#include <omp.h>
+#include <emmintrin.h>
+
+#ifndef T_CAP
+#define T_CAP 64
+#endif
+
+/* Column-slice wavefront with per-row ring flag (no barrier per row).
+ * Row i needs only row i-1; thread t owns a fixed column slice for all rows.
+ * Cross-thread dep per row: element (i, a_t) reads (i-1, a_t-1), the last
+ * column of thread t-1's slice of row i-1 -> t waits on t-1's row-i-1 flag. */
+
+void tsvc_2_s119_fp64(double *restrict aa, const double *restrict bb, const int64_t LEN_2D) {
+  const int64_t N = LEN_2D;
+  if (N <= 2) { if (N == 2) aa[3] = aa[0] + bb[3]; return; }
+  const int64_t cols = N - 1;
+
+  int T = (int)omp_get_max_threads();
+  if (T > T_CAP) T = T_CAP;
+  int64_t S = cols / 8;
+  if (S > T) S = T;
+  if (S < 1) S = 1;
+  int64_t seg = (cols + S - 1) / S;
+  seg = (seg + 7) & ~7LL;
+  S = cols / seg;
+  if (S < 1) S = 1;
+  T = (int)S;
+
+  if (N >= (1 << 20) || T <= 1) {  /* serial fallback */
+    for (int64_t i = 1; i < N; ++i) {
+      double *restrict s = aa + (i - 1) * N;
+      const double *restrict b = bb + i * N;
+      double *restrict o = aa + i * N;
+      for (int64_t j = 1; j < N; ++j) o[j] = s[j - 1] + b[j];
+    }
+    return;
+  }
+
+  static int gen = 0;
+  const int64_t base = (int64_t)++gen << 20;
+
+  static _Alignas(64) int64_t flag[T_CAP + 1][2];
+
+  #pragma omp parallel num_threads(T)
+  {
+    const int64_t t = omp_get_thread_num();
+    flag[t][0] = 0;
+    flag[t][1] = 0;
+    const int64_t j0 = 1 + t * seg;
+    const int64_t je = (t == S - 1) ? N : j0 + seg;
+    int64_t *ft = flag[t];
+    const int64_t *fp = (t > 0) ? flag[t - 1] : NULL;
+    for (int64_t i = 1; i < N; ++i) {
+      if (fp) {
+        const int64_t need = base + i;
+        while (__atomic_load_n(&fp[(i - 1) & 1], __ATOMIC_ACQUIRE) < need)
+          _mm_pause();
+      }
+      double *restrict s = aa + (i - 1) * N;
+      const double *restrict b = bb + i * N;
+      double *restrict o = aa + i * N;
+      for (int64_t j = j0; j < je; ++j) o[j] = s[j - 1] + b[j];
+      __atomic_store_n(&ft[i & 1], base + i + 1, __ATOMIC_RELEASE);
+    }
+  }
+}

@@ -1,0 +1,17 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void scatter_accum_kernel(double *__restrict__ bins, const int *__restrict__ ip,
+                                     const double *__restrict__ src, long long n) {
+    long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        atomicAdd(&bins[(long long)ip[i]], src[i]);
+    }
+}
+
+void launch_scatter_accum(double *bins, const int *ip, const double *src,
+                          long long LEN_1D, void *workspace, long long workspace_size) {
+    const int BLOCK = 256;
+    unsigned grid = (unsigned)((LEN_1D + BLOCK - 1) / BLOCK);
+    scatter_accum_kernel<<<grid, BLOCK>>>(bins, ip, src, LEN_1D);
+}

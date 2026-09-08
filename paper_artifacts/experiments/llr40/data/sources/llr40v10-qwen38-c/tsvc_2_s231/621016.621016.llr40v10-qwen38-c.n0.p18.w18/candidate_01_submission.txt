@@ -1,0 +1,12 @@
+#include <stdint.h>
+
+void tsvc_2_s231_fp64(double *restrict aa, const double *restrict bb, const int64_t LEN_2D) {
+    const int64_t N = LEN_2D;
+    for (int64_t j = 1; j < N; ++j) {
+        double *restrict a = aa + j * N;
+        const double *restrict ap = a - N;
+        const double *restrict b = bb + j * N;
+        for (int64_t i = 0; i < N; ++i)
+            a[i] = ap[i] + b[i];
+    }
+}

@@ -1,0 +1,49 @@
+# tsvc_2 s252: a[i] = b[i]*c[i] + b[i-1]*c[i-1]  (t just carries the previous product,
+# there is no accumulation -- the loop is embarrassingly parallel).
+import os
+import numpy as np
+import numba
+from numba import njit, prange
+
+_NTHREADS = max(1, len(os.sched_getaffinity(0)))
+os.environ.setdefault("NUMBA_NUM_THREADS", str(_NTHREADS))
+
+
+@njit(parallel=True)
+def _par(a, b, c, n):
+    for i in prange(n):
+        s = b[i] * c[i]
+        if i > 0:
+            s += b[i - 1] * c[i - 1]
+        a[i] = s
+
+
+@njit
+def _ser(a, b, c, n):
+    t = 0.0
+    for i in range(n):
+        s = b[i] * c[i]
+        a[i] = s + t
+        t = s
+
+
+def _warm():
+    x = np.zeros(2048)
+    _ser(x, x, x, 2048)
+    _par(x, x, x, 2048)
+
+
+_warm()
+
+_SMALL = 200000
+
+
+def s252(a, b, c, LEN_1D):
+    n = int(LEN_1D)
+    if n == 0:
+        return None
+    if n <= _SMALL:
+        _ser(a, b, c, n)
+    else:
+        _par(a, b, c, n)
+    return None

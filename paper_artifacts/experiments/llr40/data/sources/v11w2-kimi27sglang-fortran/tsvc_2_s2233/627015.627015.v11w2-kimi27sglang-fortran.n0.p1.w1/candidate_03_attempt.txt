@@ -1,0 +1,60 @@
+module tsvc_2_s2233
+  use iso_c_binding
+  use omp_lib
+  implicit none
+contains
+  subroutine tsvc_2_s2233_fp64(aa, bb, cc, LEN_2D) bind(C, name='tsvc_2_s2233_fp64')
+    integer(c_int64_t), value, intent(in) :: LEN_2D
+    real(c_double), dimension(0:LEN_2D-1, 0:LEN_2D-1), intent(inout) :: aa, bb
+    real(c_double), dimension(0:LEN_2D-1, 0:LEN_2D-1), intent(in)    :: cc
+
+    integer(c_int64_t) :: i, j, ii, jj, i1, i2, j1, j2
+    integer(c_int64_t), parameter :: CHUNK = 256
+
+    ! Phase aa: aa(i,j) = aa(i,j-1) + cc(i,j), independent across i.
+    ! Recurrence is along j, so chunk the contiguous i dimension and loop j
+    ! serially; the inner i loop vectorizes over contiguous memory.
+    !$omp parallel do schedule(static) private(ii, i1, i2, j, i)
+    do ii = 8, LEN_2D - 1, CHUNK
+      i1 = ii
+      i2 = min(ii + CHUNK - 1, LEN_2D - 1)
+      block
+        real(c_double) :: s(i1:i2)
+        do i = i1, i2
+          s(i) = aa(i, 7)
+        end do
+        do j = 8, LEN_2D - 1
+          !$omp simd
+          do i = i1, i2
+            s(i) = s(i) + cc(i, j)
+            aa(i, j) = s(i)
+          end do
+        end do
+      end block
+    end do
+    !$omp end parallel do
+
+    ! Phase bb: bb(j,i) = bb(j,i-1) + cc(j,i), independent across j.
+    ! Recurrence is along i, so chunk the contiguous j dimension and loop i
+    ! serially; the inner j loop vectorizes over contiguous memory.
+    !$omp parallel do schedule(static) private(jj, j1, j2, i, j)
+    do jj = 8, LEN_2D - 1, CHUNK
+      j1 = jj
+      j2 = min(jj + CHUNK - 1, LEN_2D - 1)
+      block
+        real(c_double) :: s(j1:j2)
+        do j = j1, j2
+          s(j) = bb(j, 7)
+        end do
+        do i = 8, LEN_2D - 1
+          !$omp simd
+          do j = j1, j2
+            s(j) = s(j) + cc(j, i)
+            bb(j, i) = s(j)
+          end do
+        end do
+      end block
+    end do
+    !$omp end parallel do
+  end subroutine tsvc_2_s2233_fp64
+end module tsvc_2_s2233

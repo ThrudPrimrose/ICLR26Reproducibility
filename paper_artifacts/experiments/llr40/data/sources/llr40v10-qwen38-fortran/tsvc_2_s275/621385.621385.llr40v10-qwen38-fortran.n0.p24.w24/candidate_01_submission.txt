@@ -1,0 +1,18 @@
+subroutine tsvc_2_s275_fp64(aa, bb, cc, len_2d) bind(C, name="tsvc_2_s275_fp64")
+  use iso_c_binding, only: c_double, c_int64_t
+  implicit none
+  integer(kind=c_int64_t), value :: len_2d
+  real(kind=c_double), intent(inout), dimension(len_2d, len_2d) :: aa
+  real(kind=c_double), intent(in),    dimension(len_2d, len_2d) :: bb
+  real(kind=c_double), intent(in),    dimension(len_2d, len_2d) :: cc
+  integer(kind=c_int64_t) :: i, j
+
+  !$omp parallel do schedule(static)
+  do i = 1, len_2d
+     if (aa(i,1) > 0.0d0) then
+        do j = 2, len_2d
+           aa(i,j) = aa(i,j-1) + bb(i,j)*cc(i,j)
+        end do
+     end if
+  end do
+end subroutine tsvc_2_s275_fp64

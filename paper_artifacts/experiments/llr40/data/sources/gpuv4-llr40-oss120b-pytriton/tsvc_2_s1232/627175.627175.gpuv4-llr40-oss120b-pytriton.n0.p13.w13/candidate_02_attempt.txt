@@ -1,0 +1,38 @@
+'''Optimized Python implementation of the ``tsvc_2`` kernel ``s1232`` using NumPy's ``where``.
+
+The original reference uses a double Python ``for`` loop which is slow because of interpreter
+overhead.  An element‑wise NumPy operation with a boolean ``where`` mask performs the entire
+computation in compiled C code in a single pass, avoiding the per‑column Python loop overhead.
+This approach also respects the in‑place semantics required by the benchmark harness.
+''' 
+
+from __future__ import annotations
+
+import numpy as np
+
+
+def s1232(aa: np.ndarray, bb: np.ndarray, cc: np.ndarray, LEN_2D: int, VLEN: int) -> None:
+    """In‑place compute ``aa[i, j] = bb[i, j] + cc[i, j]`` for ``i >= j * VLEN``.
+
+    Parameters
+    ----------
+    aa, bb, cc:
+        2‑D ``float64`` (or compatible) arrays of shape ``(LEN_2D, LEN_2D)``. ``aa`` is
+        overwritten with the result.
+    LEN_2D:
+        The dimension of the square matrices.
+    VLEN:
+        Vector length controlling the start index of each column.
+    """
+    if LEN_2D == 0:
+        return
+    # Build a broadcasted boolean mask where the condition i >= j * VLEN holds.
+    # ``i`` varies along rows, ``j`` varies along columns.
+    i = np.arange(LEN_2D)[:, None]
+    j = np.arange(LEN_2D)[None, :]
+    mask = i >= j * VLEN
+    # NumPy's ``add`` with ``where`` performs the element‑wise addition only where ``mask``
+    # is True, leaving ``aa`` unchanged elsewhere.  ``out=aa`` ensures the operation is in‑
+    # place, matching the C‑style kernel contract.
+    np.add(bb, cc, out=aa, where=mask)
+    # No explicit ``return`` – the mutated ``aa`` constitutes the output.

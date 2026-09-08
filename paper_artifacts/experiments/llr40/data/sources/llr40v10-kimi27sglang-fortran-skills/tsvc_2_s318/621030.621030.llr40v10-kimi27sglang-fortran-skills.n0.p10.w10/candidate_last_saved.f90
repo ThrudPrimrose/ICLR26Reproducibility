@@ -1,0 +1,72 @@
+subroutine tsvc_2_s318_fp64(a, result, LEN_1D, inc) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D, inc
+  real(c_double), intent(in) :: a(LEN_1D * inc)
+  real(c_double), intent(out) :: result(1)
+
+  integer(c_int64_t), parameter :: bs = 8
+  integer(c_int64_t) :: i, t, nt, lo, hi, index, ib, j, rem, bidx, pos, my_index
+  real(c_double) :: maxv, v, my_maxv, bmax
+  real(c_double) :: buf(bs)
+  real(c_double) :: tmaxv(0:1023)
+  integer(c_int64_t) :: tindex(0:1023)
+
+  nt = omp_get_max_threads()
+  if (nt > 1024) nt = 1024
+
+  !$omp parallel private(t, lo, hi, i, ib, j, rem, bidx, pos, v, my_maxv, my_index, bmax, buf)
+  t = omp_get_thread_num()
+  if (t < nt) then
+    lo = (LEN_1D * t) / nt
+    hi = (LEN_1D * (t + 1)) / nt
+    if (lo < hi) then
+      my_maxv = 0.0d0
+      my_index = LEN_1D
+
+      rem = hi - lo
+      ib = lo
+      do while (rem >= bs)
+        do j = 1, bs
+          buf(j) = abs(a(1 + (ib + j - 1)*inc))
+        end do
+        bmax = maxval(buf)
+        pos = maxloc(buf, dim=1, kind=c_int64_t)
+        bidx = ib + pos - 1
+        if (bmax > my_maxv) then
+          my_maxv = bmax
+          my_index = bidx
+        end if
+        ib = ib + bs
+        rem = rem - bs
+      end do
+
+      do i = ib, hi - 1
+        v = abs(a(1 + i*inc))
+        if (v > my_maxv) then
+          my_maxv = v
+          my_index = i
+        end if
+      end do
+
+      tmaxv(t) = my_maxv
+      tindex(t) = my_index
+    else
+      tmaxv(t) = 0.0d0
+      tindex(t) = LEN_1D
+    end if
+  end if
+  !$omp end parallel
+
+  maxv = 0.0d0
+  index = LEN_1D
+  do t = 0, nt - 1
+    if (tmaxv(t) > maxv) then
+      maxv = tmaxv(t)
+      index = tindex(t)
+    end if
+  end do
+
+  result(1) = maxv + dble(index)
+end subroutine tsvc_2_s318_fp64

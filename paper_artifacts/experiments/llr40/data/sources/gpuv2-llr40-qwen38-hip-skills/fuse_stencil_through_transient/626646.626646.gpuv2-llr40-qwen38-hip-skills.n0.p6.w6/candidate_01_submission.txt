@@ -1,0 +1,57 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+
+#define HIP_CHECK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { \
+    std::fprintf(stderr, "HIP error %s at %s:%d\n", hipGetErrorString(e_), __FILE__, __LINE__); \
+    std::abort(); } } while (0)
+
+// one thread per output (bounds-checked)
+__global__ void stencil_s1(const double* __restrict__ a, double* __restrict__ out, const long long LIM) {
+    const long long j = (long long)blockIdx.x * blockDim.x + threadIdx.x + 1;
+    if (j < LIM) {
+        out[j] = (a[j-1] + a[j] + a[j+1]) * (a[j] + a[j+1] + a[j+2]);
+    }
+}
+
+// one thread per 4 outputs; window a[j0-1..j0+5] via double4 + double2 + scalar
+__global__ void stencil_v4(const double* __restrict__ a, double* __restrict__ out,
+                           const long long n_out, const long long G_full, const long long G_total) {
+    const long long gstride = (long long)gridDim.x * blockDim.x;
+    for (long long g = (long long)blockIdx.x * blockDim.x + threadIdx.x; g < G_total; g += gstride) {
+        const long long j0 = 4 * g + 1;
+        if (g < G_full) {
+            const double4 v0 = *(const double4*)(a + j0 - 1);
+            const double2 v1 = *(const double2*)(a + j0 + 3);
+            const double s = a[j0 + 5];
+            out[j0]   = (v0.x + v0.y + v0.z) * (v0.y + v0.z + v0.w);
+            out[j0+1] = (v0.y + v0.z + v0.w) * (v0.z + v0.w + v1.x);
+            out[j0+2] = (v0.z + v0.w + v1.x) * (v0.w + v1.x + v1.y);
+            out[j0+3] = (v0.w + v1.x + v1.y) * (v1.x + v1.y + s);
+        } else {
+            for (long long j = j0; j <= n_out; j++)
+                out[j] = (a[j-1] + a[j] + a[j+1]) * (a[j] + a[j+1] + a[j+2]);
+        }
+    }
+}
+
+namespace fst {
+void launch(const double* a, double* out, long long n) {
+    if (n < 4) return;
+    const long long n_out = n - 3;   // outputs j in [1, n-3]
+    const int block = 256;
+    if ((reinterpret_cast<unsigned long long>(a) & 31ULL) == 0 &&
+        (reinterpret_cast<unsigned long long>(out) & 31ULL) == 0) {
+        const long long G_total = (n_out + 3) / 4;
+        const long long G_full  = n_out / 4;
+        long long grid = (G_total + block - 1) / block;
+        if (grid > (1LL << 20)) grid = (1LL << 20);
+        stencil_v4<<<(unsigned)grid, block>>>(a, out, n_out, G_full, G_total);
+    } else {
+        long long grid = (n_out + block - 1) / block;
+        if (grid > (1LL << 20)) grid = (1LL << 20);
+        stencil_s1<<<(unsigned)grid, block>>>(a, out, n - 2);
+    }
+    HIP_CHECK(hipGetLastError());
+}
+}

@@ -1,0 +1,34 @@
+subroutine tsvc_2_s233_fp64(aa, bb, cc, LEN_2D) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_2D
+  real(c_double), intent(inout) :: aa(LEN_2D, LEN_2D)
+  real(c_double), intent(inout) :: bb(LEN_2D, LEN_2D)
+  real(c_double), intent(in) :: cc(LEN_2D, LEN_2D)
+
+  integer(c_int64_t) :: i, j, ib, iend
+  integer(c_int64_t), parameter :: B = 192
+
+  !$omp parallel private(ib, iend, i, j)
+    !$omp do schedule(static)
+    do ib = 9, LEN_2D, B
+      iend = min(ib + B - 1, LEN_2D)
+      do j = 9, LEN_2D
+        do i = ib, iend
+          aa(i, j) = aa(i, j - 1) + cc(i, j)
+        end do
+      end do
+    end do
+    !$omp end do nowait
+
+    !$omp do schedule(static)
+    do j = 9, LEN_2D
+      do i = 9, LEN_2D
+        bb(i, j) = bb(i - 1, j) + cc(i, j)
+      end do
+    end do
+    !$omp end do
+  !$omp end parallel
+end subroutine tsvc_2_s233_fp64
+

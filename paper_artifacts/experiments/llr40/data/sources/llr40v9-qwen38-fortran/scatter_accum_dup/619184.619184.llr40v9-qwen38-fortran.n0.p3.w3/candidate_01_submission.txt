@@ -1,0 +1,30 @@
+subroutine scatter_accum_dup_fp64(bins, ip, src, LEN_1D, workspace, workspace_size) &
+    bind(C, name="scatter_accum_dup_fp64")
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D
+  integer(c_int64_t), value, intent(in) :: workspace_size
+  real(c_double), intent(inout) :: bins(LEN_1D)
+  integer(c_int32_t), intent(in) :: ip(LEN_1D)   ! 1-based: gather as v(ip(i)), NOT v(ip(i) + 1)
+  real(c_double), intent(in) :: src(LEN_1D)
+  integer(c_int8_t), intent(inout) :: workspace(workspace_size)
+  integer(c_int64_t) :: i
+  integer :: nt
+
+  if (LEN_1D <= 0) return
+  nt = omp_get_max_threads()
+  if (nt < 2 .or. LEN_1D < 1000000_8) then
+    do i = 1, LEN_1D
+      bins(ip(i)) = bins(ip(i)) + src(i)
+    end do
+  else
+    !$omp parallel do default(none) shared(bins, ip, src, LEN_1D) private(i)
+    do i = 1, LEN_1D
+      !$omp atomic update
+      bins(ip(i)) = bins(ip(i)) + src(i)
+      !$omp end atomic
+    end do
+    !$omp end parallel do
+  end if
+end subroutine scatter_accum_dup_fp64

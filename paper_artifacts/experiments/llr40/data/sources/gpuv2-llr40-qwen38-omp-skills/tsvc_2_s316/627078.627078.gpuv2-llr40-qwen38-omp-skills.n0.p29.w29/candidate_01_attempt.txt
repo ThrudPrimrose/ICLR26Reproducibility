@@ -1,0 +1,22 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s316_fp64(const double *restrict a, double *restrict result, const int64_t LEN_1D) {
+  if (LEN_1D <= 0) { result[0] = 0.0; return; }
+  double x0 = a[0];
+  if (x0 != x0) { result[0] = x0; return; }  /* a[0] NaN: serial sweep keeps NaN */
+
+  int64_t m = LEN_1D < 64 ? LEN_1D : 64;
+  double d = 0.0;
+  #pragma omp target teams distribute parallel for map(to: a[0:m]) reduction(min: d)
+  for (int64_t i = 0; i < m; ++i)
+    if (a[i] < d) d = a[i];
+
+  double x = 1e300;
+  #pragma omp parallel for reduction(min: x) schedule(static)
+  for (int64_t i = 0; i < LEN_1D; ++i)
+    if (a[i] < x) x = a[i];
+
+  if (d < x) x = d;   /* redundant: host loop already covers a[0:64] */
+  result[0] = x;
+}

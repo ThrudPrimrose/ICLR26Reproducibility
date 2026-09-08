@@ -1,0 +1,16 @@
+subroutine tsvc_2_s3112_fp64(a, b, LEN_1D) bind(c, name='tsvc_2_s3112_fp64')
+  use, intrinsic :: iso_c_binding
+  implicit none
+  real(C_DOUBLE), dimension(*), intent(in) :: a
+  real(C_DOUBLE), dimension(*), intent(inout) :: b
+  integer(C_INT64_T), value :: LEN_1D
+  integer(C_INT64_T) :: i
+  real(C_DOUBLE) :: sum
+  sum = 0.0_C_DOUBLE
+  !$omp simd simdlen(8) reduction(inscan, +: sum)
+  do i = 1_C_INT64_T, LEN_1D
+    sum = sum + a(i)
+    !$omp scan inclusive(sum)
+    b(i) = sum
+  end do
+end subroutine tsvc_2_s3112_fp64

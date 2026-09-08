@@ -1,0 +1,30 @@
+import numpy as np
+from numba import njit, prange
+
+
+@njit(parallel=True, fastmath=False)
+def _s152(a, b, c, d, e, n):
+    for i in prange(n):
+        b[i] = d[i] * e[i]
+        a[i] += b[i] * c[i]
+
+
+def s152(a, b, c, d, e, LEN_1D):
+    _s152(a, b, c, d, e, LEN_1D)
+    return None
+
+
+# Warm up the JIT at import time (before the clock starts) so the first timed
+# call does not pay the compile. Types must match the real call: float64[::1]
+# arrays and an int64 length.
+def _warm():
+    n = 1024
+    a = np.zeros(n)
+    b = np.zeros(n)
+    c = np.zeros(n)
+    d = np.zeros(n)
+    e = np.zeros(n)
+    _s152(a, b, c, d, e, n)
+
+
+_warm()

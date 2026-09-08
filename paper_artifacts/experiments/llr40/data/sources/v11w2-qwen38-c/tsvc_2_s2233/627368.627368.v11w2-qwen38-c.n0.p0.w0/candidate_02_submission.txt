@@ -1,0 +1,51 @@
+#include <stdint.h>
+#include <omp.h>
+
+/* v2: each thread owns a contiguous span of columns (parallel dim) and walks
+ * the serial dim (rows), vectorizing across columns. Deep MLP per thread. */
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+  const int64_t N = LEN_2D;
+  if (N <= 8) return;
+  const int64_t total = N - 8;
+  int nt = omp_get_max_threads();
+  if (nt < 1) nt = 1;
+
+  int64_t base8 = (total / nt / 8) * 8;
+
+  #pragma omp parallel
+  {
+    const int tid = omp_get_thread_num();
+    const int nthr = omp_get_num_threads();
+    int64_t i0, i1;
+    if (base8 >= 8) {
+      i0 = 8 + (int64_t)tid * base8;
+      i1 = (tid == nthr - 1) ? N : i0 + base8;
+    } else {
+      // small N: fall back to 8-column blocks, contiguous per thread
+      const int64_t nblk = total / 8 + (total % 8 ? 1 : 0);
+      int64_t b0 = (int64_t)tid * nblk / nthr, b1 = (int64_t)(tid + 1) * nblk / nthr;
+      i0 = 8 + b0 * 8;
+      i1 = 8 + (b1 - 1) * 8 + (total % 8 ? 8 : 8) - 8; // placeholder, fixed below
+      i1 = 8 + b1 * 8; if (i1 > N) i1 = N;
+      i0 = 8 + b0 * 8; if (i0 > N) i0 = N;
+    }
+
+    // loop 1: aa over column span [i0, i1)
+    for (int64_t j = 8; j < N; ++j) {
+      const double *src = cc + j * N + i0;
+      const double *prev = aa + (j - 1) * N + i0;
+      double *dst = aa + j * N + i0;
+      for (int64_t c = i0; c < i1; ++c)
+        dst[c - i0] = prev[c - i0] + src[c - i0];
+    }
+    // loop 2: bb over column span [i0, i1)  (same memory pattern)
+    for (int64_t i = 8; i < N; ++i) {
+      const double *src = cc + i * N + i0;
+      const double *prev = bb + (i - 1) * N + i0;
+      double *dst = bb + i * N + i0;
+      for (int64_t c = i0; c < i1; ++c)
+        dst[c - i0] = prev[c - i0] + src[c - i0];
+    }
+  }
+}

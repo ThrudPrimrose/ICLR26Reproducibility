@@ -1,0 +1,25 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s1232_fp64(double *restrict aa, const double *restrict bb, const double *restrict cc,
+                       const int64_t LEN_2D, const int64_t VLEN) {
+    const int64_t work = LEN_2D + (LEN_2D - 1) * LEN_2D / (2 * VLEN);
+    int max_threads = omp_get_max_threads();
+    if (max_threads > 8) max_threads = 8;
+    int threads = max_threads;
+    const int64_t per_thread = 50000;
+    if (work / per_thread < max_threads) {
+        threads = (int)(work / per_thread);
+        if (threads < 1) threads = 1;
+    }
+
+    #pragma omp parallel for schedule(guided) num_threads(threads)
+    for (int64_t i = 0; i < LEN_2D; ++i) {
+        const int64_t jmax = i / VLEN;
+        const int64_t jlim = (jmax < LEN_2D) ? jmax : LEN_2D - 1;
+        #pragma omp simd
+        for (int64_t j = 0; j <= jlim; ++j) {
+            aa[i * LEN_2D + j] = bb[i * LEN_2D + j] + cc[i * LEN_2D + j];
+        }
+    }
+}

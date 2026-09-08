@@ -1,0 +1,93 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define HIP_OK(x) do { hipError_t _e = (x); if (_e != hipSuccess) { \
+  std::fprintf(stderr, "HIP error %s at %s:%d\n", hipGetErrorString(_e), __FILE__, __LINE__); std::abort(); } } while (0)
+
+namespace tsvc {
+
+constexpr int kBlock = 256;
+constexpr int kBlocksCap = 4096;
+
+__global__ void __launch_bounds__(kBlock) k_main(
+    double4* __restrict__ a4, double4* __restrict__ b4,
+    const double4* __restrict__ c4, const double4* __restrict__ d4, const double4* __restrict__ e4,
+    const double* __restrict__ cs, const double* __restrict__ ds, const double* __restrict__ es,
+    double* __restrict__ as, double* __restrict__ bs,
+    long n4, long n, double* __restrict__ partials) {
+  const long stride = (long)gridDim.x * (long)kBlock;
+  const long v0 = (long)blockIdx.x * (long)kBlock + threadIdx.x;
+  double s = 0.0;
+  for (long v = v0; v < n4; v += stride) {
+    double4 cv = c4[v], dv = d4[v], ev = e4[v];
+    double4 av, bv;
+    av.x = cv.x + dv.x; bv.x = cv.x + ev.x;
+    av.y = cv.y + dv.y; bv.y = cv.y + ev.y;
+    av.z = cv.z + dv.z; bv.z = cv.z + ev.z;
+    av.w = cv.w + dv.w; bv.w = cv.w + ev.w;
+    a4[v] = av;
+    b4[v] = bv;
+    s += (av.x + bv.x) + (av.y + bv.y) + (av.z + bv.z) + (av.w + bv.w);
+  }
+  const long ntail = n - n4 * 4;
+  for (long i = n4 * 4 + v0; i < n; i += stride * 4) {
+    const double av = cs[i] + ds[i];
+    const double bv = cs[i] + es[i];
+    as[i] = av;
+    bs[i] = bv;
+    s += av + bv;
+  }
+  // block reduction: 256 threads = 4 wavefronts of 64
+  #pragma unroll
+  for (int off = 32; off >= 1; off >>= 1) s += __shfl_down(s, off, 64);
+  __shared__ double w[4];
+  if ((threadIdx.x & 63) == 0) w[threadIdx.x >> 6] = s;
+  __syncthreads();
+  if (threadIdx.x == 0) {
+    partials[blockIdx.x] = (w[0] + w[1]) + (w[2] + w[3]);
+  }
+}
+
+__global__ void __launch_bounds__(kBlock) k_final(const double* __restrict__ partials, int nblocks,
+                                                  double* __restrict__ b) {
+  double s = 0.0;
+  for (int i = threadIdx.x; i < nblocks; i += kBlock) s += partials[i];
+  #pragma unroll
+  for (int off = 32; off >= 1; off >>= 1) s += __shfl_down(s, off, 64);
+  __shared__ double w[4];
+  if ((threadIdx.x & 63) == 0) w[threadIdx.x >> 6] = s;
+  __syncthreads();
+  if (threadIdx.x == 0) {
+    b[0] = (w[0] + w[1]) + (w[2] + w[3]);
+  }
+}
+
+void launch(double* a, double* b, const double* c, const double* d, const double* e, const int64_t n) {
+  static double* d_partials = nullptr;
+  if (d_partials == nullptr) {
+    HIP_OK(hipMalloc(&d_partials, (size_t)kBlocksCap * sizeof(double)));
+  }
+  if (n <= 0) {
+    b[0] = 0.0;  // empty-input edge case: reference writes nothing, sum = 0
+    return;
+  }
+  const long n4 = n / 4;
+  const int want = (int)((n4 + kBlock - 1) / kBlock);
+  const int nblocks = want < kBlocksCap ? want : kBlocksCap;
+  if (nblocks <= 0) {
+    // n in 1..3: scalar tail only
+    k_main<<<1, kBlock>>>(nullptr, nullptr, nullptr, nullptr, nullptr, c, d, e, a, b, 0, (long)n, d_partials);
+    k_final<<<1, kBlock>>>(d_partials, 1, b);
+    HIP_OK(hipGetLastError());
+    return;
+  }
+  k_main<<<nblocks, kBlock>>>((double4*)a, (double4*)b, (const double4*)c, (const double4*)d, (const double4*)e,
+                              c, d, e, a, b, n4, (long)n, d_partials);
+  HIP_OK(hipGetLastError());
+  k_final<<<1, kBlock>>>(d_partials, nblocks, b);
+  HIP_OK(hipGetLastError());
+}
+
+}  // namespace tsvc

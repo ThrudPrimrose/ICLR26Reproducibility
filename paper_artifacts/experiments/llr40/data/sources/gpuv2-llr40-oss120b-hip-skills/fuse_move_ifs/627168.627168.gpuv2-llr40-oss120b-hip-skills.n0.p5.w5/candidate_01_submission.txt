@@ -1,0 +1,25 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void fuse_move_ifs_fp64_kernel(double* __restrict__ a,
+                                                    double* __restrict__ b,
+                                                    const double* __restrict__ cond,
+                                                    const double* __restrict__ src,
+                                                    int64_t K,
+                                                    int64_t LEN_2D) {
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    int64_t total = LEN_2D * LEN_2D;
+    if (idx >= total) return;
+
+    int64_t i = idx / LEN_2D;
+    int64_t j = idx % LEN_2D;
+    double src_ij = src[i * LEN_2D + j];
+
+    if (cond[i] > 0.0) {
+        a[i * LEN_2D + j] = src_ij * 2.0;
+    }
+
+    if (K > 0) {
+        b[i * LEN_2D + j] = src_ij + 1.0;
+    }
+}

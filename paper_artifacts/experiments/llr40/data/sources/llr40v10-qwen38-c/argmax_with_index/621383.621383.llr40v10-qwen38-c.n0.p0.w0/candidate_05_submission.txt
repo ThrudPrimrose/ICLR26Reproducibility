@@ -1,0 +1,157 @@
+/* argmax_with_index: running maximum carrying value + first-occurrence index.
+ *
+ * Semantics must match the reference exactly:
+ *   x = a[0]; idx = 0; for i>0: if (a[i] > x) { x = a[i]; idx = i; }
+ * Consequences:
+ *  - strict '>' : ties keep the EARLIER index (first occurrence of the max);
+ *  - NaN never wins a comparison, so x becomes NaN iff a[0] is NaN.
+ *
+ * Strategy: per-thread contiguous chunks, each chunk a SIMD running (value,index)
+ * pair scan with strict-greater selection (NaN is therefore never selected),
+ * ordered lane fold, then thread results folded in chunk order by thread 0.
+ */
+#include <math.h>
+#include <stdint.h>
+#include <omp.h>
+#include <immintrin.h>
+
+typedef struct {
+  double v;
+  int64_t i;
+} mx_t;
+
+#if defined(__AVX512F__) && defined(__AVX512VL__) && defined(__AVX512DQ__)
+__attribute__((target("avx512f,avx512dq,avx512vl"), noinline))
+static mx_t scan8(const double *restrict a, int64_t n) {
+  __m512d rmax = _mm512_set1_pd(-INFINITY);
+  __m512i ridx = _mm512_setr_epi64(0, 1, 2, 3, 4, 5, 6, 7);
+  const __m512i delta = _mm512_setr_epi64(0, 1, 2, 3, 4, 5, 6, 7);
+  int64_t i = 0;
+  for (; i + 8 <= n; i += 8) {
+    __m512d v = _mm512_loadu_pd(a + i);
+    __mmask8 c = _mm512_cmp_pd_mask(v, rmax, _CMP_GT_OQ);
+    if (c) {
+      rmax = _mm512_mask_mov_pd(rmax, c, v);
+      ridx = _mm512_mask_mov_epi64(ridx, c, _mm512_add_epi64(delta, _mm512_set1_epi64(i)));
+    }
+  }
+  double vals[8];
+  long long ids[8];
+  _mm512_storeu_pd(vals, rmax);
+  _mm512_storeu_epi64(ids, ridx);
+  /* (value desc, index asc) order: each lane pair is (max of its strided
+   * subsequence, first occurrence of it), so the global pair is the min
+   * under this order, independent of fold order. */
+  double best = vals[0];
+  int64_t bp = ids[0];
+  for (int64_t l = 1; l < 8; ++l)
+    if (vals[l] > best || (vals[l] == best && ids[l] < bp)) {
+      best = vals[l];
+      bp = ids[l];
+    }
+  for (; i < n; ++i) {
+    double t = a[i];
+    if (t > best) {
+      best = t;
+      bp = i;
+    }
+  }
+  return (mx_t){best, bp};
+}
+#endif
+
+static mx_t scan1(const double *restrict a, int64_t n) {
+  double best = -INFINITY;
+  int64_t bp = 0;
+  for (int64_t i = 0; i < n; ++i) {
+    double t = a[i];
+    if (t > best) {
+      best = t;
+      bp = i;
+    }
+  }
+  return (mx_t){best, bp};
+}
+
+static int have512 = 0;
+
+__attribute__((constructor)) static void detect_cpu(void) {
+#if defined(__AVX512F__) && defined(__AVX512VL__) && defined(__AVX512DQ__)
+  have512 = __builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512dq");
+#endif
+}
+
+static mx_t scan(const double *restrict a, int64_t n) {
+#if defined(__AVX512F__) && defined(__AVX512VL__) && defined(__AVX512DQ__)
+  if (have512)
+    return scan8(a, n);
+#endif
+  return scan1(a, n);
+}
+
+static mx_t locals[256];
+
+void argmax_with_index_fp64(const double *restrict a, int64_t *restrict out_index, double *restrict out_value,
+                            const int64_t LEN_1D) {
+  if (LEN_1D <= 0) {
+    *out_value = -INFINITY;
+    *out_index = 0;
+    return;
+  }
+  double a0 = a[0];
+  if (a0 != a0) { /* a[0] NaN: the reference keeps it forever */
+    *out_value = a0;
+    *out_index = 0;
+    return;
+  }
+  if (LEN_1D < 1024) {
+    /* whole array fits in <=16 cache lines*8: pull every line up front so the
+     * scan runs on warm data (cold-fetch latency otherwise dominates) */
+    for (int64_t j = 0; j < LEN_1D * 8; j += 64)
+      _mm_prefetch(a + j / 8, 3);
+    mx_t m = scan1(a, LEN_1D);
+    *out_value = m.v;
+    *out_index = m.i;
+    return;
+  }
+  if (LEN_1D < (1 << 21)) {
+    mx_t m = scan(a, LEN_1D);
+    *out_value = m.v;
+    *out_index = m.i;
+    return;
+  }
+  int64_t T = omp_get_max_threads();
+  if (T > 256)
+    T = 256;
+  if (T < 1)
+    T = 1;
+  const int64_t chunk = (LEN_1D + T - 1) / T;
+#pragma omp parallel
+  {
+    const int64_t t = omp_get_thread_num();
+    const int64_t b = t * chunk;
+    if (b >= LEN_1D) {
+      locals[t].v = -INFINITY;
+      locals[t].i = b;
+    } else {
+      int64_t e = b + chunk;
+      if (e > LEN_1D)
+        e = LEN_1D;
+      mx_t m = scan(a + b, e - b);
+      m.i += b;
+      locals[t] = m;
+    }
+#pragma omp barrier
+    if (t == 0) {
+      double g = -INFINITY;
+      int64_t p = 0;
+      for (int64_t s = 0; s < T; ++s)
+        if (locals[s].v > g || (locals[s].v == g && locals[s].i < p)) {
+          g = locals[s].v;
+          p = locals[s].i;
+        }
+      *out_value = g;
+      *out_index = p;
+    }
+  }
+}

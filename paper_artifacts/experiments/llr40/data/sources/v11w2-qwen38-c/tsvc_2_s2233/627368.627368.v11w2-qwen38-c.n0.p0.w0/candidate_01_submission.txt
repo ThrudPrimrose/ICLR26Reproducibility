@@ -1,0 +1,32 @@
+#include <stdint.h>
+
+/* TSVC tsvc_2 s2233: two 2D prefix-sum scans.
+ * Loop 1: aa[j][i] = aa[j-1][i] + cc[j][i]  (serial in j, parallel in i)
+ * Loop 2: bb[i][j] = bb[i-1][j] + cc[i][j]  (serial in i, parallel in j)
+ * Each is parallelized over blocks of 8 columns (contiguous memory per step),
+ * with the serial scan inside each block auto-vectorized across the 8 lanes. */
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+  const int64_t N = LEN_2D;
+  if (N <= 8) return;
+
+  int64_t ib;
+  #pragma omp parallel for schedule(static)
+  for (ib = 8; ib < N; ib += 8) {
+    const int64_t w = (N - ib < 8) ? (N - ib) : 8;
+    for (int64_t j = 8; j < N; ++j) {
+      for (int64_t k = 0; k < w; ++k)
+        aa[j * N + ib + k] = aa[(j - 1) * N + ib + k] + cc[j * N + ib + k];
+    }
+  }
+
+  int64_t jb;
+  #pragma omp parallel for schedule(static)
+  for (jb = 8; jb < N; jb += 8) {
+    const int64_t w = (N - jb < 8) ? (N - jb) : 8;
+    for (int64_t i = 8; i < N; ++i) {
+      for (int64_t k = 0; k < w; ++k)
+        bb[i * N + jb + k] = bb[(i - 1) * N + jb + k] + cc[i * N + jb + k];
+    }
+  }
+}

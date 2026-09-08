@@ -1,0 +1,57 @@
+/* TSVC tsvc_2 s119: aa[i][j] = aa[i-1][j-1] + bb[i][j],  i,j in [1, n).
+ *
+ * Dependence vector (1,1): rows are a serial chain, columns are free.
+ * A BxB tile (a,b) needs only the last row of tile (a-1,b) and one corner
+ * element of tile (a-1,b-1), so tiles sharing a tile-grid anti-diagonal
+ * a+b=d are mutually independent.  Wavefront over d (sequential), tiles of
+ * a diagonal in parallel, rows inside a tile sequential but unit-stride and
+ * SIMD-able.  Memory traffic stays minimal: 1 read of bb, 1 read of aa,
+ * 1 write of aa per element.
+ */
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s119_fp64(double *restrict aa, const double *restrict bb, const int64_t LEN_2D)
+{
+    const int64_t n = LEN_2D;
+    if (n < 2) return;
+
+    int64_t T = (int64_t)omp_get_max_threads();
+    if (T < 1) T = 1;
+
+    /* Choose B so the middle of the wavefront has on the order of T tiles. */
+    int64_t want = T;
+    if (want > 96) want = 96;
+    if (want < 8) want = 8;
+    int64_t B = (n - 1) / want;
+    if (B < 32) B = 32;
+    if (B > 512) B = 512;
+
+    const int64_t nt = (n - 1 + B - 1) / B; /* tiles per axis */
+
+    #pragma omp parallel
+    {
+        for (int64_t d = 0; d <= 2 * nt - 2; ++d) {
+            const int64_t a0 = (d >= nt) ? (d - nt + 1) : 0;
+            const int64_t a1 = (d < nt - 1) ? d : nt - 1;
+            #pragma omp for schedule(static)
+            for (int64_t a = a0; a <= a1; ++a) {
+                const int64_t b = d - a;
+                int64_t i0 = 1 + a * B;
+                int64_t i1 = i0 + B;
+                if (i1 > n) i1 = n;
+                int64_t j0 = 1 + b * B;
+                int64_t j1 = j0 + B;
+                if (j1 > n) j1 = n;
+                for (int64_t i = i0; i < i1; ++i) {
+                    double *restrict row = aa + i * n;
+                    const double *restrict prev = row - n;
+                    const double *restrict brow = bb + i * n;
+                    for (int64_t j = j0; j < j1; ++j)
+                        row[j] = prev[j - 1] + brow[j];
+                }
+            }
+            /* implicit barrier: next d needs this one's last rows */
+        }
+    }
+}

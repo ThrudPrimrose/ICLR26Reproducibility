@@ -1,0 +1,45 @@
+#include <stdint.h>
+#include <omp.h>
+
+#ifndef PBLK
+#define PBLK 32
+#endif
+
+/* wf_triangular: a[i][j] += a[i-1][j] + a[i][j-1] for 1<=i<L, i<=j<L.
+ *
+ * Dependence analysis: cell (i,j) reads only (i-1,j) and (i,j-1) -- both on
+ * anti-diagonal t-1 where t = i+j. So the parallel front is the anti-diagonal.
+ *
+ * We run a BLOCKED wavefront over P x P blocks: block (bi,bj) depends only on
+ * (bi-1,bj) and (bi,bj-1), so all blocks with bi+bj = bd are independent and
+ * are parallelized with `omp for`. Inside a block we scan rows (unit stride),
+ * which keeps the north/west edges in L1/L2 instead of striding through the
+ * whole matrix per anti-diagonal. */
+void wf_triangular_fp64(double *restrict a, const int64_t LEN_2D){
+  const int64_t L = LEN_2D;
+  const int64_t P = PBLK;
+  const int64_t nb = (L + P - 1) / P;
+  #pragma omp parallel
+  {
+    for (int64_t bd = 0; bd <= 2*nb-2; ++bd){
+      int64_t bi_lo = bd - (nb-1); if (bi_lo < 0) bi_lo = 0;
+      int64_t bi_hi = bd/2;        if (bi_hi > nb-1) bi_hi = nb-1;
+      #pragma omp for schedule(static)
+      for (int64_t bi = bi_lo; bi <= bi_hi; ++bi){
+        const int64_t bj = bd - bi;
+        const int64_t i1 = (bi+1)*P < L ? (bi+1)*P : L;
+        int64_t i0 = bi*P; if (bi == 0) i0 = 1; /* row 0 is never updated */
+        const int64_t j0 = bj*P;
+        const int64_t j1 = (bj+1)*P < L ? (bj+1)*P : L;
+        for (int64_t i = i0; i < i1; ++i){
+          int64_t js = j0; if (js < i) js = i; /* triangle: j >= i */
+          double *restrict r = a + i*L;
+          const double *restrict n = a + (i-1)*L;
+          for (int64_t j = js; j < j1; ++j){
+            r[j] = r[j] + n[j] + r[j-1];
+          }
+        }
+      }
+    }
+  }
+}

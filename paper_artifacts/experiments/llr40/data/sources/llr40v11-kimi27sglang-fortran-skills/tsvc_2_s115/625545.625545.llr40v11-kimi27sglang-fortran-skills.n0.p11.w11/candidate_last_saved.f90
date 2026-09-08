@@ -1,0 +1,39 @@
+subroutine tsvc_2_s115_fp64(a, aa, LEN_2D, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_2D, workspace_size
+  real(c_double), intent(inout) :: a(LEN_2D)
+  real(c_double), intent(in) :: aa(LEN_2D, LEN_2D)
+  integer(c_int8_t), intent(inout) :: workspace(workspace_size)
+  integer(c_int64_t) :: i, j, jb, je
+  integer(c_int64_t), parameter :: b = 176
+  real(c_double) :: aj, s
+
+  !$omp parallel private(i, j, jb, je, aj, s)
+  do jb = 1, LEN_2D, b
+    je = min(jb + b - 1, LEN_2D)
+
+    !$omp single
+    do j = jb, je
+      aj = a(j)
+      do i = j + 1, je
+        a(i) = a(i) - aa(i, j) * aj
+      end do
+    end do
+    !$omp end single
+
+    if (je < LEN_2D) then
+      !$omp do simd
+      do i = je + 1, LEN_2D
+        s = 0.0d0
+        do j = jb, je
+          s = s + aa(i, j) * a(j)
+        end do
+        a(i) = a(i) - s
+      end do
+      !$omp end do simd
+    end if
+  end do
+  !$omp end parallel
+end subroutine tsvc_2_s115_fp64

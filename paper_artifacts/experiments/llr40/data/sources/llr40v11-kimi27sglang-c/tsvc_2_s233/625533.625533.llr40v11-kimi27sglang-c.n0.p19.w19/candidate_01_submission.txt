@@ -1,0 +1,35 @@
+#include <stdint.h>
+
+void tsvc_2_s233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+    const int64_t n = LEN_2D;
+
+    /* aa recurrence: aa[j,i] = aa[j-1,i] + cc[j,i]
+       j carries the dependence, so j is the outer sequential loop.
+       Columns i are independent -> parallel/vectorize over i.
+       Reordering from (i outer, j inner) to (j outer, i inner) gives
+       contiguous access and preserves the per-column recurrence order. */
+    #pragma omp parallel
+    for (int64_t j = 8; j < n; ++j) {
+        double *restrict const a_row = aa + j * n;
+        const double *restrict const a_prev = aa + (j - 1) * n;
+        const double *restrict const c_row = cc + j * n;
+        #pragma omp for simd schedule(static)
+        for (int64_t i = 8; i < n; ++i) {
+            a_row[i] = a_prev[i] + c_row[i];
+        }
+    }
+
+    /* bb recurrence: bb[j,i] = bb[j,i-1] + cc[j,i]
+       i carries the dependence, so i is the inner sequential loop.
+       Rows j are independent -> parallel over j.
+       Again switching to j outer gives contiguous row access and
+       keeps the per-row recurrence order identical to the reference. */
+    #pragma omp parallel for schedule(static)
+    for (int64_t j = 8; j < n; ++j) {
+        double *restrict const b_row = bb + j * n;
+        const double *restrict const c_row = cc + j * n;
+        for (int64_t i = 8; i < n; ++i) {
+            b_row[i] = b_row[i - 1] + c_row[i];
+        }
+    }
+}

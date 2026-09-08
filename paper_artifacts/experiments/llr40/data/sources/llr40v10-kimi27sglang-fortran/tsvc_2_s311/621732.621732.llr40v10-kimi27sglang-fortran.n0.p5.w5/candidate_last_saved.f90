@@ -1,0 +1,18 @@
+module tsvc_2_s311
+  use iso_c_binding, only: c_double, c_int64_t
+  implicit none
+contains
+  subroutine tsvc_2_s311_fp64(a, sum_out, LEN_1D) bind(c, name='tsvc_2_s311_fp64')
+    integer(c_int64_t), intent(in), value :: LEN_1D
+    real(c_double), intent(in) :: a(LEN_1D)
+    real(c_double), intent(out) :: sum_out(LEN_1D)
+    integer(c_int64_t) :: i
+    real(c_double) :: s
+
+    s = 0.0_c_double
+    do i = 1, LEN_1D
+      s = s + a(i)
+    end do
+    sum_out(1) = s
+  end subroutine tsvc_2_s311_fp64
+end module tsvc_2_s311

@@ -1,0 +1,32 @@
+subroutine tsvc_2_s231_fp64(aa, bb, len_2d, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_2d
+  real(c_double), intent(inout) :: aa(len_2d, len_2d)
+  real(c_double), intent(in) :: bb(len_2d, len_2d)
+  type(c_ptr), intent(in) :: workspace
+  integer(c_int64_t), value, intent(in) :: workspace_size
+  integer(c_int64_t) :: n, q, p, p_lo, p_hi, cnt, nchunks, base, rem, c
+  integer :: nt
+  n = len_2d
+  nt = omp_get_max_threads()
+  if (nt < 1) nt = 1
+  nchunks = min(int(nt, c_int64_t), n)
+  if (nchunks < 1) nchunks = 1
+  base = n / nchunks
+  rem = mod(n, nchunks)
+  !$omp parallel do schedule(static)
+  do c = 0, nchunks - 1
+    cnt = base
+    if (c < rem) cnt = base + 1
+    p_lo = c * base + min(c, rem) + 1
+    p_hi = p_lo + cnt - 1
+    do q = 2, n
+      !$omp simd
+      do p = p_lo, p_hi
+        aa(p, q) = aa(p, q - 1) + bb(p, q)
+      end do
+    end do
+  end do
+end subroutine tsvc_2_s231_fp64

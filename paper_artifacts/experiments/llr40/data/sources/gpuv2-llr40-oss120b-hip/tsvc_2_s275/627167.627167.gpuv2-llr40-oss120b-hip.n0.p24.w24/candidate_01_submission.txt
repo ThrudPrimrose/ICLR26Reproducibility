@@ -1,0 +1,18 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void tsvc_2_s275_kernel(double *aa, const double *bb, const double *cc, int64_t LEN) {
+    int64_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= LEN) return;
+    double a0 = aa[i];
+    if (a0 > 0.0) {
+        double cur = a0;
+        for (int64_t j = 1; j < LEN; ++j) {
+            int64_t idx = j * LEN + i;
+            double b = bb[idx];
+            double c = cc[idx];
+            cur = cur + b * c;
+            aa[idx] = cur;
+        }
+    }
+}

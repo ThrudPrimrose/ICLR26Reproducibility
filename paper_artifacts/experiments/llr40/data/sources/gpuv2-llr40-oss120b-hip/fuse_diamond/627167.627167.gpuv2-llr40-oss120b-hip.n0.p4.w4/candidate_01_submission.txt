@@ -1,0 +1,11 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void fuse_diamond_kernel_fp64(const double* __restrict__ a, double* __restrict__ out, int64_t LEN) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < LEN) {
+        double ai = a[idx];
+        double ai2 = ai * ai;
+        out[idx] = ai2 * ai2 - 1.0;
+    }
+}

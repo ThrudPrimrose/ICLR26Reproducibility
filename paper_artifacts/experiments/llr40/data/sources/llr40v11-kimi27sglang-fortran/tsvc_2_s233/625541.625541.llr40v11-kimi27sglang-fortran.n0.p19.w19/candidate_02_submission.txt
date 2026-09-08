@@ -1,0 +1,33 @@
+module tsvc_2_s233_m
+  use iso_c_binding, only: c_double, c_int64_t
+  implicit none
+contains
+  subroutine tsvc_2_s233_fp64(aa, bb, cc, LEN_2D) bind(C, name='tsvc_2_s233_fp64')
+    real(c_double), intent(inout) :: aa(0:*), bb(0:*)
+    real(c_double), intent(in)    :: cc(0:*)
+    integer(c_int64_t), value     :: LEN_2D
+    integer(c_int64_t) :: i, j, base
+    real(c_double) :: s, t
+    !$omp parallel private(i,j,s,t,base)
+    !$omp do schedule(static)
+    do i = 8, LEN_2D-1
+       s = aa((8-1)*LEN_2D + i)
+       do j = 8, LEN_2D-1
+          s = s + cc(j*LEN_2D + i)
+          aa(j*LEN_2D + i) = s
+       end do
+    end do
+    !$omp end do
+    !$omp do schedule(static)
+    do j = 8, LEN_2D-1
+       base = j*LEN_2D
+       t = bb(base + 8 - 1)
+       do i = 8, LEN_2D-1
+          t = t + cc(base + i)
+          bb(base + i) = t
+       end do
+    end do
+    !$omp end do
+    !$omp end parallel
+  end subroutine tsvc_2_s233_fp64
+end module tsvc_2_s233_m

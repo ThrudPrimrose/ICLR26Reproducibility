@@ -1,0 +1,10 @@
+#include <hip/hip_runtime.h>
+extern "C" __global__ void wf_diff_skew_kernel_fp64(double* __restrict__ a, const int64_t LEN_2D, const int64_t i) {
+    int64_t j = blockIdx.x * blockDim.x + threadIdx.x;
+    if (j < LEN_2D - 1) {
+        int64_t idx = i * LEN_2D + j;
+        int64_t idx_up = (i - 1) * LEN_2D + j;
+        int64_t idx_up_right = (i - 1) * LEN_2D + (j + 1);
+        a[idx] = a[idx] + a[idx_up] + a[idx_up_right];
+    }
+}

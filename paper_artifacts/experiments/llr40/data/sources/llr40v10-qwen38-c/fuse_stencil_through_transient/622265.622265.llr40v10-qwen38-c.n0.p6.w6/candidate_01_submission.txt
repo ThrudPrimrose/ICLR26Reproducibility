@@ -1,0 +1,21 @@
+#include <stdint.h>
+#include <omp.h>
+
+void fuse_stencil_through_transient_fp64(const double *restrict a,
+                                         double *restrict out,
+                                         const int64_t LEN_1D) {
+  const int64_t n = LEN_1D - 2; /* i runs 1..n-1 inclusive */
+  if (n <= 1) return;
+
+  const int64_t trip = n - 1;
+  const int64_t thr = (int64_t)omp_get_max_threads();
+  if (trip < 1 << 20 || thr < 2) {
+    for (int64_t i = 1; i < n; ++i)
+      out[i] = (a[i - 1] + a[i] + a[i + 1]) * (a[i] + a[i + 1] + a[i + 2]);
+    return;
+  }
+
+  #pragma omp parallel for schedule(static)
+  for (int64_t i = 1; i < n; ++i)
+    out[i] = (a[i - 1] + a[i] + a[i + 1]) * (a[i] + a[i + 1] + a[i + 2]);
+}

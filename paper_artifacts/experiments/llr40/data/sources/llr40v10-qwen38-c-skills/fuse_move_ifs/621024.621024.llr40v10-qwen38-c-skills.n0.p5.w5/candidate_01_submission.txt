@@ -1,0 +1,41 @@
+#include <stdint.h>
+#include <omp.h>
+
+/*
+ * TSVC tsvc_2_5 "fuse_move_ifs". Reference:
+ *   for i: if (cond[i] > 0) for j: a[i,j] = src[i,j] * 2.0
+ *   if (K > 0)               for i: for j: b[i,j] = src[i,j] + 1.0
+ *
+ * The two statements have no dependence between them (a and b are distinct
+ * outputs, both only read src), so the nests can be fused into a single
+ * (i, j) nest.  The guards cond[i] > 0 and K > 0 are invariant in j, so each
+ * row takes one of four branch-free, unit-stride, vectorizable shapes; the
+ * outer row loop is fully independent and is threaded.
+ */
+void fuse_move_ifs_fp64(double *restrict a, double *restrict b, const double *restrict cond, const double *restrict src,
+                        const int64_t K, const int64_t LEN_2D) {
+  const int do_b = (K > 0);
+#pragma omp parallel for schedule(static)
+  for (int64_t i = 0; i < LEN_2D; ++i) {
+    const int64_t base = i * LEN_2D;
+    if (cond[i] > 0.0) {
+      if (do_b) {
+#pragma omp simd
+        for (int64_t j = 0; j < LEN_2D; ++j) {
+          a[base + j] = src[base + j] * 2.0;
+          b[base + j] = src[base + j] + 1.0;
+        }
+      } else {
+#pragma omp simd
+        for (int64_t j = 0; j < LEN_2D; ++j) {
+          a[base + j] = src[base + j] * 2.0;
+        }
+      }
+    } else if (do_b) {
+#pragma omp simd
+      for (int64_t j = 0; j < LEN_2D; ++j) {
+        b[base + j] = src[base + j] + 1.0;
+      }
+    }
+  }
+}

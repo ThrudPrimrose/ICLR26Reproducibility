@@ -1,0 +1,13 @@
+#include <stdint.h>
+
+void tsvc_2_s115_fp64(double *restrict a, const double *restrict aa, const int64_t LEN_2D) {
+  #pragma omp parallel
+  for (int64_t j = 0; j < LEN_2D; j++) {
+    const double aj = a[j];
+    const double *restrict row = &aa[j * LEN_2D];
+    #pragma omp for simd schedule(static, 512) aligned(a, aa: 64)
+    for (int64_t i = j + 1; i < LEN_2D; i++) {
+      a[i] -= row[i] * aj;
+    }
+  }
+}

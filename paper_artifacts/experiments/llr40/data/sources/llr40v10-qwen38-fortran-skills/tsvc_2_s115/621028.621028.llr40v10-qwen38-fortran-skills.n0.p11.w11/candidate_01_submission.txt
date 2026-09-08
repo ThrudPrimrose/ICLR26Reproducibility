@@ -1,0 +1,26 @@
+subroutine tsvc_2_s115_fp64(a, aa, len_2d) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_2d
+  real(c_double), intent(inout) :: a(len_2d)
+  real(c_double), intent(in) :: aa(len_2d, len_2d)
+  integer(c_int64_t) :: i, j, lo, hi, m, n
+  real(c_double) :: aj
+  integer :: nt, tid
+  n = len_2d
+  !$omp parallel private(aj, i, j, lo, hi, m, nt, tid)
+  tid = omp_get_thread_num()
+  nt = omp_get_num_threads()
+  do j = 1, n
+     !$omp barrier
+     aj = a(j)
+     m = n - j
+     lo = j + 1 + m * tid / nt
+     hi = j + m * (tid + 1) / nt
+     do i = lo, hi
+        a(i) = a(i) - aa(i, j) * aj
+     end do
+  end do
+  !$omp end parallel
+end subroutine tsvc_2_s115_fp64

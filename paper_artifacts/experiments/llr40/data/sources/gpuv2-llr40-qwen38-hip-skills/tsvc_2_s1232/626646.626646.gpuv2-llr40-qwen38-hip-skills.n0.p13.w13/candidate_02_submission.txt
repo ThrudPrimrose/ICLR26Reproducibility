@@ -1,0 +1,46 @@
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+#include <cstdio>
+#include <cstdlib>
+#define HIP_CHECK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { \
+    fprintf(stderr, "HIP error %s at %s:%d\n", hipGetErrorString(e_), __FILE__, __LINE__); exit(1); } } while(0)
+__global__ void s1232_vec2(double2* __restrict__ aa2, const double2* __restrict__ bb2,
+                           const double2* __restrict__ cc2,
+                           double* __restrict__ aad, const double* __restrict__ bbd, const double* __restrict__ ccd,
+                           int64_t N, int64_t VLEN, int64_t J2) {
+    int64_t j2 = blockIdx.x * blockDim.x + threadIdx.x;
+    int64_t i  = blockIdx.y * blockDim.y + threadIdx.y;
+    if (j2 >= J2 || i >= N) return;
+    int64_t j0 = 2*j2;
+    if (i < j0 * VLEN) return;                       // j0 invalid -> j0+1 also invalid
+    int64_t base = i * N + j0;                        // even (N even, j0 even)
+    if (i >= (j0+1) * VLEN) {                         // both valid
+        double2 x = bb2[base>>1], y = cc2[base>>1];
+        x.x += y.x; x.y += y.y;
+        aa2[base>>1] = x;
+    } else {                                          // only j0 valid (boundary)
+        aad[base] = bbd[base] + ccd[base];
+    }
+}
+__global__ void s1232_scalar(double* __restrict__ aa, const double* __restrict__ bb,
+                             const double* __restrict__ cc, int64_t N, int64_t VLEN, int64_t J) {
+    int64_t j = blockIdx.x * blockDim.x + threadIdx.x;
+    int64_t i = blockIdx.y * blockDim.y + threadIdx.y;
+    if (j < J && i < N && i >= j * VLEN) { int64_t idx = i * N + j; aa[idx] = bb[idx] + cc[idx]; }
+}
+void launch_s1232(double* aa, const double* bb, const double* cc, int64_t N, int64_t VLEN) {
+    int64_t J = (VLEN > 0) ? ((N + VLEN - 1) / VLEN) : N;
+    if (J > N) J = N;
+    dim3 block(32, 8);
+    if ((N & 1) == 0) {
+        int64_t J2 = (J + 1) / 2;
+        dim3 grid((unsigned)((J2 + block.x - 1) / block.x), (unsigned)((N + block.y - 1) / block.y));
+        s1232_vec2<<<grid, block>>>((double2*)aa,(const double2*)bb,(const double2*)cc,aa,bb,cc,N,VLEN,J2);
+        HIP_CHECK(hipGetLastError());
+    } else {
+        dim3 grid((unsigned)((J + block.x - 1) / block.x), (unsigned)((N + block.y - 1) / block.y));
+        s1232_scalar<<<grid, block>>>(aa,bb,cc,N,VLEN,J);
+        HIP_CHECK(hipGetLastError());
+    }
+    HIP_CHECK(hipDeviceSynchronize());
+}

@@ -1,0 +1,41 @@
+subroutine tsvc_2_s3110_fp64(aa, bb, LEN_2D, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_2D
+  real(c_double), intent(in) :: aa(LEN_2D, LEN_2D)
+  real(c_double), intent(inout) :: bb(2, 2)
+  type(c_ptr), value, intent(in) :: workspace
+  integer(c_int64_t), value, intent(in) :: workspace_size
+
+  integer(c_int64_t) :: i, j
+  real(c_double) :: maxv, chksum
+  integer(c_int64_t) :: xindex, yindex, min_idx
+
+  maxv = aa(1, 1)
+
+  !$omp parallel do reduction(max:maxv) private(i)
+  do j = 1, LEN_2D
+    do i = 1, LEN_2D
+      if (aa(i, j) > maxv) then
+        maxv = aa(i, j)
+      end if
+    end do
+  end do
+
+  min_idx = huge(0_c_int64_t)
+
+  !$omp parallel do reduction(min:min_idx) private(i)
+  do j = 1, LEN_2D
+    do i = 1, LEN_2D
+      if (aa(i, j) == maxv) then
+        min_idx = min(min_idx, (j - 1) * LEN_2D + (i - 1))
+      end if
+    end do
+  end do
+
+  xindex = min_idx / LEN_2D
+  yindex = mod(min_idx, LEN_2D)
+
+  chksum = maxv + dble(xindex) + dble(yindex)
+  bb(1, 1) = chksum
+end subroutine tsvc_2_s3110_fp64

@@ -1,0 +1,45 @@
+subroutine wf_triangular_fp64(a, LEN_2D) bind(c,name='wf_triangular_fp64')
+  use iso_c_binding, only: c_double, c_int64_t
+  implicit none
+  real(c_double), intent(inout) :: a(0:*)
+  integer(c_int64_t), value :: LEN_2D
+  integer(c_int64_t) :: n, nm1
+  integer(c_int64_t), parameter :: B = 128_c_int64_t
+  integer(c_int64_t) :: nb, s, bi, bj, rs, re, cs, ce, i, j, js
+
+  n = LEN_2D
+  if (n <= 1_c_int64_t) return
+  nm1 = n - 1_c_int64_t
+
+  ! Small problem: simple serial wavefront to avoid tiling overhead.
+  if (n < 256_c_int64_t) then
+    do i = 1_c_int64_t, nm1
+      do j = i, nm1
+        a(i*n + j) = a(i*n + j) + a((i-1)*n + j) + a(i*n + (j-1))
+      end do
+    end do
+    return
+  end if
+
+  nb = (nm1 + B - 1_c_int64_t) / B
+
+  !$omp parallel default(none) shared(a,n,nm1,nb) private(s,bi,bj,rs,re,cs,ce,i,j,js)
+  do s = 0_c_int64_t, 2_c_int64_t*(nb - 1_c_int64_t)
+    !$omp do schedule(dynamic,1)
+    do bi = max(0_c_int64_t, s - (nb - 1_c_int64_t)), min(nb - 1_c_int64_t, s)
+      bj = s - bi
+      rs = bi * B
+      re = min(rs + B - 1_c_int64_t, nm1)
+      cs = bj * B
+      ce = min(cs + B - 1_c_int64_t, nm1)
+      do i = max(rs, 1_c_int64_t), re
+        js = max(cs, i)
+        do j = js, ce
+          a(i*n + j) = a(i*n + j) + a((i-1)*n + j) + a(i*n + (j-1))
+        end do
+      end do
+    end do
+    !$omp end do
+  end do
+  !$omp end parallel
+end subroutine wf_triangular_fp64

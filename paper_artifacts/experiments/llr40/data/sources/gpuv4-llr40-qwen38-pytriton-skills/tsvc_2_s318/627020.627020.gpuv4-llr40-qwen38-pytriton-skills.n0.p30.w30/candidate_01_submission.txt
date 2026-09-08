@@ -1,0 +1,105 @@
+# TSVC tsvc_2 s318: result[0] = max(|a[i*inc]|) + (first i attaining it)
+# Strategy: parallel (numba prange) per-chunk |a| max over contiguous/strided
+# chunks (vectorizable, no index in the hot loop), then a short serial scan of
+# the earliest chunk whose max equals the global max to recover the exact
+# first-occurrence index.  Small inputs use a serial njit pass.
+import numpy as np
+import os
+from numba import njit, prange
+
+__all__ = ["s318"]
+
+C_CHUNKS = 512
+_SMALL_N = 4_000_000  # elements; below this, skip the thread pool
+
+
+@njit(parallel=True, fastmath=True)
+def _chunk_max(v, starts, stops, out_max):
+    C = out_max.shape[0]
+    for c in prange(C):
+        mx = -1.0
+        for i in range(starts[c], stops[c]):
+            x = v[i]
+            if x < 0.0:
+                x = -x
+            if x > mx:
+                mx = x
+        out_max[c] = mx
+
+
+@njit(fastmath=True)
+def _serial_max(v):
+    n = v.shape[0]
+    mx = -1.0
+    ii = 0
+    for i in range(n):
+        x = v[i]
+        if x < 0.0:
+            x = -x
+        if x > mx:
+            mx = x
+            ii = i
+    return mx, ii
+
+
+@njit(fastmath=True)
+def _first_eq(v, lo, hi, M):
+    for i in range(lo, hi):
+        x = v[i]
+        if x < 0.0:
+            x = -x
+        if x == M:
+            return i
+    return -1
+
+
+_OM = np.empty(C_CHUNKS)
+_AR = np.arange(C_CHUNKS + 1, dtype=np.int64)
+
+
+def _bounds(n):
+    starts = (n * _AR[:-1]) // C_CHUNKS
+    stops = (n * _AR[1:]) // C_CHUNKS
+    return starts, stops
+
+
+def s318(a, result, inc, LEN_1D):
+    n = int(LEN_1D)
+    s = int(inc)
+    v = a if s == 1 else a[: n * s : s]
+    if v[0] != v[0]:  # NaN at a[0]: reference keeps maxv=NaN forever
+        result[0] = float("nan")
+        return None
+    if v.dtype != np.float64:
+        av = np.abs(v)
+        idx = int(np.argmax(av))
+        result[0] = float(av[idx]) + idx
+        return None
+    if n < _SMALL_N:
+        M, ii = _serial_max(v)
+        result[0] = M + ii
+        return None
+    starts, stops = _bounds(n)
+    _chunk_max(v, starts, stops, _OM)
+    M = _OM.max()
+    c = int(np.argmax(_OM == M))
+    idx = int(_first_eq(v, starts[c], stops[c], M))
+    if idx < 0:  # all-NaN corner (reference yields NaN)
+        result[0] = float("nan")
+    else:
+        result[0] = M + idx
+    return None
+
+
+def _warmup():
+    d = np.linspace(1.0, 100.0, 2048)
+    r = np.empty(1)
+    s318(d, r, 1, d.shape[0])            # contiguous f64, small path
+    s318(d, r, 2, d.shape[0] // 2)       # strided f64, small path
+    big = np.linspace(-5.0, 5.0, _SMALL_N + 1024)
+    s318(big, r, 1, big.shape[0])        # contiguous f64, parallel path
+    s318(big, r, 2, (big.shape[0] // 2)) # strided f64, parallel path
+    del big
+
+
+_warmup()

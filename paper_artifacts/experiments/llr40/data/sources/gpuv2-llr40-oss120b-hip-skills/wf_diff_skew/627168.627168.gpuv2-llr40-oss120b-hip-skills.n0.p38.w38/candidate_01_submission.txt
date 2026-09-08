@@ -1,0 +1,13 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void wf_diff_skew_fp64_row_kernel(double * __restrict__ a,
+                                                       const int64_t LEN_2D,
+                                                       const int64_t i) {
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    if (j < LEN_2D - 1) {
+        size_t idx = (size_t)i * (size_t)LEN_2D + (size_t)j;
+        size_t idx_up = (size_t)(i - 1) * (size_t)LEN_2D + (size_t)j;
+        a[idx] = a[idx] + a[idx_up] + a[idx_up + 1];
+    }
+}

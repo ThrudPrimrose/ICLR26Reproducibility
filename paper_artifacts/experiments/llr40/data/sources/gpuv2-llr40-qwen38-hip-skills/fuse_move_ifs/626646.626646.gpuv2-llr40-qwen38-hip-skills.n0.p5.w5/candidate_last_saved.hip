@@ -1,0 +1,48 @@
+// fuse_move_ifs -- TSVC tsvc_2_5, HIP implementation (gfx942 / CDNA3, wavefront 64)
+//
+// Semantics (must match C reference exactly):
+//   for i: if (cond[i] > 0) for j: a[i*L+j] = src[i*L+j] * 2.0
+//   if (K > 0)               for j: b[i*L+j] = src[i*L+j] + 1.0
+// Rows with cond[i] <= 0 leave 'a' untouched; K <= 0 leaves 'b' untouched.
+
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define HIP_CHECK(expr)                                                          \
+  do {                                                                           \
+    hipError_t e_ = (expr);                                                      \
+    if (e_ != hipSuccess) {                                                      \
+      std::fprintf(stderr, "HIP error %s at %s:%d\n",                            \
+                   hipGetErrorString(e_), __FILE__, __LINE__);                   \
+      std::abort();                                                              \
+    }                                                                            \
+  } while (0)
+
+#define TPB 256
+
+__global__ void __launch_bounds__(TPB) fmi_scalar(
+    double* __restrict__ a, double* __restrict__ b,
+    const double* __restrict__ cond, const double* __restrict__ src,
+    const int64_t L, const int kpos) {
+  const int64_t i = blockIdx.y;
+  const int64_t j = (int64_t)blockIdx.x * TPB + threadIdx.x;
+  if (j >= L) return;
+  const int64_t idx = i * L + j;
+  const double s = src[idx];
+  if (cond[i] > 0.0) a[idx] = s * 2.0;
+  if (kpos) b[idx] = s + 1.0;
+}
+
+extern "C" void fuse_move_ifs_fp64(double *a, double *b,
+                                   const double *cond,
+                                   const double *src,
+                                   const int64_t K, const int64_t LEN_2D) {
+  if (LEN_2D <= 0) return;
+  dim3 block(TPB);
+  dim3 grid((unsigned)((LEN_2D + TPB - 1) / TPB), (unsigned)LEN_2D, 1);
+  fmi_scalar<<<grid, block, 0, hipStreamLegacy>>>(a, b, cond, src, LEN_2D, K > 0 ? 1 : 0);
+  HIP_CHECK(hipGetLastError());
+  HIP_CHECK(hipStreamSynchronize(hipStreamLegacy));
+}

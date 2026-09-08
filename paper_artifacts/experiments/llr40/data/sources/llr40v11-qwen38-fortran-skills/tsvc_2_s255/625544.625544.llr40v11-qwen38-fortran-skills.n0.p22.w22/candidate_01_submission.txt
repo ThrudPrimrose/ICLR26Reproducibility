@@ -1,0 +1,31 @@
+subroutine tsvc_2_s255_fp64(a, b, len_1d) bind(C)
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_1d
+  real(c_double), intent(inout) :: a(len_1d)
+  real(c_double), intent(in) :: b(len_1d)
+
+  integer(c_int64_t) :: n, i
+
+  ! a[i] = (b[i] + x + y) * 0.333 with x = b[i-1], y = b[i-2]
+  ! (x, y enter as b[n-1], b[n-2], i.e. wrap-around). The rotated
+  ! scalars are plain copies of earlier b elements, so substituting
+  ! them makes the loop fully parallel.
+  n = len_1d
+  if (n <= 0) return
+  if (n == 1) then
+    a(1) = (b(1) + b(1) + b(1)) * 0.333d0
+    return
+  end if
+  a(1) = (b(1) + b(n) + b(n - 1)) * 0.333d0
+  if (n == 2) then
+    a(2) = (b(2) + b(1) + b(2)) * 0.333d0
+    return
+  end if
+  a(2) = (b(2) + b(1) + b(n)) * 0.333d0
+
+  !$omp parallel do simd schedule(static)
+  do i = 3, n
+    a(i) = (b(i) + b(i - 1) + b(i - 2)) * 0.333d0
+  end do
+end subroutine tsvc_2_s255_fp64

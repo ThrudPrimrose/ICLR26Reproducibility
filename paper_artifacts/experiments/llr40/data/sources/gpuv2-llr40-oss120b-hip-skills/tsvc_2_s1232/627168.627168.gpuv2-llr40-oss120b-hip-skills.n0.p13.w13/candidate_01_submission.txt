@@ -1,0 +1,17 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void tsvc_2_s1232_kernel(double * __restrict__ aa,
+                                    const double * __restrict__ bb,
+                                    const double * __restrict__ cc,
+                                    const int64_t LEN_2D,
+                                    const int64_t VLEN) {
+    int64_t gid = blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+    int64_t total = LEN_2D * LEN_2D;
+    if (gid >= total) return;
+    int64_t i = gid / LEN_2D;
+    int64_t j = gid % LEN_2D;
+    if (i >= j * VLEN) {
+        aa[gid] = bb[gid] + cc[gid];
+    }
+}

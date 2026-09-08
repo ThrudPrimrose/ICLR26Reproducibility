@@ -1,0 +1,60 @@
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#include <cstdlib>
+
+#define HIP_CHECK(x) do { \
+  hipError_t err_ = (x); \
+  if (err_ != hipSuccess) { \
+    std::fprintf(stderr, "HIP error %s:%d: %s\n", __FILE__, __LINE__, hipGetErrorString(err_)); \
+    std::abort(); \
+  } \
+} while (0)
+
+// b[i] = d[i]*e[i]; a[i] += b[i]*c[i];  -- one pass, 2 doubles per thread
+extern "C" __global__ void __launch_bounds__(256) s152_kernel(
+    double * __restrict__ a, double * __restrict__ b,
+    const double * __restrict__ c, const double * __restrict__ d,
+    const double * __restrict__ e, long long n_pairs, long long n_odd)
+{
+  double2 * __restrict__ a2 = reinterpret_cast<double2 *>(a);
+  double2 * __restrict__ b2 = reinterpret_cast<double2 *>(b);
+  const double2 * __restrict__ c2 = reinterpret_cast<const double2 *>(c);
+  const double2 * __restrict__ d2 = reinterpret_cast<const double2 *>(d);
+  const double2 * __restrict__ e2 = reinterpret_cast<const double2 *>(e);
+
+  for (long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x; i < n_pairs;
+       i += (long long)gridDim.x * blockDim.x) {
+    const double2 dd = d2[i];
+    const double2 ee = e2[i];
+    double2 bb;
+    bb.x = dd.x * ee.x;
+    bb.y = dd.y * ee.y;
+    b2[i] = bb;
+    const double2 cc = c2[i];
+    const double2 aa = a2[i];
+    double2 out;
+    out.x = aa.x + bb.x * cc.x;
+    out.y = aa.y + bb.y * cc.y;
+    a2[i] = out;
+  }
+  if (n_odd && blockIdx.x == 0 && threadIdx.x == 0) {
+    const long long j = n_pairs * 2;
+    const double bb = d[j] * e[j];
+    b[j] = bb;
+    a[j] = a[j] + bb * c[j];
+  }
+}
+
+extern "C" void launch_s152_fp64(double *a, double *b, const double *c,
+                                 const double *d, const double *e, long long n)
+{
+  if (n <= 0) return;
+  const long long n_pairs = n / 2;
+  const long long n_odd = n % 2;
+  const int threads = 256;
+  long long blocks = (n_pairs + threads - 1) / threads;
+  if (blocks > 4864LL) blocks = 4864LL;
+  if (blocks < 1LL) blocks = 1LL;
+  s152_kernel<<<dim3((unsigned)blocks), dim3(threads)>>>(a, b, c, d, e, n_pairs, n_odd);
+  HIP_CHECK(hipGetLastError());
+}

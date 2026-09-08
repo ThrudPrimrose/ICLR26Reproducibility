@@ -1,0 +1,23 @@
+subroutine tsvc_2_s4112_fp64(a, b, ip, len_1d) bind(c, name="tsvc_2_s4112_fp64")
+  use iso_c_binding, only: c_double, c_int32_t, c_int64_t
+  implicit none
+  real(c_double), intent(inout), dimension(*) :: a
+  real(c_double), intent(in),    dimension(*) :: b
+  integer(c_int32_t), intent(in), dimension(*) :: ip
+  integer(c_int64_t), value :: len_1d
+  integer(c_int64_t) :: i
+
+  if (len_1d <= 2000000_8) then
+    ! $omp simd
+    do i = 1, len_1d
+      a(i) = a(i) + b(ip(i)) * 2.0d0
+    end do
+    ! $omp end simd
+  else
+    ! $omp parallel do simd default(none) shared(a,b,ip,len_1d) schedule(static)
+    do i = 1, len_1d
+      a(i) = a(i) + b(ip(i)) * 2.0d0
+    end do
+    ! $omp end parallel do simd
+  end if
+end subroutine

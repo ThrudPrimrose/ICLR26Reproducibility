@@ -1,0 +1,12 @@
+#include <stdint.h>
+#include <immintrin.h>
+
+void fuse_diamond_fp64(const double *restrict a_, double *restrict out_, const int64_t LEN_1D) {
+    const double *restrict a = __builtin_assume_aligned(a_, 64);
+    double *restrict out = __builtin_assume_aligned(out_, 64);
+    #pragma omp parallel for simd schedule(static) aligned(a, out : 64)
+    for (int64_t i = 0; i < LEN_1D; ++i) {
+        double t = a[i] * a[i];
+        out[i] = (t + 1.0) * (t - 1.0);
+    }
+}

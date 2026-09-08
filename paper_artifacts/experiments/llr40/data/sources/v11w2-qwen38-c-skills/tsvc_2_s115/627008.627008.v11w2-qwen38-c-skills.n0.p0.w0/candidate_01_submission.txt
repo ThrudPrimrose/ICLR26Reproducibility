@@ -1,0 +1,175 @@
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <omp.h>
+
+/* TSVC tsvc_2 s115, fp64:  a[i] -= aa[j,i]*a[j]  for i>j  (in place).
+ *
+ * The only serial state is a[j] when row j is applied; a[j] is never
+ * written after that moment, so the value then equals the FINAL a[j].
+ * Blocks of B rows, block k = rows [k0, k0+Be):
+ *   1) row-wise rank-1: each thread sums a contiguous slice of the
+ *      rows i<k0 into its private B-wide accumulator
+ *          C[m] += a[i]*aa[i*N + k0+m]
+ *      with 4 rows in flight per iteration (rows are n*8 bytes apart,
+ *      far beyond the hardware prefetcher's reach, so MLP is
+ *      hand-rolled); then a per-column reduction and a[k0+m] -= C[m].
+ *   2) within-block forward substitution over the BxB triangle (serial
+ *      chain in t, unrolled inner); afterwards a[k0+m] is final.
+ * Every aa[i,j] (i<j) is read exactly once.  Two synchronisations per
+ * block; only Be scalars cross them. */
+
+#define BLOCK 128
+#define SERIAL_BELOW 512
+
+static double *s_cbuf = NULL;
+static int64_t s_cap = 0;
+
+static void ensure_cbuf(int nt)
+{
+    const int64_t need = (int64_t)nt * BLOCK;
+    if (need > s_cap) {
+        s_cbuf = aligned_alloc(64, (size_t)need * 64);
+        s_cap = need;
+    }
+}
+
+/* thread count = preset max threads divided by the SMT sibling count
+ * (SMT siblings fight the spin barriers on this machine) */
+static int n_threads(void)
+{
+    static int cached = 0;
+    if (cached)
+        return cached;
+    int mt = omp_get_max_threads();
+    int s = 1;
+    FILE *f =
+        fopen("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list",
+              "r");
+    if (f) {
+        char buf[512];
+        size_t got = fread(buf, 1, 511, f);
+        buf[got] = 0;
+        fclose(f);
+        for (size_t i = 0; i < got; i++)
+            if (buf[i] == ',')
+                s++;
+    }
+    int t = mt / s;
+    if (t < 1)
+        t = 1;
+    if (t > mt)
+        t = mt;
+    cached = t;
+    return t;
+}
+
+static void serial_path(double *restrict a, const double *restrict aa,
+                        const int64_t n)
+{
+    for (int64_t j = 0; j < n; j++) {
+        const double aj = a[j];
+        if (aj != 0.0) {
+            const double *restrict row = aa + j * n + j + 1;
+            double *restrict p = a + j + 1;
+            const int64_t len = n - j - 1;
+            for (int64_t i = 0; i < len; i++)
+                p[i] -= row[i] * aj;
+        }
+    }
+}
+
+void tsvc_2_s115_fp64(double *restrict a, const double *restrict aa,
+                      const int64_t LEN_2D)
+{
+    const int64_t n = LEN_2D;
+    if (n < 2)
+        return;
+    if (n < SERIAL_BELOW) {
+        serial_path(a, aa, n);
+        return;
+    }
+
+    const int nt = n_threads();
+    omp_set_num_threads(nt);
+    ensure_cbuf(nt);
+    memset(s_cbuf, 0, (size_t)nt * BLOCK * sizeof(double));
+
+    const int64_t B = BLOCK;
+    const int64_t nb = (n + B - 1) / B;
+
+#pragma omp parallel
+    {
+        const int tid = omp_get_thread_num();
+        const int nt_ = omp_get_num_threads();
+        double *restrict cb = s_cbuf + (size_t)tid * B;
+
+        for (int64_t k = 0; k < nb; k++) {
+            const int64_t k0 = k * B;
+            int64_t Be = n - k0;
+            if (Be > B)
+                Be = B;
+
+            if (k0 > 0) {
+#pragma omp for schedule(static)
+                for (int64_t i0 = 0; i0 < k0; i0 += 4) {
+                    if (i0 + 4 <= k0) {
+                        const double s0 = a[i0];
+                        const double s1 = a[i0 + 1];
+                        const double s2 = a[i0 + 2];
+                        const double s3 = a[i0 + 3];
+                        const double *restrict r0 = aa + i0 * n + k0;
+                        const double *restrict r1 = r0 + n;
+                        const double *restrict r2 = r1 + n;
+                        const double *restrict r3 = r2 + n;
+                        for (int64_t m = 0; m < Be; m++) {
+                            cb[m] += s0 * r0[m];
+                            cb[m] += s1 * r1[m];
+                            cb[m] += s2 * r2[m];
+                            cb[m] += s3 * r3[m];
+                        }
+                    } else {
+                        for (int64_t i = i0; i < k0; i++) {
+                            const double s = a[i];
+                            const double *restrict r = aa + i * n + k0;
+                            for (int64_t m = 0; m < Be; m++)
+                                cb[m] += s * r[m];
+                        }
+                    }
+                }
+            }
+
+#pragma omp for schedule(static)
+            for (int64_t m = 0; m < Be; m++) {
+                double C = 0.0;
+                for (int t = 0; t < nt_; t++) {
+                    double *p = s_cbuf + (size_t)t * B + m;
+                    C += *p;
+                    *p = 0.0;
+                }
+                a[k0 + m] -= C;
+            }
+
+            /* within-block forward substitution: t is a serial chain */
+            if (tid == 0) {
+                for (int64_t t = 0; t < Be; t++) {
+                    const double s = a[k0 + t];
+                    const double *restrict row = aa + (k0 + t) * n + k0 + t + 1;
+                    double *restrict p = a + k0 + t + 1;
+                    int64_t r = 0;
+                    const int64_t len = Be - t - 1;
+                    for (; r + 4 <= len; r += 4) {
+                        p[r] -= row[r] * s;
+                        p[r + 1] -= row[r + 1] * s;
+                        p[r + 2] -= row[r + 2] * s;
+                        p[r + 3] -= row[r + 3] * s;
+                    }
+                    for (; r < len; r++)
+                        p[r] -= row[r] * s;
+                }
+            }
+#pragma omp barrier
+        }
+    }
+}

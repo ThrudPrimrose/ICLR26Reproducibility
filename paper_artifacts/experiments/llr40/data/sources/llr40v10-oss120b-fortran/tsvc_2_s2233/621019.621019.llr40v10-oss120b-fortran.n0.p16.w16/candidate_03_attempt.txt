@@ -1,0 +1,29 @@
+subroutine tsvc_2_s2233_fp64(aa, bb, cc, len_2d) bind(C, name="tsvc_2_s2233_fp64")
+  use iso_c_binding
+  implicit none
+  real(c_double), dimension(*), intent(inout) :: aa
+  real(c_double), dimension(*), intent(inout) :: bb
+  real(c_double), dimension(*), intent(in) :: cc
+  integer(c_int64_t), value :: len_2d
+  integer(c_int64_t) :: i, j
+  integer(c_int64_t) :: idx, idx_prev
+
+  !$omp parallel do default(none) shared(aa, cc, len_2d) private(i, j, idx, idx_prev)
+  do i = 8, len_2d - 1
+    do j = 8, len_2d - 1
+      idx = j * len_2d + i
+      idx_prev = (j - 1) * len_2d + i
+      aa(idx + 1) = aa(idx_prev + 1) + cc(idx + 1)
+    end do
+  end do
+  !$omp end parallel do
+
+  do i = 8, len_2d - 1
+    !$omp simd
+    do j = 8, len_2d - 1
+      idx = i * len_2d + j
+      idx_prev = (i - 1) * len_2d + j
+      bb(idx + 1) = bb(idx_prev + 1) + cc(idx + 1)
+    end do
+  end do
+end subroutine tsvc_2_s2233_fp64

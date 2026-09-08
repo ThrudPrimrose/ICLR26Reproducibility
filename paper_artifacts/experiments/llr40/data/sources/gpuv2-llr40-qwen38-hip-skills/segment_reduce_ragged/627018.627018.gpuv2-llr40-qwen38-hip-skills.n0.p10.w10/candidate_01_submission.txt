@@ -1,0 +1,43 @@
+// device half (device_source) for segment_reduce_ragged_fp64
+// Segmented dot product: out[s] = sum_{e in [row_ptr[s], row_ptr[s+1])} val[e]*w[e]
+// One warp per segment; parallel reduction within the warp.
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void srr_kernel(
+    double* __restrict__ out,
+    const int64_t* __restrict__ row_ptr,
+    const double* __restrict__ val,
+    const double* __restrict__ w,
+    const int64_t NSEG)
+{
+    const int ws = warpSize;                                   // 64 on CDNA (runtime)
+    const int lane = threadIdx.x % ws;
+    const int64_t warp_id = (int64_t)blockIdx.x * (blockDim.x / ws) + (threadIdx.x / ws);
+    if (warp_id >= NSEG) return;
+
+    const int64_t s = warp_id;
+    const int64_t start = row_ptr[s];
+    const int64_t end   = row_ptr[s + 1];
+
+    double acc = 0.0;
+    for (int64_t e = start + lane; e < end; e += ws) {
+        acc += val[e] * w[e];
+    }
+    // full-warp inclusive->exclusive reduction (fixed tree order => deterministic)
+    for (int offset = ws / 2; offset >= 1; offset >>= 1) {
+        acc += __shfl_down(acc, offset, ws);
+    }
+    if (lane == 0) out[s] = acc;
+}
+
+// launcher (host side, lives in the device translation unit)
+void srr_launch(double* out, const int64_t* row_ptr, const double* val,
+                const double* w, int64_t NSEG)
+{
+    const int warps_per_block = 8;              // 512 threads/block
+    const int threads = warps_per_block * 64;
+    int64_t nblocks = (NSEG + warps_per_block - 1) / warps_per_block;
+    if (nblocks <= 0) return;
+    srr_kernel<<<(unsigned)nblocks, threads>>>(out, row_ptr, val, w, NSEG);
+}

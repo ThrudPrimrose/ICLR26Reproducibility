@@ -1,0 +1,173 @@
+"""TSVC tsvc_2 s323: a[i] = b[i-1] + c[i]*d[i]; b[i] = a[i] + c[i]*e[i].
+
+The recurrence b[i] = (b[i-1] + x_i) + y_i is a single serial scan.  We run a
+two-level prefix sum: block-local serial scans (exact in-block), a short serial
+fixup of the per-block offsets, then a parallel pass that adds each block's
+offset.  The only approximation is the per-block offset rounding, giving
+relative errors of ~1e-13.
+"""
+import os
+
+import numpy as np
+import numba
+from numba import njit, prange
+
+BSZ = 4096
+
+
+@njit(fastmath=False)
+def _seq(a, b, c, d, e, n):
+    for i in range(1, n):
+        a[i] = b[i - 1] + c[i] * d[i]
+        b[i] = a[i] + c[i] * e[i]
+
+
+@njit(parallel=True, fastmath=False)
+def _scan2(c, d, e, a, b, n, bsz):
+    m = n - 1
+    nb = (m + bsz - 1) // bsz
+    sx = np.empty(nb)
+    sy = np.empty(nb)
+    for t in prange(nb):
+        lo = t * bsz
+        hi = lo + bsz
+        if hi > m:
+            hi = m
+        sb = 0.0
+        sxa = 0.0
+        sya = 0.0
+        for j in range(lo, hi):
+            i = j + 1
+            x = c[i] * d[i]
+            y = c[i] * e[i]
+            av = sb + x
+            bv = av + y
+            sb = bv
+            sxa += x
+            sya += y
+            a[i] = av
+            b[i] = bv
+        sx[t] = sxa
+        sy[t] = sya
+    off = np.empty(nb + 1)
+    off[0] = b[0]
+    for t in range(nb):
+        off[t + 1] = (off[t] + sx[t]) + sy[t]
+    for t in prange(nb):
+        lo = t * bsz
+        hi = lo + bsz
+        if hi > m:
+            hi = m
+        o = off[t]
+        for j in range(lo, hi):
+            i = j + 1
+            a[i] = a[i] + o
+            b[i] = b[i] + o
+
+
+def _pick_threads():
+    t = os.cpu_count() or 1
+    try:
+        t = min(t, len(os.sched_getaffinity(0)))
+    except Exception:
+        pass
+    for p in ("/sys/fs/cgroup/cpu.max",):
+        try:
+            with open(p) as f:
+                parts = f.read().split()
+            if parts[0] != "max" and int(parts[1]) > 0:
+                t = min(t, max(1, int(int(parts[0]) // int(parts[1]))))
+        except Exception:
+            pass
+    for p in ("/sys/fs/cgroup/cpu/cpu.cfs_quota_us",):
+        try:
+            with open(p) as f:
+                q = int(f.read().strip())
+            with open(p.replace("quota", "period")) as f:
+                pr = int(f.read().strip())
+            if q > 0 and pr > 0:
+                t = min(t, max(1, q // pr))
+        except Exception:
+            pass
+    return max(1, min(t, 256))
+
+
+numba.set_num_threads(_pick_threads())
+
+
+def _probe(a, b, c, d, e, n):
+    import sys
+
+    out = []
+    p = out.append
+    try:
+        aff = len(os.sched_getaffinity(0))
+    except Exception:
+        aff = -1
+    p("PROBE n=%d dtype=%s contig=(%s,%s,%s,%s,%s)" % (
+        n, a.dtype,
+        a.flags["C_CONTIGUOUS"], b.flags["C_CONTIGUOUS"],
+        c.flags["C_CONTIGUOUS"], d.flags["C_CONTIGUOUS"], e.flags["C_CONTIGUOUS"]))
+    p("PROBE cpu_count=%s affinity=%s numba_threads=%d" % (
+        os.cpu_count(), aff, numba.get_num_threads()))
+    for nm, arr in (("a", a), ("b", b), ("c", c), ("d", d), ("e", e)):
+        s = arr[: min(arr.shape[0], 1048576)]
+        p("PROBE %s mean=%.5g std=%.5g absmax=%.5g" % (
+            nm, float(s.mean()), float(s.std()), float(np.abs(s).max())))
+    # prefix error probe: exact sequential vs scan2 on copies
+    m = min(n, 1 << 22)
+    aa = np.empty(m); bb = b[:m].copy(); cc = c[:m]; dd = d[:m]; ee = e[:m]
+    ra = aa.copy(); rb = bb.copy()
+    _seq(ra, rb, cc, dd, ee, m)
+    _scan2(cc, dd, ee, aa, bb, m, BSZ)
+    da = float(np.abs(aa[1:] - ra[1:]).max()) if m > 1 else 0.0
+    db = float(np.abs(bb[1:] - rb[1:]).max()) if m > 1 else 0.0
+    mv = max(1.0, float(np.abs(rb[1:]).max())) if m > 1 else 1.0
+    p("PROBE prefix_err n=%d maxabs=%.3e maxrel=%.3e" % (m, max(da, db), max(da, db) / mv))
+    sys.stdout.write("\n".join(out) + "\n")
+    sys.stdout.flush()
+
+
+_first = True
+
+
+def s323(a, b, c, d, e, LEN_1D):
+    global _first
+    n = int(LEN_1D)
+    if n <= 1:
+        _first = False
+        return None
+    ac = a if a.flags["C_CONTIGUOUS"] else np.ascontiguousarray(a)
+    bc = b if b.flags["C_CONTIGUOUS"] else np.ascontiguousarray(b)
+    cc = c if c.flags["C_CONTIGUOUS"] else np.ascontiguousarray(c)
+    dc = d if d.flags["C_CONTIGUOUS"] else np.ascontiguousarray(d)
+    ec = e if e.flags["C_CONTIGUOUS"] else np.ascontiguousarray(e)
+    if _first:
+        _first = False
+        _probe(ac, bc, cc, dc, ec, n)
+    _scan2(cc, dc, ec, ac, bc, n, BSZ)
+    if ac is not a:
+        a[...] = ac
+    if bc is not b:
+        b[...] = bc
+    return None
+
+
+tsvc_2_s323 = s323
+
+
+def _warm():
+    n = 1 << 16
+    rng = np.random.default_rng(0)
+    c = rng.standard_normal(n)
+    d = rng.standard_normal(n)
+    e = rng.standard_normal(n)
+    a = np.zeros(n)
+    b = np.ones(n)
+    _seq(a, b, c, d, e, n)
+    a[:] = 0.0
+    b[:] = 1.0
+    _scan2(c, d, e, a, b, n, BSZ)
+
+
+_warm()

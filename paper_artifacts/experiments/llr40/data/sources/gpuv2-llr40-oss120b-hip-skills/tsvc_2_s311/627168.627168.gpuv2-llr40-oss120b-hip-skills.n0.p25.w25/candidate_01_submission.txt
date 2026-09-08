@@ -1,0 +1,51 @@
+#include <hip/hip_runtime.h>
+#include <hipcub/block/block_reduce.hpp>
+#include <cstddef>
+#include <cstdint>
+
+extern "C" __global__ void reduce_sum_kernel(const double * __restrict__ a,
+                                             double * __restrict__ sum_out,
+                                             const int64_t N) {
+    using BlockReduce = hipcub::BlockReduce<double, 256>;
+    __shared__ typename BlockReduce::TempStorage temp_storage;
+    double thread_sum = 0.0;
+    int tid = threadIdx.x;
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + tid;
+    int64_t stride = static_cast<int64_t>(blockDim.x) * gridDim.x;
+    for (int64_t i = idx; i < N; i += stride) {
+        thread_sum += a[i];
+    }
+    double block_sum = BlockReduce(temp_storage).Sum(thread_sum);
+    if (tid == 0) {
+        atomicAdd(sum_out, block_sum);
+    }
+}
+
+extern "C" void tsvc_2_s311_fp64_device(const double * __restrict__ a,
+                                         double * __restrict__ sum_out,
+                                         const int64_t LEN_1D) {
+    hipError_t err = hipMemset(sum_out, 0, sizeof(double));
+    if (err != hipSuccess) {
+        const char *msg = hipGetErrorString(err);
+        fprintf(stderr, "HIP error in hipMemset: %s\n", msg);
+        abort();
+    }
+    constexpr int BLOCK_SIZE = 256;
+    int grid = static_cast<int>((LEN_1D + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    if (grid > 65535) grid = 65535;
+    hipLaunchKernelGGL(reduce_sum_kernel,
+                       dim3(grid), dim3(BLOCK_SIZE), 0, 0,
+                       a, sum_out, LEN_1D);
+    err = hipGetLastError();
+    if (err != hipSuccess) {
+        const char *msg = hipGetErrorString(err);
+        fprintf(stderr, "HIP error launching reduce_sum_kernel: %s\n", msg);
+        abort();
+    }
+    err = hipDeviceSynchronize();
+    if (err != hipSuccess) {
+        const char *msg = hipGetErrorString(err);
+        fprintf(stderr, "HIP error after synchronization: %s\n", msg);
+        abort();
+    }
+}

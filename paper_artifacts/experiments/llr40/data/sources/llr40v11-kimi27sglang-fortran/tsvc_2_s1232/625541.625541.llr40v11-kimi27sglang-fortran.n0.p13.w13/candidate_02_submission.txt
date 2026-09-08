@@ -1,0 +1,19 @@
+subroutine tsvc_2_s1232_fp64(aa, bb, cc, LEN_2D, VLEN) bind(c)
+  use iso_c_binding
+  implicit none
+  real(c_double), intent(inout) :: aa(0:*)
+  real(c_double), intent(in) :: bb(0:*)
+  real(c_double), intent(in) :: cc(0:*)
+  integer(c_int64_t), value, intent(in) :: LEN_2D, VLEN
+  integer(c_int64_t) :: i, j, jmax
+
+  !$omp parallel do private(j, jmax) schedule(dynamic)
+  do i = 0, LEN_2D - 1
+    jmax = i / VLEN
+    if (jmax > LEN_2D - 1) jmax = LEN_2D - 1
+    do j = 0, jmax
+      aa(i * LEN_2D + j) = bb(i * LEN_2D + j) + cc(i * LEN_2D + j)
+    end do
+  end do
+  !$omp end parallel do
+end subroutine tsvc_2_s1232_fp64

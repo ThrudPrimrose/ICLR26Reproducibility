@@ -1,0 +1,23 @@
+/* Simple GPU offload version of tsvc_2_s231_fp64.
+ * The operation is a column-wise prefix sum:
+ *   aa[j,i] = aa[j-1,i] + bb[j,i] for j=1..N-1, i=0..N-1.
+ *
+ * We parallelize over the row index i using a combined
+ * "target teams distribute parallel for" construct. This offloads the outer
+ * loop to the accelerator, letting each thread handle one row. The inner
+ * column loop remains sequential because of the data dependency across j.
+ */
+
+#include <stddef.h>
+#include <stdint.h>
+
+void tsvc_2_s231_fp64(double *restrict aa, const double *restrict bb, const int64_t LEN_2D) {
+    #pragma omp target teams distribute parallel for \
+        map(tofrom: aa[0:LEN_2D*LEN_2D]) map(to: bb[0:LEN_2D*LEN_2D])
+    for (int64_t i = 0; i < LEN_2D; ++i) {
+        for (int64_t j = 1; j < LEN_2D; ++j) {
+            aa[j * LEN_2D + i] = aa[(j - 1) * LEN_2D + i] + bb[j * LEN_2D + i];
+        }
+    }
+}
+

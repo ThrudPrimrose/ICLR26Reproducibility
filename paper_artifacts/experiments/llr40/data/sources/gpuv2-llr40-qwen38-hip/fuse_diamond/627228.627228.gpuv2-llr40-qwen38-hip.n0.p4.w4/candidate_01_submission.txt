@@ -1,0 +1,38 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void __launch_bounds__(256) fuse_diamond_kernel(
+    const double *__restrict__ a, double *__restrict__ out, long long n) {
+    const long long stride = (long long)gridDim.x * blockDim.x;
+    const long long i0 = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    const long long n4 = n >> 2;
+    if (((reinterpret_cast<uintptr_t>(a) | reinterpret_cast<uintptr_t>(out)) & 31ULL) == 0) {
+        const double4 *__restrict__ a4 = reinterpret_cast<const double4*>(a);
+        double4 *__restrict__ o4 = reinterpret_cast<double4*>(out);
+        for (long long i = i0; i < n4; i += stride) {
+            double4 v = a4[i];
+            double4 o;
+            double tx = v.x * v.x; o.x = (tx + 1.0) * (tx - 1.0);
+            double ty = v.y * v.y; o.y = (ty + 1.0) * (ty - 1.0);
+            double tz = v.z * v.z; o.z = (tz + 1.0) * (tz - 1.0);
+            double tw = v.w * v.w; o.w = (tw + 1.0) * (tw - 1.0);
+            o4[i] = o;
+        }
+    } else {
+        for (long long i = i0; i < n; i += stride) {
+            double t = a[i] * a[i];
+            out[i] = (t + 1.0) * (t - 1.0);
+        }
+        return;
+    }
+    const long long rem = n - (n4 << 2);
+    if (rem != 0 && i0 < rem) {
+        const long long j = (n4 << 2) + i0;
+        double t = a[j] * a[j];
+        out[j] = (t + 1.0) * (t - 1.0);
+    }
+}
+
+extern "C" void fuse_diamond_launch(const double* a, double* out, long long n, int blocks, int threads) {
+    fuse_diamond_kernel<<<blocks, threads>>>(a, out, n);
+}

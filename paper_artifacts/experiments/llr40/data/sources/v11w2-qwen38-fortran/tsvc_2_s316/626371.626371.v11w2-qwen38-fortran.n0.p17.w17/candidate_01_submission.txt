@@ -1,0 +1,49 @@
+! TSVC tsvc_2 s316: x = min over a(1..LEN_1D); result(1) = x
+! C-ABI entry: void tsvc_2_s316_fp64(const double* a, double* result, int64_t LEN_1D)
+subroutine tsvc_2_s316_fp64(a, r, len_1d) bind(C, name='tsvc_2_s316_fp64')
+  use, intrinsic :: iso_c_binding, only: c_double, c_int64_t
+  use, intrinsic :: omp_lib, only: omp_get_num_threads, omp_get_thread_num
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_1d
+  real(c_double), dimension(len_1d), intent(in) :: a
+  real(c_double), dimension(1), intent(out) :: r
+  real(c_double) :: best, x1, x2, x3, x4
+  integer(c_int64_t) :: n, chunk, s, e, i, n4
+  integer :: nt, tid
+
+  n = len_1d
+  if (n == 1) then
+     r(1) = a(1)
+     return
+  end if
+
+  best = a(1)
+!$omp parallel num_threads(64) &
+!$omp      default(none) shared(a, n) &
+!$omp      private(nt, tid, chunk, s, e, i, n4, x1, x2, x3, x4) &
+!$omp      reduction(min:best)
+  nt  = omp_get_num_threads()
+  tid = omp_get_thread_num()
+  chunk = (n + nt - 1) / nt
+  s = min(tid * chunk + 1, n)
+  e = min(s + chunk - 1, n)
+
+  x1 = a(1); x2 = a(1); x3 = a(1); x4 = a(1)
+  n4 = (e - s + 1) / 4
+  do i = s, s + 4*(n4-1), 4
+     x1 = min(x1, a(i))
+     x2 = min(x2, a(i+1))
+     x3 = min(x3, a(i+2))
+     x4 = min(x4, a(i+3))
+  end do
+  i = s + 4*n4
+  do while (i <= e)
+     best = min(best, a(i))
+     i = i + 1
+  end do
+  best = min(best, min(x1, x2))
+  best = min(best, min(x3, x4))
+!$omp end parallel
+
+  r(1) = best
+end subroutine tsvc_2_s316_fp64

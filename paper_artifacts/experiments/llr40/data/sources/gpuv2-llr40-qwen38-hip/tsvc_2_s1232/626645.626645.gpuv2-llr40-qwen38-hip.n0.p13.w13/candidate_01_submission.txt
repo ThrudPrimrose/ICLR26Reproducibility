@@ -1,0 +1,13 @@
+#include <hip/hip_runtime.h>
+
+__global__ void s1232_kernel(double* __restrict__ aa,
+                             const double* __restrict__ bb,
+                             const double* __restrict__ cc,
+                             long long N, long long VLEN) {
+  long long j = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+  long long i = (long long)blockIdx.y * blockDim.y + threadIdx.y;
+  if (i >= N || j >= N) return;
+  if (i < j * VLEN) return;
+  long long idx = i * N + j;
+  aa[idx] = bb[idx] + cc[idx];
+}

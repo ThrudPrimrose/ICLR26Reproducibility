@@ -1,0 +1,64 @@
+// Device half: kernels + launcher for tsvc_2_vtvtv (a[i] = a[i]*b[i]*c[i], fp64).
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define TSVT_CHECK(expr)                                                    \
+    do {                                                                    \
+        hipError_t _e = (expr);                                             \
+        if (_e != hipSuccess) {                                             \
+            std::fprintf(stderr, "HIP error %s (%d) at %s:%d\n",            \
+                         hipGetErrorString(_e), (int)_e, __FILE__, __LINE__); \
+            std::abort();                                                   \
+        }                                                                   \
+    } while (0)
+
+// Small-N path: one element per thread.
+extern "C" __global__ void __launch_bounds__(256) tsvc_vtvtv_scalar(
+    double * __restrict__ a, const double * __restrict__ b, const double * __restrict__ c,
+    const int64_t n) {
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) a[i] = a[i] * b[i] * c[i];
+}
+
+// Large-N path: 8 doubles (64B) per thread, 256-bit vector loads/stores.
+struct alignas(64) d8 { double v[8]; };
+
+extern "C" __global__ void __launch_bounds__(256) tsvc_vtvtv_vec(
+    d8 * __restrict__ av, const d8 * __restrict__ bv, const d8 * __restrict__ cv,
+    double * __restrict__ a, const double * __restrict__ b, const double * __restrict__ c,
+    const int64_t nvec, const int64_t n) {
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    int64_t stride = (int64_t)gridDim.x * blockDim.x;
+    for (; i < nvec; i += stride) {
+        d8 va = av[i], vb = bv[i], vc = cv[i];
+#pragma unroll
+        for (int j = 0; j < 8; ++j) va.v[j] = va.v[j] * vb.v[j] * vc.v[j];
+        av[i] = va;
+    }
+    // tail (0..7 elements), done by the first `r` linear threads
+    int64_t g = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    int64_t r = n - nvec * 8;
+    if (g < r) {
+        int64_t j = nvec * 8 + g;
+        a[j] = a[j] * b[j] * c[j];
+    }
+}
+
+extern "C" void tsvc_vtvtv_launch(double *a, const double *b, const double *c, const int64_t n) {
+    if (n <= 0) return;
+    uintptr_t base = (uintptr_t)a | (uintptr_t)b | (uintptr_t)c;
+    const int block = 256;
+    if (n >= 4096 && (base & 63u) == 0u) {
+        int64_t nvec = n >> 3;
+        int64_t grid = (nvec + block - 1) / block;
+        if (grid > (1LL << 29)) grid = 1LL << 29;
+        tsvc_vtvtv_vec<<<(int)grid, block>>>((d8 *)a, (const d8 *)b, (const d8 *)c, a, b, c, nvec, n);
+    } else {
+        int64_t grid = (n + block - 1) / block;
+        if (grid > (1LL << 29)) grid = 1LL << 29;
+        tsvc_vtvtv_scalar<<<(int)grid, block>>>(a, b, c, n);
+    }
+    TSVT_CHECK(hipGetLastError());
+}

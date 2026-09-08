@@ -1,0 +1,17 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void ext_break_capture_kernel(const double *a, int64_t *out_index, double *out_value, int64_t LEN_1D) {
+    int64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= LEN_1D) return;
+    double val = a[idx];
+    const double K = 1.0;
+    if (val > K) {
+        unsigned long long *idx_ptr = reinterpret_cast<unsigned long long*>(out_index);
+        unsigned long long old = atomicMin(idx_ptr, static_cast<unsigned long long>(idx));
+        if (static_cast<unsigned long long>(idx) < old) {
+            out_index[0] = idx;
+            out_value[0] = val;
+        }
+    }
+}

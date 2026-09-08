@@ -1,0 +1,29 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s235_fp64(double *restrict a, double *restrict aa, const double *restrict b, const double *restrict bb,
+                      const double *restrict c, const int64_t LEN_2D) {
+    // Parallelize across i (columns), each column independent.
+    #pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        int nthreads = omp_get_num_threads();
+        int64_t chunk = (LEN_2D + nthreads - 1) / nthreads;
+        int64_t i_start = tid * chunk;
+        int64_t i_end = i_start + chunk;
+        if (i_end > LEN_2D) i_end = LEN_2D;
+
+        // Update a[i] for this thread's columns
+        for (int64_t i = i_start; i < i_end; ++i) {
+            a[i] += b[i] * c[i];
+        }
+
+        // Compute aa prefix sums for this thread's columns
+        for (int64_t j = 1; j < LEN_2D; ++j) {
+            #pragma omp simd
+            for (int64_t i = i_start; i < i_end; ++i) {
+                aa[j * LEN_2D + i] = aa[(j - 1) * LEN_2D + i] + bb[j * LEN_2D + i] * a[i];
+            }
+        }
+    }
+}

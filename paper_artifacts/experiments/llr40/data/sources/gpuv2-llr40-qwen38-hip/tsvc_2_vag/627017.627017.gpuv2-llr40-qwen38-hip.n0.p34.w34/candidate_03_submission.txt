@@ -1,0 +1,13 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+__global__ void tsvc2_vag_kernel(double* __restrict__ a, const double* __restrict__ b,
+                                 const int32_t* __restrict__ ip, const int64_t LEN) {
+  int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < LEN) a[i] = b[ip[i]];
+}
+void tsvc2_vag_launch(double* a, const double* b, const int32_t* ip, const int64_t len) {
+  if (len <= 0) return;
+  const int tpb = 256;
+  int64_t blocks = (len + (int64_t)tpb - 1) / (int64_t)tpb;
+  tsvc2_vag_kernel<<<(unsigned)blocks, tpb>>>(a, b, ip, len);
+}

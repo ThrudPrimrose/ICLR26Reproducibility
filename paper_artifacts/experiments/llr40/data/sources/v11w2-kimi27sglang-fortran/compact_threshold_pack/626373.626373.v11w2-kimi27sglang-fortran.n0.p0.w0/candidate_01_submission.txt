@@ -1,0 +1,85 @@
+module compact_threshold_pack_mod
+  use, intrinsic :: iso_c_binding, only: c_double, c_int64_t, c_int8_t
+  use omp_lib
+  implicit none
+contains
+
+  subroutine compact_threshold_pack_fp64(out_count, packed, src, weight, LEN_1D, workspace, workspace_bytes) bind(c, name="compact_threshold_pack_fp64")
+    integer(c_int64_t), value :: LEN_1D
+    integer(c_int64_t), intent(out) :: out_count
+    real(c_double), intent(out) :: packed(LEN_1D)
+    real(c_double), intent(in) :: src(LEN_1D)
+    real(c_double), intent(in) :: weight(LEN_1D)
+    integer(c_int8_t), intent(inout) :: workspace(*)
+    integer(c_int64_t), value :: workspace_bytes
+
+    integer(c_int64_t) :: i, n, cnt, start, fin, off
+    integer :: tid, nthreads
+    integer(c_int64_t), allocatable :: counts(:), offsets(:)
+
+    n = LEN_1D
+
+    if (n <= 0_c_int64_t) then
+      out_count = 0_c_int64_t
+      return
+    end if
+
+    ! Small inputs: sequential compaction to avoid OpenMP overhead.
+    if (n < 4096_c_int64_t) then
+      cnt = 0_c_int64_t
+      do i = 1_c_int64_t, n
+        if (src(i) > 0.0_c_double) then
+          cnt = cnt + 1_c_int64_t
+          packed(cnt) = src(i) * weight(i)
+        end if
+      end do
+      out_count = cnt
+      return
+    end if
+
+    nthreads = omp_get_max_threads()
+    allocate(counts(0:nthreads), offsets(0:nthreads))
+    counts(:) = 0_c_int64_t
+
+    block
+      integer(c_int64_t) :: chunk
+      chunk = (n + int(nthreads, c_int64_t) - 1_c_int64_t) / int(nthreads, c_int64_t)
+
+      !$omp parallel default(none) shared(src, counts, n, nthreads, chunk) private(tid, i, start, fin, cnt)
+      tid = omp_get_thread_num()
+      start = int(tid, c_int64_t) * chunk + 1_c_int64_t
+      fin = min(n, start + chunk - 1_c_int64_t)
+      cnt = 0_c_int64_t
+      do i = start, fin
+        if (src(i) > 0.0_c_double) cnt = cnt + 1_c_int64_t
+      end do
+      counts(tid) = cnt
+      !$omp end parallel
+
+      offsets(0) = 0_c_int64_t
+      do tid = 1, nthreads - 1
+        offsets(tid) = offsets(tid - 1) + counts(tid - 1)
+      end do
+      offsets(nthreads) = offsets(nthreads - 1) + counts(nthreads - 1)
+
+      !$omp parallel default(none) shared(src, weight, packed, offsets, n, nthreads, chunk) private(tid, i, start, fin, off, cnt)
+      tid = omp_get_thread_num()
+      start = int(tid, c_int64_t) * chunk + 1_c_int64_t
+      fin = min(n, start + chunk - 1_c_int64_t)
+      off = offsets(tid)
+      cnt = 0_c_int64_t
+      do i = start, fin
+        if (src(i) > 0.0_c_double) then
+          packed(off + cnt + 1_c_int64_t) = src(i) * weight(i)
+          cnt = cnt + 1_c_int64_t
+        end if
+      end do
+      !$omp end parallel
+
+      out_count = offsets(nthreads)
+    end block
+
+    deallocate(counts, offsets)
+  end subroutine compact_threshold_pack_fp64
+
+end module compact_threshold_pack_mod

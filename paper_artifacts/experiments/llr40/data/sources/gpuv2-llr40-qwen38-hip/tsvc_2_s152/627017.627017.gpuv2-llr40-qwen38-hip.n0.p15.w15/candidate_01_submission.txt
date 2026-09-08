@@ -1,0 +1,40 @@
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+__global__ void k_ts152_vec4(double* __restrict__ a, double* __restrict__ b,
+                             const double* __restrict__ c, const double* __restrict__ d,
+                             const double* __restrict__ e, int64_t n) {
+  int64_t base = ((int64_t)blockIdx.x * blockDim.x + threadIdx.x) * 4;
+  if (base + 4 <= n) {
+    const double4 dv = *reinterpret_cast<const double4*>(d + base);
+    const double4 ev = *reinterpret_cast<const double4*>(e + base);
+    const double4 cv = *reinterpret_cast<const double4*>(c + base);
+    const double4 av = *reinterpret_cast<const double4*>(a + base);
+    double4 bv;
+    bv.x = dv.x * ev.x;
+    bv.y = dv.y * ev.y;
+    bv.z = dv.z * ev.z;
+    bv.w = dv.w * ev.w;
+    *reinterpret_cast<double4*>(b + base) = bv;
+    double4 av2;
+    av2.x = av.x + bv.x * cv.x;
+    av2.y = av.y + bv.y * cv.y;
+    av2.z = av.z + bv.z * cv.z;
+    av2.w = av.w + bv.w * cv.w;
+    *reinterpret_cast<double4*>(a + base) = av2;
+  } else if (base < n) {
+    for (int64_t i = base; i < n; ++i) {
+      double be = d[i] * e[i];
+      b[i] = be;
+      a[i] += be * c[i];
+    }
+  }
+}
+
+void launch_ts152(double* a, double* b, const double* c, const double* d, const double* e,
+                  int64_t n) {
+  const int tpb = 256;
+  int64_t n4 = (n + 3) / 4;
+  int64_t grid = (n4 + tpb - 1) / tpb;
+  k_ts152_vec4<<<(unsigned)grid, tpb>>>(a, b, c, d, e, n);
+}

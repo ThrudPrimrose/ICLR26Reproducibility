@@ -1,0 +1,35 @@
+subroutine tsvc_2_s233_fp64(aa, bb, cc, LEN_2D, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_2D, workspace_size
+  real(c_double), intent(inout) :: aa(LEN_2D, LEN_2D)
+  real(c_double), intent(inout) :: bb(LEN_2D, LEN_2D)
+  real(c_double), intent(in) :: cc(LEN_2D, LEN_2D)
+  integer(c_int8_t), intent(inout) :: workspace(workspace_size)
+  integer(c_int64_t) :: i, j
+  real(c_double) :: s
+
+  !$omp parallel private(i, j)
+  do j = 9, LEN_2D
+    !$omp do simd
+    do i = 9, LEN_2D
+      aa(i, j) = aa(i, j - 1) + cc(i, j)
+    end do
+    !$omp end do simd
+  end do
+  !$omp end parallel
+
+  !$omp parallel do private(s, i) schedule(static)
+  do j = 9, LEN_2D
+    s = bb(8, j)
+    !$omp simd reduction(inscan, +:s)
+    do i = 9, LEN_2D
+      s = s + cc(i, j)
+      !$omp scan inclusive(s)
+      bb(i, j) = s
+    end do
+    !$omp end simd
+  end do
+  !$omp end parallel do
+
+end subroutine tsvc_2_s233_fp64

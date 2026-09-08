@@ -1,0 +1,35 @@
+#include <math.h>
+#include <stdint.h>
+#include <omp.h>
+
+typedef struct { double maxv; int64_t index; } mx_t;
+
+static inline void mx_combine(mx_t *out, const mx_t *in) {
+  if (in->maxv > out->maxv) { *out = *in; return; }
+  if (in->maxv == out->maxv && in->index < out->index) out->index = in->index;
+}
+
+#pragma omp declare reduction(mxcomb:mx_t : mx_combine(&omp_out, &omp_in)) \
+    initializer(omp_priv = (mx_t){-INFINITY, INT64_MAX})
+
+static const double *g_dev_a = nullptr;
+static int64_t g_span = 0;
+
+void tsvc_2_s318_fp64(const double *restrict a, double *restrict result, const int64_t LEN_1D, const int64_t inc) {
+  const int64_t span = (LEN_1D - 1) * inc + 1;
+  if (g_dev_a != a || span != g_span) {
+    if (g_dev_a != nullptr) {
+      #pragma omp target exit data map(delete: g_dev_a[0:g_span])
+    }
+    #pragma omp target enter data map(to: a[0:span])
+    g_dev_a = a;
+    g_span = span;
+  }
+  mx_t r;
+  #pragma omp target teams distribute parallel for reduction(mxcomb:r)
+  for (int64_t i = 0; i < LEN_1D; ++i) {
+    double v = fabs(a[i * inc]);
+    if (v > r.maxv) { r.maxv = v; r.index = i; }
+  }
+  result[0] = r.maxv + (double)r.index;
+}

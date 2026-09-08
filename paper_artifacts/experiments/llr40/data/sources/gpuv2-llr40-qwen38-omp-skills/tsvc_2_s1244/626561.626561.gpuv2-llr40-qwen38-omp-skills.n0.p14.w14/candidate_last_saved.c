@@ -1,0 +1,23 @@
+/* Full GPU: one target data keeps everything resident across both passes. */
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s1244_fp64(double *restrict a, const double *restrict b, const double *restrict c, double *restrict d,
+                       const int64_t LEN_1D) {
+
+  const int64_t n = LEN_1D - 1;
+  if (n <= 0) return;
+
+  #pragma omp target data map(tofrom: a[0:LEN_1D]) map(to: b[0:n]) map(to: c[0:n]) map(from: d[0:n])
+  {
+    #pragma omp target teams distribute parallel for
+    for (int64_t i = 0; i < n; i++) {
+      d[i] = b[i] + c[i] * c[i] + b[i] * b[i] + c[i] + a[i + 1];
+    }
+
+    #pragma omp target teams distribute parallel for
+    for (int64_t i = 0; i < n; i++) {
+      a[i] = b[i] + c[i] * c[i] + b[i] * b[i] + c[i];
+    }
+  }
+}

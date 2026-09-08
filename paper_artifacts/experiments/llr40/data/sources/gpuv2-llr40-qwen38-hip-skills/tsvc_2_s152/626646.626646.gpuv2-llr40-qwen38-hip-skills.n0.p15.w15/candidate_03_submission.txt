@@ -1,0 +1,31 @@
+#include <cstdint>
+#include <hip/hip_runtime.h>
+
+#define HIP_CHECK(call)                                                                  \
+  do {                                                                                   \
+    hipError_t err__ = (call);                                                           \
+    if (err__ != hipSuccess) {                                                           \
+      fprintf(stderr, "HIP error %s at %s:%d\n", hipGetErrorString(err__), __FILE__,     \
+              __LINE__);                                                                 \
+      abort();                                                                           \
+    }                                                                                    \
+  } while (0)
+
+__global__ void tsvc_2_s152_kernel(double *__restrict__ a, double *__restrict__ b,
+                                   const double *__restrict__ c, const double *__restrict__ d,
+                                   const double *__restrict__ e, const int64_t n) {
+  int64_t i = (int64_t)blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+  if (i < n) {
+    double de = d[i] * e[i];
+    b[i] = de;
+    a[i] += de * c[i];
+  }
+}
+
+void tsvc_2_s152_launch(double *a, double *b, const double *c, const double *d,
+                        const double *e, const int64_t n) {
+  const int64_t block = 256;
+  const int64_t grid = (n + block - 1) / block;
+  tsvc_2_s152_kernel<<<(unsigned)grid, (unsigned)block>>>(a, b, c, d, e, n);
+  HIP_CHECK(hipGetLastError());
+}

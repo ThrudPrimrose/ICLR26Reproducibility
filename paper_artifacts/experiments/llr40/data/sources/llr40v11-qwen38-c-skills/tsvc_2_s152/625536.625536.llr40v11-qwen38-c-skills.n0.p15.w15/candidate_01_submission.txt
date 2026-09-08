@@ -1,0 +1,78 @@
+#include <stdint.h>
+#include <omp.h>
+#include <immintrin.h>
+
+static void body(double *restrict a, double *restrict b, const double *restrict c, const double *restrict d,
+                 const double *restrict e, int64_t i0, int64_t i1) {
+  // peel to 64B alignment of b (stream store requirement)
+  uintptr_t mis = (uintptr_t)(b + i0) & 63;
+  if (mis) {
+    int64_t k = (int64_t)(((64 - mis) & 63) >> 3);
+    for (; i0 < i1 && k > 0; ++i0, --k) {
+      double t = d[i0] * e[i0];
+      b[i0] = t;
+      a[i0] += t * c[i0];
+    }
+  }
+  int64_t end4 = i1 - ((i1 - i0) & 31);
+  for (; i0 < end4; i0 += 32) {
+    __m512d d0 = _mm512_loadu_pd(d + i0);
+    __m512d d1 = _mm512_loadu_pd(d + i0 + 8);
+    __m512d d2 = _mm512_loadu_pd(d + i0 + 16);
+    __m512d d3 = _mm512_loadu_pd(d + i0 + 24);
+    __m512d e0 = _mm512_loadu_pd(e + i0);
+    __m512d e1 = _mm512_loadu_pd(e + i0 + 8);
+    __m512d e2 = _mm512_loadu_pd(e + i0 + 16);
+    __m512d e3 = _mm512_loadu_pd(e + i0 + 24);
+    __m512d b0 = _mm512_mul_pd(d0, e0);
+    __m512d b1 = _mm512_mul_pd(d1, e1);
+    __m512d b2 = _mm512_mul_pd(d2, e2);
+    __m512d b3 = _mm512_mul_pd(d3, e3);
+    _mm512_stream_pd(b + i0, b0);
+    _mm512_stream_pd(b + i0 + 8, b1);
+    _mm512_stream_pd(b + i0 + 16, b2);
+    _mm512_stream_pd(b + i0 + 24, b3);
+    __m512d c0 = _mm512_loadu_pd(c + i0);
+    __m512d a0 = _mm512_loadu_pd(a + i0);
+    _mm512_storeu_pd(a + i0, _mm512_fmadd_pd(b0, c0, a0));
+    __m512d c1 = _mm512_loadu_pd(c + i0 + 8);
+    __m512d a1 = _mm512_loadu_pd(a + i0 + 8);
+    _mm512_storeu_pd(a + i0 + 8, _mm512_fmadd_pd(b1, c1, a1));
+    __m512d c2 = _mm512_loadu_pd(c + i0 + 16);
+    __m512d a2 = _mm512_loadu_pd(a + i0 + 16);
+    _mm512_storeu_pd(a + i0 + 16, _mm512_fmadd_pd(b2, c2, a2));
+    __m512d c3 = _mm512_loadu_pd(c + i0 + 24);
+    __m512d a3 = _mm512_loadu_pd(a + i0 + 24);
+    _mm512_storeu_pd(a + i0 + 24, _mm512_fmadd_pd(b3, c3, a3));
+  }
+  for (; i0 + 8 <= i1; i0 += 8) {
+    __m512d d0 = _mm512_loadu_pd(d + i0);
+    __m512d e0 = _mm512_loadu_pd(e + i0);
+    __m512d b0 = _mm512_mul_pd(d0, e0);
+    _mm512_stream_pd(b + i0, b0);
+    __m512d c0 = _mm512_loadu_pd(c + i0);
+    __m512d a0 = _mm512_loadu_pd(a + i0);
+    _mm512_storeu_pd(a + i0, _mm512_fmadd_pd(b0, c0, a0));
+  }
+  for (; i0 < i1; ++i0) {
+    double t = d[i0] * e[i0];
+    b[i0] = t;
+    a[i0] += t * c[i0];
+  }
+}
+
+void tsvc_2_s152_fp64(double *restrict a, double *restrict b, const double *restrict c, const double *restrict d,
+                      const double *restrict e, const int64_t LEN_1D) {
+  if (LEN_1D <= 0) return;
+  int nt = omp_get_max_threads();
+  if (nt < 1) nt = 1;
+  int64_t base = LEN_1D / nt;
+  int64_t rem = LEN_1D % nt;
+#pragma omp parallel
+  {
+    int tid = omp_get_thread_num();
+    int64_t lo = tid * base + (tid < rem ? tid : rem);
+    int64_t hi = lo + base + (tid < rem ? 1 : 0);
+    body(a, b, c, d, e, lo, hi);
+  }
+}

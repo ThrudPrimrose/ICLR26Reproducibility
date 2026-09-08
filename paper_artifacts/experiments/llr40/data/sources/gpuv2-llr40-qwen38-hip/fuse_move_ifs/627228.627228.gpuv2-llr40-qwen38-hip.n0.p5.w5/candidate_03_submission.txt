@@ -1,0 +1,60 @@
+#include <hip/hip_runtime.h>
+
+__global__ void fmif_kernel(double* __restrict__ a, double* __restrict__ b,
+                            const double* __restrict__ cond,
+                            const double* __restrict__ src, long long K,
+                            long long N) {
+  long long j = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+  long long i = (long long)blockIdx.y * blockDim.y + threadIdx.y;
+  if (j >= N) return;
+  long long idx = i * N + j;
+  double s = src[idx];
+  if (K > 0) b[idx] = s + 1.0;
+  if (cond[i] > 0.0) a[idx] = s * 2.0;
+}
+
+// Vectorized: 16B pairs, works for ANY N (pair may straddle a row boundary).
+__global__ void fmif_v2o(double* __restrict__ a, double* __restrict__ b,
+                         const double* __restrict__ cond,
+                         const double* __restrict__ src, long long K,
+                         long long N) {
+  long long t = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+  long long n2 = (long long)N * N;
+  long long total2 = (n2 + 1) >> 1;
+  if (t >= total2) return;
+  long long idx = t << 1;
+  if (idx + 1 >= n2) {  // last single element when N*N is odd
+    double s = src[idx];
+    long long i0 = idx / N;
+    if (K > 0) b[idx] = s + 1.0;
+    if (cond[i0] > 0.0) a[idx] = s * 2.0;
+    return;
+  }
+  double2 s = *reinterpret_cast<const double2*>(src + idx);
+  long long i0 = idx / N;
+  long long i1 = (idx + 1) / N;
+  if (K > 0)
+    *reinterpret_cast<double2*>(b + idx) = double2{s.x + 1.0, s.y + 1.0};
+  if (i1 == i0) {
+    if (cond[i0] > 0.0)
+      *reinterpret_cast<double2*>(a + idx) = double2{s.x * 2.0, s.y * 2.0};
+  } else {
+    if (cond[i0] > 0.0) a[idx] = s.x * 2.0;
+    if (cond[i1] > 0.0) a[idx + 1] = s.y * 2.0;
+  }
+}
+
+void fmif_launch(double* a, double* b, const double* cond, const double* src,
+                 long long K, long long N) {
+  long long n2 = (long long)N * N;
+  if (n2 > 64 * 64) {
+    long long total2 = (n2 + 1) >> 1;
+    dim3 block(256);
+    dim3 grid((unsigned)((total2 + 255) / 256));
+    fmif_v2o<<<grid, block>>>(a, b, cond, src, K, N);
+  } else {
+    dim3 block(64, 1);
+    dim3 grid((unsigned)((N + 63) / 64), (unsigned)N);
+    fmif_kernel<<<grid, block>>>(a, b, cond, src, K, N);
+  }
+}

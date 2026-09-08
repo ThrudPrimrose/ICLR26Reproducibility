@@ -1,0 +1,70 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+#define TPB 256
+#define MAXB 2048
+
+__device__ __forceinline__ double wave_reduce(double s) {
+    #pragma unroll
+    for (int off = 32; off > 0; off >>= 1)
+        s += __shfl_down_sync(0xffffffffffffffffull, s, off);
+    return s;
+}
+
+__global__ void __launch_bounds__(TPB)
+k1(const double* __restrict__ c, const double* __restrict__ d, const double* __restrict__ e,
+   double* __restrict__ a, double* __restrict__ b, double* __restrict__ partials,
+   const int64_t n) {
+    const int64_t i0 = (int64_t)blockIdx.x * TPB + threadIdx.x;
+    const int64_t stride = (int64_t)gridDim.x * TPB;
+    double s = 0.0;
+    for (int64_t i = i0; i < n; i += stride) {
+        double cc = c[i];
+        double x = cc + d[i];
+        double y = cc + e[i];
+        a[i] = x;
+        b[i] = y;
+        s += x;
+        s += y;
+    }
+    s = wave_reduce(s);
+    __shared__ double wave_s[TPB / 64];
+    if ((threadIdx.x & 63) == 0) wave_s[threadIdx.x >> 6] = s;
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        double v = 0.0;
+        #pragma unroll
+        for (int j = 0; j < TPB / 64; ++j) v += wave_s[j];
+        partials[blockIdx.x] = v;
+    }
+}
+
+__global__ void __launch_bounds__(TPB)
+k2(double* __restrict__ b, const double* __restrict__ partials, const int64_t np) {
+    double s = 0.0;
+    for (int64_t i = threadIdx.x; i < np; i += TPB) s += partials[i];
+    s = wave_reduce(s);
+    __shared__ double wave_s[TPB / 64];
+    if ((threadIdx.x & 63) == 0) wave_s[threadIdx.x >> 6] = s;
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        double v = 0.0;
+        #pragma unroll
+        for (int j = 0; j < TPB / 64; ++j) v += wave_s[j];
+        b[0] = v;
+    }
+}
+
+static inline int pick_grid(const int64_t n) {
+    int64_t want = (n + TPB - 1) / TPB;
+    if (want > MAXB) want = MAXB;
+    if (want < 1) want = 1;
+    return (int)want;
+}
+
+void tsvc2_s319_launch(double* a, double* b, const double* c, const double* d, const double* e,
+                       const int64_t n, double* ws) {
+    const int grid = pick_grid(n);
+    k1<<<grid, TPB>>>(c, d, e, a, b, ws, n);
+    k2<<<1, TPB>>>(b, ws, grid);
+}

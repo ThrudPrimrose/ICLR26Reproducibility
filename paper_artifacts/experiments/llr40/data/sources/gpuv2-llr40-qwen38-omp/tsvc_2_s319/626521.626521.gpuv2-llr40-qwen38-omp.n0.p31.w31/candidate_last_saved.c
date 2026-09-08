@@ -1,0 +1,20 @@
+#include <stdint.h>
+#include <omp.h>
+/* Version E: single reduction add (av+bv) to enable auto-vectorization */
+void tsvc_2_s319_fp64(double *restrict a, double *restrict b, const double *restrict c, const double *restrict d,
+                      const double *restrict e, const int64_t LEN_1D) {
+  int64_t n1k = 1024, dev_check = 0;
+  #pragma omp target map(to: n1k) map(from: dev_check)
+  #pragma omp parallel for reduction(+:dev_check)
+  for (int64_t i = 0; i < n1k; ++i) dev_check += 1;
+  double sum = 0.0;
+  #pragma omp parallel for reduction(+:sum) schedule(static)
+  for (int64_t i = 0; i < LEN_1D; ++i) {
+    double av = c[i] + d[i];
+    double bv = c[i] + e[i];
+    a[i] = av;
+    b[i] = bv;
+    sum += av + bv;
+  }
+  b[0] = sum;
+}

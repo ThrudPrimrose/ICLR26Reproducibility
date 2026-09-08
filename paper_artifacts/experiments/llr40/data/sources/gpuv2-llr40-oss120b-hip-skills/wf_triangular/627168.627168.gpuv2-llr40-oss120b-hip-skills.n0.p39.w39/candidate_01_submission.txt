@@ -1,0 +1,11 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void wf_triangular_kernel(double * __restrict__ a, int64_t L, int64_t s, int64_t i_min, int64_t i_max) {
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    int64_t diag_len = i_max - i_min + 1;
+    if (idx >= diag_len) return;
+    int64_t i = i_min + idx;
+    int64_t j = s - i;
+    a[i * L + j] = a[i * L + j] + a[(i - 1) * L + j] + a[i * L + (j - 1)];
+}

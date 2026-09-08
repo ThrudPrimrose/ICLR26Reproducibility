@@ -1,0 +1,78 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <omp.h>
+
+/*
+ * First-order linear recurrence with VARIABLE coefficient:
+ *   y[0] = x[0]  (seed, already set by the caller)
+ *   y[i] = c[i] * y[i-1] + x[i],  i = 1..LEN_1D-1
+ *
+ * C ABI (C linkage) -- NOTE the argument order is (c, x, y):
+ *   void scan_affine_decay_fp64(double *c, double *x, double *y,
+ *                               int64_t LEN_1D, uint8_t *workspace,
+ *                               int64_t workspace_bytes);
+ * y is updated in place; c, x read-only.
+ *
+ * Parallel two-pass blocked scan. Block k covers i in [1+kB, min(1+(k+1)B-1, n-1)].
+ *   Pass 1 (parallel over blocks, serial within): block combined transform (GAc,GBc).
+ *   Pass 2 (serial over K blocks, tiny): block input value Vin[k] = y[s_k-1].
+ *   Pass 3 (parallel over blocks, serial within): re-run recurrence from Vin[k], write y.
+ */
+void scan_affine_decay_fp64(double *c, double *x, double *y,
+                            int64_t LEN_1D, uint8_t *workspace,
+                            int64_t workspace_bytes)
+{
+    (void)workspace; (void)workspace_bytes;
+    int64_t n = LEN_1D;
+    if (n <= 1) return;
+
+    int64_t M = n - 1;                  /* number of T elements: i=1..n-1 */
+    int64_t B = 4096;                   /* block size */
+    int64_t K = (M + B - 1) / B;        /* number of blocks */
+
+    double *GAc = (double *)malloc((size_t)K * sizeof(double));
+    double *GBc = (double *)malloc((size_t)K * sizeof(double));
+    double *Vin = (double *)malloc((size_t)K * sizeof(double));
+
+    const double * __restrict cc = c;
+    const double * __restrict xx = x;
+    double * __restrict yy = y;
+
+    /* Pass 1: block combined transforms  y[e]=GAc*y[s-1]+GBc */
+    #pragma omp parallel for schedule(static)
+    for (int64_t k = 0; k < K; k++) {
+        int64_t s = 1 + k * B;
+        int64_t e = s + B - 1;
+        if (e >= n) e = n - 1;
+        double a = 1.0, b = 0.0;
+        for (int64_t i = s; i <= e; i++) {
+            b = cc[i] * b + xx[i];
+            a = cc[i] * a;
+        }
+        GAc[k] = a;
+        GBc[k] = b;
+    }
+
+    /* Pass 2: block input values (exclusive prefix over block transforms) */
+    double v = yy[0];
+    Vin[0] = v;
+    for (int64_t k = 1; k < K; k++) {
+        v = GAc[k - 1] * v + GBc[k - 1];
+        Vin[k] = v;
+    }
+
+    /* Pass 3: re-run recurrence within each block, write y */
+    #pragma omp parallel for schedule(static)
+    for (int64_t k = 0; k < K; k++) {
+        int64_t s = 1 + k * B;
+        int64_t e = s + B - 1;
+        if (e >= n) e = n - 1;
+        double vv = Vin[k];
+        for (int64_t i = s; i <= e; i++) {
+            vv = cc[i] * vv + xx[i];
+            yy[i] = vv;
+        }
+    }
+
+    free(GAc); free(GBc); free(Vin);
+}

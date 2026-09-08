@@ -1,0 +1,52 @@
+subroutine tsvc_2_s3112_fp64(a, b, LEN_1D) bind(C, name="tsvc_2_s3112_fp64")
+   use iso_c_binding
+   use omp_lib
+   implicit none
+   integer(c_int64_t), value, intent(in) :: LEN_1D
+   real(c_double), intent(in) :: a(*)
+   real(c_double), intent(out) :: b(*)
+   integer(c_int64_t) :: i, tid, nt, lo, hi
+   real(c_double) :: sum, offset_val
+   real(c_double), allocatable :: block_sum(:), offset(:)
+
+   if (LEN_1D <= 0) return
+
+   nt = omp_get_max_threads()
+   allocate(block_sum(nt))
+   allocate(offset(nt))
+   block_sum = 0.0_c_double
+
+   ! First parallel region: compute sum of each block
+   !$omp parallel private(tid, lo, hi, i, sum)
+      tid = omp_get_thread_num()
+      lo = (LEN_1D * tid) / nt + 1
+      hi = (LEN_1D * (tid + 1)) / nt
+      sum = 0.0_c_double
+      do i = lo, hi
+         sum = sum + a(i)
+      end do
+      block_sum(tid+1) = sum
+   !$omp end parallel
+
+   ! Compute offsets (prefix sum of block sums) sequentially
+   offset(1) = 0.0_c_double
+   do i = 2, nt
+      offset(i) = offset(i-1) + block_sum(i-1)
+   end do
+
+   ! Second parallel region: compute prefix sums within each block using offset
+   !$omp parallel private(tid, lo, hi, i, sum, offset_val)
+      tid = omp_get_thread_num()
+      lo = (LEN_1D * tid) / nt + 1
+      hi = (LEN_1D * (tid + 1)) / nt
+      sum = offset(tid+1)
+      do i = lo, hi
+         sum = sum + a(i)
+         b(i) = sum
+      end do
+   !$omp end parallel
+
+   deallocate(block_sum)
+   deallocate(offset)
+
+end subroutine tsvc_2_s3112_fp64

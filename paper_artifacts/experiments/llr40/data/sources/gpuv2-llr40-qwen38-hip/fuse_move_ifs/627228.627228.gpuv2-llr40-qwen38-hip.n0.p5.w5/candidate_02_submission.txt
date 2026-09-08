@@ -1,0 +1,21 @@
+#include <hip/hip_runtime.h>
+
+__global__ void fmif_kernel(double* __restrict__ a, double* __restrict__ b,
+                            const double* __restrict__ cond,
+                            const double* __restrict__ src, long long K,
+                            long long N) {
+  long long j = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+  long long i = (long long)blockIdx.y * blockDim.y + threadIdx.y;
+  if (j >= N) return;
+  long long idx = i * N + j;
+  double s = src[idx];
+  if (K > 0) b[idx] = s + 1.0;
+  if (cond[i] > 0.0) a[idx] = s * 2.0;
+}
+
+void fmif_launch(double* a, double* b, const double* cond, const double* src,
+                 long long K, long long N) {
+  dim3 block(64, 1);
+  dim3 grid((unsigned)((N + 63) / 64), (unsigned)N);
+  fmif_kernel<<<grid, block>>>(a, b, cond, src, K, N);
+}

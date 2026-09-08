@@ -1,0 +1,20 @@
+// Device half: the fused stencil kernel + launcher.
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void fuse_stencil_kernel(const double * __restrict__ a, double * __restrict__ out, int64_t n) {
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= 1 && i < n - 2) {
+        double s0 = a[i - 1] + a[i] + a[i + 1];
+        double s1 = a[i] + a[i + 1] + a[i + 2];
+        out[i] = s0 * s1;
+    }
+}
+
+extern "C" void launch_fuse_stencil(const double *a, double *out, int64_t n, hipStream_t stream) {
+    int64_t count = n - 3;           // outputs at i in [1, n-2)
+    if (count <= 0) return;
+    const int block = 256;
+    int64_t grid = (count + block - 1) / block;
+    fuse_stencil_kernel<<<(unsigned)grid, block, 0, stream>>>(a, out, n);
+}

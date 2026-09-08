@@ -1,0 +1,23 @@
+subroutine tsvc_2_s255_fp64(a, b, LEN_1D, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D, workspace_size
+  real(c_double), intent(inout) :: a(LEN_1D)
+  real(c_double), intent(in) :: b(LEN_1D)
+  integer(c_int8_t), intent(inout) :: workspace(workspace_size)
+  integer(c_int64_t) :: i, n
+  real(c_double) :: c
+
+  n = LEN_1D
+  c = 0.333d0
+
+  ! The scalar carry in the original reference is only b(i-1) and b(i-2)
+  ! wrapping around from the end of the array.  Peel those two iterations
+  ! and let the compiler auto-vectorize the fully independent remainder.
+  a(1) = (b(1) + b(n) + b(n - 1)) * c
+  a(2) = (b(2) + b(1) + b(n)) * c
+
+  do i = 3, n
+     a(i) = (b(i) + b(i - 1) + b(i - 2)) * c
+  end do
+end subroutine tsvc_2_s255_fp64

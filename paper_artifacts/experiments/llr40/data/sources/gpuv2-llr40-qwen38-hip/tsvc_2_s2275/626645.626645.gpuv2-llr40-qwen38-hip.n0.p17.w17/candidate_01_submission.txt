@@ -1,0 +1,49 @@
+// Device half: elementwise FMA aa += bb*cc over LEN_2D^2 elements + 1D part a = b + c*d.
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+namespace {
+
+constexpr int kThreads = 256;
+constexpr int kMaxBlocks = 16384;
+
+// Each thread does one double2 (2 contiguous doubles). Groups = N2/2.
+__global__ void __launch_bounds__(kThreads) fma2d(
+    double *aa, const double *bb, const double *cc,
+    int64_t ng2, int64_t nrem,
+    double *a, const double *b, const double *c, const double *d,
+    int64_t len1d) {
+  const double2 *vaa = (const double2 *)aa;
+  const double2 *vbb = (const double2 *)bb;
+  const double2 *vcc = (const double2 *)cc;
+  double2 *waa = (double2 *)aa;
+  int64_t gstride = (int64_t)gridDim.x * (int64_t)blockDim.x;
+  int64_t t0 = (int64_t)blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+  for (int64_t t = t0; t < ng2; t += gstride) {
+    double2 x = vaa[t];
+    double2 u = vbb[t];
+    double2 v = vcc[t];
+    x.x = fma(u.x, v.x, x.x);
+    x.y = fma(u.y, v.y, x.y);
+    waa[t] = x;
+  }
+  // tail: last nrem scalar element (nrem = N2 & 1)
+  int64_t base = ng2 << 1;
+  if (t0 < nrem) aa[base + t0] += bb[base + t0] * cc[base + t0];
+  for (int64_t i = t0; i < len1d; i += gstride) a[i] = b[i] + c[i] * d[i];
+}
+
+} // namespace
+
+extern "C" void tsvc2275_launch(double *a, double *aa, const double *b, const double *bb,
+                                const double *c, const double *cc, const double *d,
+                                int64_t len2d) {
+  int64_t n2 = len2d * len2d;
+  int64_t ng2 = n2 >> 1;
+  int64_t nrem = n2 & 1;
+  int64_t groups = (ng2 + kThreads - 1) / kThreads;
+  int blocks = groups < kMaxBlocks ? (int)groups : kMaxBlocks;
+  if (blocks < 1) blocks = 1;
+  fma2d<<<blocks, kThreads>>>(aa, bb, cc, ng2, nrem, a, b, c, d, len2d);
+  hipDeviceSynchronize();
+}

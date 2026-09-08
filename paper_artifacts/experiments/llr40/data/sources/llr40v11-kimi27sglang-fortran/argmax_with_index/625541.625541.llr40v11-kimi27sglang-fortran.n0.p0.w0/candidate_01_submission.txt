@@ -1,0 +1,63 @@
+subroutine argmax_with_index_fp64(a, out_index, out_value, LEN_1D) bind(c, name="argmax_with_index_fp64")
+  use, intrinsic :: iso_c_binding, only: c_double, c_int64_t
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D
+  real(c_double), intent(in) :: a(LEN_1D)
+  integer(c_int64_t), intent(out) :: out_index(*)
+  real(c_double), intent(out) :: out_value(*)
+
+  integer(c_int64_t) :: i, nt, tid, chunk, start, end, best_idx, li
+  real(c_double) :: lv, best_val
+  real(c_double), allocatable :: local_val(:)
+  integer(c_int64_t), allocatable :: local_idx(:)
+
+  if (LEN_1D <= 1024_c_int64_t) then
+    best_val = a(1)
+    best_idx = 1_c_int64_t
+    do i = 2_c_int64_t, LEN_1D
+      if (a(i) > best_val) then
+        best_val = a(i)
+        best_idx = i
+      end if
+    end do
+    out_value(1) = best_val
+    out_index(1) = best_idx
+    return
+  end if
+
+  nt = int(omp_get_max_threads(), c_int64_t)
+  allocate(local_val(nt), local_idx(nt))
+
+  !$omp parallel private(tid, chunk, start, end, i, lv, li)
+  tid = int(omp_get_thread_num(), c_int64_t)
+  chunk = (LEN_1D + nt - 1_c_int64_t) / nt
+  start = tid * chunk + 1_c_int64_t
+  end = min(start + chunk - 1_c_int64_t, LEN_1D)
+  lv = a(start)
+  li = start
+  do i = start + 1_c_int64_t, end
+    if (a(i) > lv) then
+      lv = a(i)
+      li = i
+    end if
+  end do
+  local_val(tid + 1_c_int64_t) = lv
+  local_idx(tid + 1_c_int64_t) = li
+  !$omp end parallel
+
+  best_val = local_val(1)
+  best_idx = local_idx(1)
+  do i = 2_c_int64_t, nt
+    if (local_val(i) > best_val) then
+      best_val = local_val(i)
+      best_idx = local_idx(i)
+    else if (local_val(i) == best_val .and. local_idx(i) < best_idx) then
+      best_idx = local_idx(i)
+    end if
+  end do
+
+  out_value(1) = best_val
+  out_index(1) = best_idx
+  deallocate(local_val, local_idx)
+end subroutine argmax_with_index_fp64

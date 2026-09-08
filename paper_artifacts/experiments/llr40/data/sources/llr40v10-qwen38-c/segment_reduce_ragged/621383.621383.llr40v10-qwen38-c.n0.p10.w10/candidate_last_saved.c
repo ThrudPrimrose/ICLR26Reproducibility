@@ -1,0 +1,75 @@
+/* Segmented dot product over a ragged CSR-style structure.
+ *
+ * C-ABI (data-verified):
+ *   arg0 = out       (pre-zeroed output buffer, NSEG doubles)
+ *   arg1 = row_ptr   (NSEG+1 int64, non-decreasing, row_ptr[NSEG] = total)
+ *   arg2 = w         (total doubles)
+ *   arg3 = val       (total doubles)
+ *   arg4 = NSEG
+ *
+ * out[s] = sum_{e in [row_ptr[s], row_ptr[s+1])} val[e] * w[e]
+ *
+ * Parallelization: segments are independent; each thread owns the segments whose
+ * start position row_ptr[s] falls in its share of the element axis.  Since the
+ * row pointers partition [0, total) and the work is proportional to element
+ * count, this balances the lognormal segment-length distribution without any
+ * scheduling overhead or atomics.  Every segment (including empty ones) is
+ * written exactly once.
+ */
+#include <stdint.h>
+#include <omp.h>
+
+/* first index s in [0, NSEG) with row_ptr[s] >= x (row_ptr non-decreasing) */
+static inline int64_t lb_seg(const int64_t *restrict rp, int64_t nseg, int64_t x)
+{
+    int64_t lo = 0, hi = nseg;
+    while (hi - lo > 1) {
+        int64_t mid = (lo + hi) >> 1;
+        if (rp[mid] >= x) hi = mid;
+        else lo = mid;
+    }
+    return lo;
+}
+
+void segment_reduce_ragged_fp64(double *restrict out, int64_t *restrict row_ptr,
+                                double *restrict w, double *restrict val, int64_t NSEG,
+                                uint8_t *restrict workspace, int64_t ws_bytes)
+{
+    (void)workspace;
+    (void)ws_bytes;
+    if (NSEG <= 0)
+        return;
+    const int64_t *restrict rp = row_ptr;
+    const int64_t total = rp[NSEG];
+    if (total <= 0)
+        return; /* out is pre-zeroed; all segments empty */
+
+    const int64_t nt = omp_get_max_threads();
+    if (nt < 2 || total < 8192) {
+        for (int64_t s = 0; s < NSEG; s++) {
+            double acc = 0.0;
+            #pragma omp simd reduction(+:acc)
+            for (int64_t e = rp[s]; e < rp[s + 1]; e++)
+                acc += val[e] * w[e];
+            out[s] = acc;
+        }
+        return;
+    }
+
+    #pragma omp parallel num_threads((int)nt)
+    {
+        const int64_t t = omp_get_thread_num();
+        const int64_t T = omp_get_num_threads();
+        const int64_t lo = total * t / T;
+        const int64_t hi = total * (t + 1) / T;
+        const int64_t s0 = lb_seg(rp, NSEG, lo);
+        const int64_t s1 = (t == T - 1) ? NSEG : lb_seg(rp, NSEG, hi);
+        for (int64_t s = s0; s < s1; s++) {
+            double acc = 0.0;
+            #pragma omp simd reduction(+:acc)
+            for (int64_t e = rp[s]; e < rp[s + 1]; e++)
+                acc += val[e] * w[e];
+            out[s] = acc;
+        }
+    }
+}

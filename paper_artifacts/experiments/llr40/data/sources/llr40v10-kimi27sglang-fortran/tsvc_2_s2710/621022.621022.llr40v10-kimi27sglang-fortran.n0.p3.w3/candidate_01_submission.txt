@@ -1,0 +1,32 @@
+subroutine tsvc_2_s2710_fp64(a, b, c, d, e, x, LEN_1D) bind(c, name='tsvc_2_s2710_fp64')
+    use iso_c_binding
+    implicit none
+    integer(c_int64_t), value :: LEN_1D
+    real(c_double), dimension(LEN_1D), intent(inout) :: a, b, c
+    real(c_double), dimension(LEN_1D), intent(in) :: d, e, x
+    integer(c_int64_t) :: i
+    logical :: len_gt_10, x_pos
+
+    len_gt_10 = LEN_1D > 10_c_int64_t
+    x_pos = x(1) > 0.0_c_double
+
+    !$omp parallel do simd
+    do i = 1, LEN_1D
+        if (a(i) > b(i)) then
+            a(i) = a(i) + b(i) * d(i)
+            if (len_gt_10) then
+                c(i) = c(i) + d(i) * d(i)
+            else
+                c(i) = d(i) * e(i) + 1.0_c_double
+            end if
+        else
+            b(i) = a(i) + e(i) * e(i)
+            if (x_pos) then
+                c(i) = a(i) + d(i) * d(i)
+            else
+                c(i) = c(i) + e(i) * e(i)
+            end if
+        end if
+    end do
+    !$omp end parallel do simd
+end subroutine tsvc_2_s2710_fp64

@@ -1,0 +1,110 @@
+#include <stdint.h>
+#include <omp.h>
+
+#define MAX_THREADS 256
+
+static inline void scan_k1(double *restrict a, const double *restrict b, const double *restrict c, const int64_t n) {
+    const double decay = 0.75;
+    int nt = omp_get_max_threads();
+    if (nt > MAX_THREADS) nt = MAX_THREADS;
+    double mul[MAX_THREADS];
+    double add[MAX_THREADS];
+    double prefix[MAX_THREADS];
+    prefix[0] = a[0];
+
+    #pragma omp parallel
+    {
+        const int tid = omp_get_thread_num();
+        const int64_t start = 1 + (int64_t)tid * (n - 1) / nt;
+        const int64_t end = 1 + (int64_t)(tid + 1) * (n - 1) / nt;
+
+        double m = 1.0;
+        double s = 0.0;
+        for (int64_t i = start; i < end; ++i) {
+            s = decay * s + b[i] * c[i];
+            m *= decay;
+        }
+        mul[tid] = m;
+        add[tid] = s;
+
+        #pragma omp barrier
+        #pragma omp single
+        {
+            double running = a[0];
+            for (int t = 0; t < nt; ++t) {
+                running = mul[t] * running + add[t];
+                if (t + 1 < nt) prefix[t + 1] = running;
+            }
+        }
+
+        #pragma omp barrier
+        double val = prefix[tid];
+        for (int64_t i = start; i < end; ++i) {
+            val = decay * val + b[i] * c[i];
+            a[i] = val;
+        }
+    }
+}
+
+static inline void serial_loop(double *restrict a, const double *restrict b, const double *restrict c, const int64_t K, const int64_t LEN_1D) {
+    const double decay = 0.75;
+    for (int64_t i = K; i < LEN_1D; ++i) {
+        a[i] = decay * a[i - K] + b[i] * c[i];
+    }
+}
+
+static inline void window_simd_loop(double *restrict a, const double *restrict b, const double *restrict c, const int64_t K, const int64_t LEN_1D) {
+    const double decay = 0.75;
+    for (int64_t base = K; base < LEN_1D; base += K) {
+        const int64_t end = base + K < LEN_1D ? base + K : LEN_1D;
+        #pragma omp simd
+        for (int64_t i = base; i < end; ++i) {
+            a[i] = decay * a[i - K] + b[i] * c[i];
+        }
+    }
+}
+
+static inline void parallel_offset_loop(double *restrict a, const double *restrict b, const double *restrict c, const int64_t K, const int64_t LEN_1D) {
+    const double decay = 0.75;
+    #pragma omp parallel
+    {
+        const int64_t nt = omp_get_num_threads();
+        const int64_t tid = omp_get_thread_num();
+        int64_t chunk = (K + nt - 1) / nt;
+        chunk = (chunk + 7) & ~((int64_t)7);
+        const int64_t j0 = tid * chunk;
+        const int64_t j1 = (j0 + chunk < K) ? j0 + chunk : K;
+        if (j0 < K) {
+            for (int64_t base = K; base < LEN_1D; base += K) {
+                const int64_t end = base + K < LEN_1D ? base + K : LEN_1D;
+                const int64_t istart = base + j0;
+                if (istart >= end) continue;
+                const int64_t iend = base + j1 < end ? base + j1 : end;
+                #pragma omp simd
+                for (int64_t i = istart; i < iend; ++i) {
+                    a[i] = decay * a[i - K] + b[i] * c[i];
+                }
+            }
+        }
+    }
+}
+
+void versioned_distance_update_fp64(double *restrict a, const double *restrict b, const double *restrict c, const int64_t K, const int64_t LEN_1D, uint8_t *restrict workspace, const int64_t workspace_bytes) {
+    (void)workspace;
+    (void)workspace_bytes;
+    if (K <= 0 || LEN_1D <= K) return;
+
+    if (K == 1) {
+        scan_k1(a, b, c, LEN_1D);
+        return;
+    }
+    if (K < 8) {
+        window_simd_loop(a, b, c, K, LEN_1D);
+        return;
+    }
+    if (K < 64 || (K & 7)) {
+        serial_loop(a, b, c, K, LEN_1D);
+        return;
+    }
+    parallel_offset_loop(a, b, c, K, LEN_1D);
+}

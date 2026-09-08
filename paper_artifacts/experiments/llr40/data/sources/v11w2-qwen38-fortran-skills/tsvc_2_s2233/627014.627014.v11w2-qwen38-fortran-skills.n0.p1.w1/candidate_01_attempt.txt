@@ -1,0 +1,35 @@
+subroutine tsvc_2_s2233_fp64(aa, bb, cc, len_2d) bind(C)
+  use, intrinsic :: iso_c_binding
+  integer(c_int64_t), value, intent(in) :: len_2d
+  real(c_double), intent(inout) :: aa(len_2d, len_2d)
+  real(c_double), intent(inout) :: bb(len_2d, len_2d)
+  real(c_double), intent(in) :: cc(len_2d, len_2d)
+  integer(c_int64_t) :: n
+  integer(c_int64_t) :: i, j
+  real(c_double) :: s
+
+  n = len_2d
+  if (n < 9) return
+
+  ! Part 1 (numpy: for i: for j: aa[j,i] = aa[j-1,i] + cc[j,i]):
+  ! Fortran (column-major reversal): aa(i,j) = aa(i,j-1) + cc(i,j), chain in j.
+  !$omp parallel do default(none) shared(aa, cc, n) private(s)
+  do i = 9, n
+    s = aa(i, 8)
+    do j = 9, n
+      s = s + cc(i, j)
+      aa(i, j) = s
+    end do
+  end do
+
+  ! Part 2 (numpy: for i: for j: bb[i,j] = bb[i-1,j] + cc[i,j]):
+  ! Fortran: bb(j,i) = bb(j,i-1) + cc(j,i), chain in i (unit stride).
+  !$omp parallel do default(none) shared(bb, cc, n) private(s)
+  do j = 9, n
+    s = bb(j, 8)
+    do i = 9, n
+      s = s + cc(j, i)
+      bb(j, i) = s
+    end do
+  end do
+end subroutine tsvc_2_s2233_fp64

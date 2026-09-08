@@ -1,0 +1,57 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void k_one(double *__restrict__ a, const double *__restrict__ b,
+                      const int *__restrict__ ip, int64_t n) {
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) a[i] = a[i] + b[ip[i]] * 2.0;
+}
+
+__global__ void k_stride(double *__restrict__ a, const double *__restrict__ b,
+                         const int *__restrict__ ip, int64_t n) {
+    int64_t stride = (int64_t)gridDim.x * blockDim.x;
+    for (int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x; i < n; i += stride)
+        a[i] = a[i] + b[ip[i]] * 2.0;
+}
+
+__global__ void k_v4(double4 *__restrict__ a4, const double *__restrict__ b,
+                     const int4 *__restrict__ ip4, int64_t n4,
+                     double *__restrict__ a, const int *__restrict__ ip, int64_t n) {
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n4) {
+        int4 j = ip4[i];
+        double4 av = a4[i];
+        av.x += b[j.x] * 2.0;
+        av.y += b[j.y] * 2.0;
+        av.z += b[j.z] * 2.0;
+        av.w += b[j.w] * 2.0;
+        a4[i] = av;
+    }
+    for (int64_t t = 4 * n4 + (int64_t)blockIdx.x * blockDim.x + threadIdx.x; t < n;
+         t += (int64_t)gridDim.x * blockDim.x)
+        a[t] = a[t] + b[ip[t]] * 2.0;
+}
+
+extern "C" void launch_ts4112(double *a, const double *b, const int32_t *ip, int64_t n) {
+    if (n <= 0) return;
+    const int64_t maxb = 2147483647LL;
+    if ((n & 3) == 0 &&
+        ((reinterpret_cast<uintptr_t>(a) & 31) == 0 &&
+         (reinterpret_cast<uintptr_t>(ip) & 15) == 0)) {
+        const int64_t n4 = n >> 2;
+        const int bs = 1024;
+        int64_t blocks = (n4 + bs - 1) / bs;
+        if (blocks <= maxb) {
+            k_v4<<<(int)blocks, bs>>>((double4 *)a, b, (int4 *)ip, n4, a,
+                                      (const int *)ip, n);
+            return;
+        }
+    }
+    const int bs = 256;
+    int64_t blocks = (n + bs - 1) / bs;
+    if (blocks <= maxb) {
+        k_one<<<(int)blocks, bs>>>(a, b, ip, n);
+    } else {
+        k_stride<<<(int)maxb, bs>>>(a, b, ip, n);
+    }
+}

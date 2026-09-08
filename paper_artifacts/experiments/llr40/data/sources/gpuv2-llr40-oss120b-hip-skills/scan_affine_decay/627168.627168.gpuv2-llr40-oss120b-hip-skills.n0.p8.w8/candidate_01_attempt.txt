@@ -1,0 +1,13 @@
+#include "/opt/rocm/include/hip/hip_runtime.h"
+
+extern "C" __global__ void scan_seq(double* __restrict__ y,
+                                    const double* __restrict__ c,
+                                    const double* __restrict__ x,
+                                    int64_t N) {
+    if (blockIdx.x != 0 || threadIdx.x != 0) return;
+    if (N <= 0) return;
+    y[0] = x[0];
+    for (int64_t i = 1; i < N; ++i) {
+        y[i] = c[i] * y[i - 1] + x[i];
+    }
+}

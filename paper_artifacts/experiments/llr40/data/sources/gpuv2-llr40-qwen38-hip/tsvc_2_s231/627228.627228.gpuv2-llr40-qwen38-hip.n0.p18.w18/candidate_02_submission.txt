@@ -1,0 +1,17 @@
+#include <hip/hip_runtime.h>
+
+__global__ void tsvc_2_s231_kernel(double* __restrict__ aa, const double* __restrict__ bb, long long L) {
+    long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= L) return;
+    double acc = aa[i];
+    for (long long j = 1; j < L; ++j) {
+        acc += bb[j * L + i];
+        aa[j * L + i] = acc;
+    }
+}
+
+extern "C" void tsvc_2_s231_launch(double* aa, const double* bb, long long L) {
+    const int T = 256;
+    long long B = (L + T - 1) / T;
+    tsvc_2_s231_kernel<<<(int)B, T>>>(aa, bb, L);
+}

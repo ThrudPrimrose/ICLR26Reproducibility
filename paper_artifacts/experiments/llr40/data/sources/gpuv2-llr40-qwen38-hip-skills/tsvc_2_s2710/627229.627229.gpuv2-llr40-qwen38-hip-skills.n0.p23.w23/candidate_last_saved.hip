@@ -1,0 +1,88 @@
+// TSVC tsvc_2 s2710 -- elementwise fp64, HIP (CDNA, wave64).
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define HIP_CHECK(expr)                                                              \
+  do {                                                                               \
+    hipError_t e_ = (expr);                                                          \
+    if (e_ != hipSuccess) {                                                          \
+      std::fprintf(stderr, "HIP error %s at %s:%d\n", hipGetErrorString(e_),         \
+                   __FILE__, __LINE__);                                              \
+      std::abort();                                                                  \
+    }                                                                                \
+  } while (0)
+
+union U8 {
+  double v[8];
+  double4 d[2];
+};
+
+__global__ void __launch_bounds__(256) tsvc_2_s2710_kernel(
+    double* __restrict__ a, double* __restrict__ b, double* __restrict__ c,
+    const double* __restrict__ d, const double* __restrict__ e,
+    const double* __restrict__ x, const int64_t LEN) {
+  const bool lc = LEN > 10;   // LEN_1D > 10 branch (uniform)
+  const bool xp = x[0] > 0.0; // x[0] > 0.0 branch (uniform)
+
+  const int64_t V = 8;
+  const int64_t groups = (LEN + V - 1) / V;
+  const int64_t gs = (int64_t)gridDim.x * blockDim.x;
+  int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+
+  for (; i < groups; i += gs) {
+    const int64_t off = i * V;
+    if (off + V <= LEN) {
+      U8 au, bu, cu, du, eu, nc;
+      au.d[0] = *(const double4*)&a[off];      au.d[1] = *(const double4*)&a[off + 4];
+      bu.d[0] = *(const double4*)&b[off];      bu.d[1] = *(const double4*)&b[off + 4];
+      cu.d[0] = *(const double4*)&c[off];      cu.d[1] = *(const double4*)&c[off + 4];
+      du.d[0] = *(const double4*)&d[off];      du.d[1] = *(const double4*)&d[off + 4];
+      eu.d[0] = *(const double4*)&e[off];      eu.d[1] = *(const double4*)&e[off + 4];
+#pragma unroll
+      for (int j = 0; j < 8; ++j) {
+        const double ai = au.v[j], bi = bu.v[j], ci = cu.v[j];
+        const double di = du.v[j], ei = eu.v[j];
+        if (ai > bi) {
+          a[off + j] = ai + bi * di;
+          nc.v[j] = lc ? ci + di * di : di * ei + 1.0;
+        } else {
+          b[off + j] = ai + ei * ei;
+          nc.v[j] = xp ? ai + di * di : ci + ei * ei;
+        }
+      }
+      *(double4*)&c[off]     = nc.d[0];
+      *(double4*)&c[off + 4] = nc.d[1];
+    } else {
+#pragma unroll
+      for (int j = 0; j < 8; ++j) {
+        const int64_t k = off + j;
+        if (k >= LEN) break;
+        const double ai = a[k], bi = b[k], ci = c[k];
+        const double di = d[k], ei = e[k];
+        if (ai > bi) {
+          a[k] = ai + bi * di;
+          c[k] = lc ? ci + di * di : di * ei + 1.0;
+        } else {
+          b[k] = ai + ei * ei;
+          c[k] = xp ? ai + di * di : ci + ei * ei;
+        }
+      }
+    }
+  }
+}
+
+extern "C" void tsvc_2_s2710_fp64(double* a, double* b, double* c, const double* d,
+                                  const double* e, const double* x,
+                                  const int64_t LEN) {
+  if (LEN <= 0) return;
+  const int block = 256;
+  const int64_t groups = (LEN + 7) / 8;
+  int64_t nblk = (groups + block - 1) / block;
+  const int64_t cap = 2432; // 304 CUs x 8 blocks of 256 thr (full occupancy)
+  if (nblk > cap) nblk = cap;
+  tsvc_2_s2710_kernel<<<(int)nblk, block, 0, (hipStream_t)0>>>(a, b, c, d, e, x, LEN);
+  HIP_CHECK(hipGetLastError());
+  HIP_CHECK(hipDeviceSynchronize());
+}

@@ -1,0 +1,56 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <algorithm>
+
+#define HD_CHECK(expr) do { \
+    hipError_t _e = (expr); \
+    if (_e != hipSuccess) { \
+        std::fprintf(stderr, "HIP error %s (%d) at %s:%d\n", hipGetErrorString(_e), (int)_e, __FILE__, __LINE__); \
+        std::abort(); \
+    } \
+} while (0)
+
+namespace {
+
+constexpr int kBlock = 256;
+
+// One double2 (128 bits) per thread, grid-stride.
+__global__ void __launch_bounds__(kBlock)
+fd_kernel_vec(const double2* __restrict__ a, double2* __restrict__ out,
+              std::int64_t npair, std::int64_t n) {
+    const std::int64_t stride = (std::int64_t)gridDim.x * blockDim.x;
+    const std::int64_t gid = (std::int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    for (std::int64_t i = gid; i < npair; i += stride) {
+        const double2 x = a[i];
+        double2 o;
+        const double tx = x.x * x.x;
+        o.x = (tx + 1.0) * (tx - 1.0);
+        const double ty = x.y * x.y;
+        o.y = (ty + 1.0) * (ty - 1.0);
+        out[i] = o;
+    }
+    if (n & 1) {
+        if (gid == 0) {
+            const double* ascal = reinterpret_cast<const double*>(a);
+            double* oscale = reinterpret_cast<double*>(out);
+            const double x = ascal[n - 1];
+            const double t = x * x;
+            oscale[n - 1] = (t + 1.0) * (t - 1.0);
+        }
+    }
+}
+
+} // namespace
+
+extern "C" void launch_fuse_diamond(const double* a, double* out, std::int64_t n) {
+    if (n <= 0) return;
+    const std::int64_t npair = n >> 1;
+    const std::int64_t needed = (npair + kBlock - 1) / kBlock;
+    const std::int64_t capped = std::min(needed, (std::int64_t)304 * 16);
+    const int blocks = (int)std::max<std::int64_t>(capped, 1);
+    fd_kernel_vec<<<blocks, kBlock>>>(
+        reinterpret_cast<const double2*>(a), reinterpret_cast<double2*>(out), npair, n);
+    HD_CHECK(hipGetLastError());
+}

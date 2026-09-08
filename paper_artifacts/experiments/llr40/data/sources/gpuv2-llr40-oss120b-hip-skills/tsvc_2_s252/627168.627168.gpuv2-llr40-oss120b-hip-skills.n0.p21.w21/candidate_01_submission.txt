@@ -1,0 +1,24 @@
+#include <hip/hip_runtime.h>
+
+extern "C" __global__ void productKernel(const double* __restrict__ b,
+                                         const double* __restrict__ c,
+                                         double* __restrict__ out,
+                                         int64_t n) {
+    int64_t idx = blockIdx.x * static_cast<int64_t>(blockDim.x) + threadIdx.x;
+    if (idx < n) {
+        out[idx] = b[idx] * c[idx];
+    }
+}
+
+extern "C" __global__ void finalKernel(const double* __restrict__ d,
+                                         double* __restrict__ a,
+                                         int64_t n) {
+    int64_t idx = blockIdx.x * static_cast<int64_t>(blockDim.x) + threadIdx.x;
+    if (idx < n) {
+        if (idx == 0) {
+            a[idx] = d[idx];
+        } else {
+            a[idx] = d[idx] + d[idx - 1];
+        }
+    }
+}

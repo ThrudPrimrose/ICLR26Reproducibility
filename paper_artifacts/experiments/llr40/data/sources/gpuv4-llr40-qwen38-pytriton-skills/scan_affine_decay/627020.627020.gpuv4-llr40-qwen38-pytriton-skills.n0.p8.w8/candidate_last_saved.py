@@ -1,0 +1,78 @@
+import os
+import numpy as np
+import numba as nb
+
+# Number of parallel segments. Use the CPUs actually available to us.
+_NCPU = max(1, len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count())
+T = int(min(_NCPU, 32))
+os.environ["NUMBA_NUM_THREADS"] = str(T)
+os.environ.setdefault("OMP_NUM_THREADS", str(T))
+
+
+@nb.njit(cache=False)
+def _serial(c, x, y, n):
+    for i in range(1, n):
+        y[i] = c[i] * y[i - 1] + x[i]
+
+
+@nb.njit(parallel=True, cache=False)
+def _blocked(c, x, y, s, e, T, n):
+    # Phase 1: per-segment serial scan -> total affine map (A_t, B_t)
+    tot_a = np.empty(T, np.float64)
+    tot_b = np.empty(T, np.float64)
+    for t in nb.prange(T):
+        a = 1.0
+        b = 0.0
+        for i in range(s[t], e[t]):
+            b = c[i] * b + x[i]
+            a *= c[i]
+        tot_a[t] = a
+        tot_b[t] = b
+    # Phase 2: serial combine of segment totals -> carry per segment
+    carry = np.empty(T + 1, np.float64)
+    carry[0] = y[0]
+    for t in range(T):
+        carry[t + 1] = tot_a[t] * carry[t] + tot_b[t]
+    # Phase 3: per-segment serial rescan with the correct start value
+    for t in nb.prange(T):
+        prev = carry[t]
+        for i in range(s[t], e[t]):
+            v = c[i] * prev + x[i]
+            y[i] = v
+            prev = v
+
+
+_TH = 20000  # below this, serial is faster (parallel fork overhead dominates)
+
+
+def scan_affine_decay(y, c, x, LEN_1D):
+    n = int(LEN_1D)
+    if n <= 1:
+        return None
+    if n < _TH:
+        _serial(c, x, y, n)
+    else:
+        m = n - 1
+        chunk = (m + T - 1) // T
+        s = 1 + chunk * np.arange(T, dtype=np.int64)
+        e = np.minimum(s + chunk, np.int64(n))
+        _blocked(c, x, y, s, e, T, n)
+    return None
+
+
+# ---- warm the JIT at import (keeps compile + thread-fork out of the timed region) ----
+def _warm():
+    d = 1_000_000
+    rng = np.random.default_rng(0)
+    c = rng.uniform(0.2, 0.9, d)
+    x = rng.uniform(0.5, 1.5, d)
+    y = np.zeros(d)
+    y[0] = x[0]
+    _serial(c, x, y, d)
+    m = d - 1
+    chunk = (m + T - 1) // T
+    s = 1 + chunk * np.arange(T, dtype=np.int64)
+    e = np.minimum(s + chunk, np.int64(d))
+    _blocked(c, x, y, s, e, T, d)
+    _blocked(c, x, y, s, e, T, d)
+_warm()

@@ -1,0 +1,20 @@
+#include <hip/hip_runtime.h>
+
+extern "C" __global__ void tsvc_2_s235_kernel(double* __restrict__ a, double* __restrict__ aa,
+                                               const double* __restrict__ b, const double* __restrict__ bb,
+                                               const double* __restrict__ c, const int64_t LEN_2D) {
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (i >= LEN_2D) return;
+    a[i] += b[i] * c[i];
+    double a_val = a[i];
+    int64_t stride = LEN_2D;
+    int64_t idx = i; // j=0
+    double prev = aa[idx];
+    idx += stride; // start j=1
+    for (int64_t j = 1; j < LEN_2D; ++j) {
+        double val = prev + bb[idx] * a_val;
+        aa[idx] = val;
+        prev = val;
+        idx += stride;
+    }
+}

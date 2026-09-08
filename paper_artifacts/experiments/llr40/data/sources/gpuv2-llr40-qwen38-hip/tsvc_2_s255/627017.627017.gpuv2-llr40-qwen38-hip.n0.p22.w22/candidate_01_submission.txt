@@ -1,0 +1,36 @@
+// Device half: kernel + launcher.
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+// a[i] = (b[i] + b[i-1] + b[i-2]) * 0.333 with indices wrapped mod n
+// (x, y state of the sequential reference is just shifted b).
+// V4: 4 elements per thread via double2 chunks; 16B accesses coalesced.
+__global__ void s255_v4(const double *__restrict__ b, double *__restrict__ a, long n) {
+    long t = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    long i = t << 2;
+    if (i + 4 <= n) {
+        double2 d0 = i ? *(const double2 *)(b + i - 2) : *(const double2 *)(b + n - 2);
+        double2 d1 = *(const double2 *)(b + i);
+        double2 d2 = *(const double2 *)(b + i + 2);
+        double2 o1, o2;
+        o1.x = (d1.x + d0.y + d0.x) * 0.333;
+        o1.y = (d1.y + d1.x + d0.y) * 0.333;
+        o2.x = (d2.x + d1.y + d1.x) * 0.333;
+        o2.y = (d2.y + d2.x + d1.y) * 0.333;
+        *(double2 *)(a + i) = o1;
+        *(double2 *)(a + i + 2) = o2;
+    } else if (i < n) {
+        for (long j = i; j < n; j++) {
+            double bp1 = (j > 0) ? b[j - 1] : b[n - 1];
+            double bp2 = (j > 1) ? b[j - 2] : (j == 0 ? b[n - 2] : b[n - 1]);
+            a[j] = (b[j] + bp1 + bp2) * 0.333;
+        }
+    }
+}
+
+extern "C" void tsvc_2_s255_launch(const double *b, double *a, long n) {
+    const int block = 256;
+    long threads = (n + 3) >> 2;
+    int grid = (int)((threads + block - 1) / block);
+    s255_v4<<<grid, block>>>(b, a, n);
+}

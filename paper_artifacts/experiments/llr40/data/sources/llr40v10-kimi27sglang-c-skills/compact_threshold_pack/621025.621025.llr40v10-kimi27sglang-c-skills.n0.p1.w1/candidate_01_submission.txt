@@ -1,0 +1,101 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <omp.h>
+#include <immintrin.h>
+
+static void compact_serial(int64_t *restrict out_count,
+                           double *restrict packed,
+                           const double *restrict src,
+                           const double *restrict weight,
+                           const int64_t LEN_1D) {
+    int64_t n = 0;
+    for (int64_t i = 0; i < LEN_1D; ++i) {
+        const double s = src[i];
+        if (s > 0.0) {
+            packed[n++] = s * weight[i];
+        }
+    }
+    out_count[0] = n;
+}
+
+void compact_threshold_pack_fp64(int64_t *restrict out_count,
+                                 double *restrict packed,
+                                 const double *restrict src,
+                                 const double *restrict weight,
+                                 const int64_t LEN_1D) {
+    if (LEN_1D <= 0) {
+        out_count[0] = 0;
+        return;
+    }
+
+    /* Very small inputs: avoid all threading/allocation overhead. */
+    if (LEN_1D < 4096) {
+        compact_serial(out_count, packed, src, weight, LEN_1D);
+        return;
+    }
+
+    const int64_t BLOCK = 4096;
+    const int64_t nb = (LEN_1D + BLOCK - 1) / BLOCK;
+
+    int64_t *restrict offsets = (int64_t *)malloc((size_t)(nb + 1) * sizeof(int64_t));
+    if (offsets == NULL) {
+        compact_serial(out_count, packed, src, weight, LEN_1D);
+        return;
+    }
+
+    const __m512d zero = _mm512_setzero_pd();
+
+    /* Pass 1: count survivors per block. */
+    #pragma omp parallel for schedule(static)
+    for (int64_t b = 0; b < nb; ++b) {
+        const int64_t lo = b * BLOCK;
+        const int64_t hi = (lo + BLOCK < LEN_1D) ? lo + BLOCK : LEN_1D;
+        int64_t c = 0;
+        int64_t i = lo;
+        for (; i + 8 <= hi; i += 8) {
+            const __m512d s = _mm512_loadu_pd(src + i);
+            const __mmask8 m = _mm512_cmp_pd_mask(s, zero, _CMP_GT_OQ);
+            c += (int64_t)_mm_popcnt_u32((unsigned)m);
+        }
+        for (; i < hi; ++i) {
+            c += (src[i] > 0.0);
+        }
+        offsets[b] = c;
+    }
+
+    /* Exclusive prefix sum over block counts (negligible work). */
+    int64_t total = 0;
+    for (int64_t b = 0; b < nb; ++b) {
+        const int64_t old = offsets[b];
+        offsets[b] = total;
+        total += old;
+    }
+    offsets[nb] = total;
+    out_count[0] = total;
+
+    /* Pass 2: write the products into their final contiguous slots. */
+    #pragma omp parallel for schedule(static)
+    for (int64_t b = 0; b < nb; ++b) {
+        const int64_t lo = b * BLOCK;
+        const int64_t hi = (lo + BLOCK < LEN_1D) ? lo + BLOCK : LEN_1D;
+        int64_t pos = offsets[b];
+        int64_t i = lo;
+        for (; i + 8 <= hi; i += 8) {
+            const __m512d s = _mm512_loadu_pd(src + i);
+            const __mmask8 m = _mm512_cmp_pd_mask(s, zero, _CMP_GT_OQ);
+            const __m512d w = _mm512_loadu_pd(weight + i);
+            const __m512d v = _mm512_mul_pd(s, w);
+            _mm512_mask_compressstoreu_pd(packed + pos, m, v);
+            pos += (int64_t)_mm_popcnt_u32((unsigned)m);
+        }
+        for (; i < hi; ++i) {
+            const double s = src[i];
+            if (s > 0.0) {
+                packed[pos++] = s * weight[i];
+            }
+        }
+    }
+
+    free(offsets);
+}

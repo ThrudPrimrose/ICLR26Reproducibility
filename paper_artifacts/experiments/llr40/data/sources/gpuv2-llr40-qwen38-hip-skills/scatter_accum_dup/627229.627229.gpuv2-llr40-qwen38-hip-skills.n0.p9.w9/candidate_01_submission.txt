@@ -1,0 +1,19 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void scatter_kernel(double* __restrict__ bins,
+                               const int32_t* __restrict__ ip,
+                               const double* __restrict__ src,
+                               int64_t N) {
+    int64_t stride = (int64_t)gridDim.x * (int64_t)blockDim.x;
+    int64_t i = (int64_t)blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+    for (; i < N; i += stride) {
+        atomicAdd(&bins[(int64_t)ip[i]], src[i]);
+    }
+}
+
+extern "C" void scatter_accum_dup_launcher(double* bins, const int32_t* ip, const double* src, int64_t n) {
+    const int block = 256;
+    int64_t grid = (n + block - 1) / block;
+    scatter_kernel<<<(unsigned)grid, block>>>(bins, ip, src, n);
+}

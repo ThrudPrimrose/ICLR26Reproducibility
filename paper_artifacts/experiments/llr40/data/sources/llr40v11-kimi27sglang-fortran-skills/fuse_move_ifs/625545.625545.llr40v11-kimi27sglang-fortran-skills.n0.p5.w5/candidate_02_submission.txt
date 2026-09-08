@@ -1,0 +1,35 @@
+subroutine fuse_move_ifs_fp64(a, b, cond, src, K, LEN_2D) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: K, LEN_2D
+  real(c_double), intent(inout) :: a(LEN_2D, LEN_2D)
+  real(c_double), intent(inout) :: b(LEN_2D, LEN_2D)
+  real(c_double), intent(in) :: cond(LEN_2D)
+  real(c_double), intent(in) :: src(LEN_2D, LEN_2D)
+  integer(c_int64_t) :: i
+  integer(c_int32_t) :: j
+
+  if (K > 0_c_int64_t) then
+    !$omp parallel do schedule(guided)
+    do i = 1, LEN_2D
+      if (cond(i) > 0.0d0) then
+        do j = 1, int(LEN_2D, c_int32_t)
+          a(j, i) = src(j, i) * 2.0d0
+        end do
+      end if
+      do j = 1, int(LEN_2D, c_int32_t)
+        b(j, i) = src(j, i) + 1.0d0
+      end do
+    end do
+  else
+    !$omp parallel do schedule(guided)
+    do i = 1, LEN_2D
+      if (cond(i) > 0.0d0) then
+        do j = 1, int(LEN_2D, c_int32_t)
+          a(j, i) = src(j, i) * 2.0d0
+        end do
+      end if
+    end do
+  end if
+end subroutine fuse_move_ifs_fp64

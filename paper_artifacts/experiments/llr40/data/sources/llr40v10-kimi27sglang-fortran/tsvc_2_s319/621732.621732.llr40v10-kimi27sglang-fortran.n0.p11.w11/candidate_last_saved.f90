@@ -1,0 +1,22 @@
+subroutine tsvc_2_s319_fp64(a, b, c, d, e, LEN_1D) bind(c, name="tsvc_2_s319_fp64")
+  use, intrinsic :: iso_c_binding, only: c_double, c_int64_t
+  implicit none
+  real(c_double), intent(out) :: a(*), b(*)
+  real(c_double), intent(in) :: c(*), d(*), e(*)
+  integer(c_int64_t), intent(in), value :: LEN_1D
+  real(c_double) :: sum, t1, t2
+  integer(c_int64_t) :: i
+
+  sum = 0.0_c_double
+  !$omp parallel do reduction(+:sum) private(t1,t2) schedule(nonmonotonic:dynamic, 131072)
+  do i = 1, LEN_1D
+    t1 = c(i) + d(i)
+    a(i) = t1
+    t2 = c(i) + e(i)
+    b(i) = t2
+    sum = sum + t1
+    sum = sum + t2
+  end do
+  !$omp end parallel do
+  b(1) = sum
+end subroutine tsvc_2_s319_fp64

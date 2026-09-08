@@ -1,0 +1,51 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+// Scalar kernel: a_out[i] = a_in[i] * b[i] * c[i]
+extern "C" __global__ void tsvc_2_vtvtv_kernel(const double* __restrict__ a_in,
+                                               const double* __restrict__ b,
+                                               const double* __restrict__ c,
+                                               double* __restrict__ a_out,
+                                               int64_t len) {
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    int64_t stride = static_cast<int64_t>(blockDim.x) * gridDim.x;
+    for (int64_t i = idx; i < len; i += stride) {
+        double av = a_in[i];
+        double bv = b[i];
+        double cv = c[i];
+        a_out[i] = av * bv * cv;
+    }
+}
+
+// Vectorized kernel using double4 for higher memory throughput.
+extern "C" __global__ void tsvc_2_vtvtv_kernel_vec4(const double* __restrict__ a_in,
+                                                   const double* __restrict__ b,
+                                                   const double* __restrict__ c,
+                                                   double* __restrict__ a_out,
+                                                   int64_t len) {
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    int64_t stride = static_cast<int64_t>(blockDim.x) * gridDim.x;
+    // Process blocks of 4 doubles.
+    int64_t i = idx * 4;
+    int64_t stride4 = stride * 4;
+    for (; i + 3 < len; i += stride4) {
+        // Load four consecutive doubles from each array.
+        double4 av = reinterpret_cast<const double4*>(a_in)[i / 4];
+        double4 bv = reinterpret_cast<const double4*>(b)[i / 4];
+        double4 cv = reinterpret_cast<const double4*>(c)[i / 4];
+        // Elementwise multiplication.
+        av.x = av.x * bv.x * cv.x;
+        av.y = av.y * bv.y * cv.y;
+        av.z = av.z * bv.z * cv.z;
+        av.w = av.w * bv.w * cv.w;
+        // Store result.
+        reinterpret_cast<double4*>(a_out)[i / 4] = av;
+    }
+    // Handle any remaining elements.
+    for (int64_t j = i; j < len; ++j) {
+        double av = a_in[j];
+        double bv = b[j];
+        double cv = c[j];
+        a_out[j] = av * bv * cv;
+    }
+}

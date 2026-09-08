@@ -1,0 +1,20 @@
+subroutine tsvc_2_s235_fp64(a, aa, b, bb, c, len_2d) bind(C, name='tsvc_2_s235_fp64')
+  use, intrinsic :: iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_2d
+  real(c_double), intent(inout) :: a(len_2d)
+  real(c_double), intent(inout) :: aa(len_2d, len_2d)
+  real(c_double), intent(in) :: b(len_2d)
+  real(c_double), intent(in) :: bb(len_2d, len_2d)
+  real(c_double), intent(in) :: c(len_2d)
+  integer(c_int64_t) :: i, j
+
+  !$omp parallel do schedule(static)
+  do i = 1, len_2d
+    a(i) = a(i) + b(i) * c(i)
+    do j = 2, len_2d
+      aa(i, j) = aa(i, j - 1) + bb(i, j) * a(i)
+    end do
+  end do
+  !$omp end parallel do
+end subroutine tsvc_2_s235_fp64

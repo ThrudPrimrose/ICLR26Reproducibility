@@ -1,0 +1,8 @@
+#include <hip/hip_runtime.h>
+
+__global__ void scatter_accum_dup_kernel(double *bins, const double *src, const int *ip, int N) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < N) {
+        atomicAdd(&bins[ip[i]], src[i]);
+    }
+}

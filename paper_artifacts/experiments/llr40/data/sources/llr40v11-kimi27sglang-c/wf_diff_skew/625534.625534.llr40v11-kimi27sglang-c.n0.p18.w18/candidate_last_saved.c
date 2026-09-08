@@ -1,0 +1,29 @@
+#include <stdint.h>
+#include <immintrin.h>
+
+void wf_diff_skew_fp64(double *restrict a, const int64_t LEN_2D) {
+    if (LEN_2D < 2) return;
+    const int64_t m = LEN_2D - 1;
+    for (int64_t i = 1; i < LEN_2D; ++i) {
+        double *restrict cur = a + i * LEN_2D;
+        const double *restrict prev = a + (i - 1) * LEN_2D;
+        int64_t j = 0;
+        for (; j + 8 <= m; j += 8) {
+            __m512d c = _mm512_loadu_pd(cur + j);
+            __m512d p0 = _mm512_loadu_pd(prev + j);
+            __m512d p1 = _mm512_loadu_pd(prev + j + 1);
+            c = _mm512_add_pd(c, p0);
+            c = _mm512_add_pd(c, p1);
+            _mm512_storeu_pd(cur + j, c);
+        }
+        if (j < m) {
+            const __mmask8 mask = (__mmask8)((1U << (uint32_t)(m - j)) - 1U);
+            __m512d c = _mm512_maskz_loadu_pd(mask, cur + j);
+            __m512d p0 = _mm512_maskz_loadu_pd(mask, prev + j);
+            __m512d p1 = _mm512_maskz_loadu_pd(mask, prev + j + 1);
+            c = _mm512_add_pd(c, p0);
+            c = _mm512_add_pd(c, p1);
+            _mm512_mask_storeu_pd(cur + j, mask, c);
+        }
+    }
+}

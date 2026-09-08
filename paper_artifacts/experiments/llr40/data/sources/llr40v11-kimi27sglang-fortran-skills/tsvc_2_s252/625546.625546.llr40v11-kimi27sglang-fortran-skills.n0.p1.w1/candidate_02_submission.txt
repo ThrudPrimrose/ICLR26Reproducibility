@@ -1,0 +1,31 @@
+subroutine tsvc_2_s252(a, b, c, len_1d) bind(C, name="tsvc_2_s252_fp64")
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_1d
+  real(c_double), intent(inout) :: a(len_1d)
+  real(c_double), intent(in) :: b(len_1d), c(len_1d)
+  integer(c_int64_t) :: i, n, lo, hi
+  integer(c_int) :: nt, tid
+  real(c_double) :: prev_s, s
+
+  n = len_1d
+  if (n <= 0) return
+
+  nt = omp_get_max_threads()
+  !$omp parallel private(tid, lo, hi, prev_s, s, i)
+  tid = omp_get_thread_num()
+  lo = (n * int(tid, c_int64_t)) / nt + 1
+  hi = (n * int(tid + 1, c_int64_t)) / nt
+  if (lo == 1) then
+    prev_s = 0.0_c_double
+  else
+    prev_s = b(lo - 1) * c(lo - 1)
+  end if
+  do i = lo, hi
+    s = b(i) * c(i)
+    a(i) = s + prev_s
+    prev_s = s
+  end do
+  !$omp end parallel
+end subroutine tsvc_2_s252

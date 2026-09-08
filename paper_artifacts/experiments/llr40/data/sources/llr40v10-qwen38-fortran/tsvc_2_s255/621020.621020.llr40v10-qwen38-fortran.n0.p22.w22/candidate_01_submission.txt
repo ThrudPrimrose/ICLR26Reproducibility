@@ -1,0 +1,34 @@
+subroutine tsvc_2_s255_fp64(a, b, len_1d) bind(C, name='tsvc_2_s255_fp64')
+  use iso_c_binding
+  implicit none
+  type(c_ptr), value :: a, b
+  integer(c_int64_t), value :: len_1d
+  real(c_double), dimension(:), contiguous, pointer :: fa => null()
+  real(c_double), dimension(:), contiguous, pointer :: fb => null()
+  integer(c_int64_t) :: n
+  integer(c_int64_t) :: i
+  integer(c_int64_t) :: shp(1)
+
+  n = len_1d
+  if (n <= 0) return
+  shp(1) = n
+  call c_f_pointer(a, fa, shp)
+  call c_f_pointer(b, fb, shp)
+
+  if (n == 1) then
+    fa(1) = ((fb(1) + fb(1)) + fb(1)) * 0.333d0
+    return
+  end if
+
+  ! First two elements carry the wrap-around reads of the reference's
+  ! rotating scalars x = b[LEN-1], y = b[LEN-2].
+  fa(1) = ((fb(1) + fb(n)) + fb(n - 1)) * 0.333d0
+  fa(2) = ((fb(2) + fb(1)) + fb(n)) * 0.333d0
+  if (n == 2) return
+
+  ! a(i) = (b(i) + b(i-1) + b(i-2)) * 0.333 -- pure shifted elementwise.
+  !$omp parallel do default(none) shared(fa,fb,n) private(i) schedule(static)
+  do i = 3, n
+    fa(i) = (fb(i) + fb(i - 1) + fb(i - 2)) * 0.333d0
+  end do
+end subroutine tsvc_2_s255_fp64

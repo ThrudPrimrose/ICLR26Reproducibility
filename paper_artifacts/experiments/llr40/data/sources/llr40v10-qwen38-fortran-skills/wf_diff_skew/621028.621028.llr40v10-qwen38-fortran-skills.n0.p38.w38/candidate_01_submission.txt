@@ -1,0 +1,21 @@
+subroutine wf_diff_skew_fp64(a, len_2d, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  integer(c_int64_t), value, intent(in) :: len_2d
+  real(c_double), intent(inout) :: a(len_2d, len_2d)
+  real(c_double), intent(inout) :: workspace(*)
+  integer(c_int64_t), value, intent(in) :: workspace_size
+  integer(c_int64_t) :: fi, fj
+
+  ! C: a[i,j] = a[i,j] + a[i-1,j] + a[i-1,j+1];  numpy (i,j) -> Fortran (j+1, i+1)
+  ! rows form a serial chain; fj is free and unit stride. One persistent team,
+  ! barrier per row only (no per-row team fork/join).
+  if (len_2d < 2) return
+  !$omp parallel
+  do fi = 2, len_2d
+    !$omp do simd
+    do fj = 1, len_2d - 1
+      a(fj, fi) = a(fj, fi) + a(fj, fi - 1) + a(fj + 1, fi - 1)
+    end do
+  end do
+  !$omp end parallel
+end subroutine wf_diff_skew_fp64

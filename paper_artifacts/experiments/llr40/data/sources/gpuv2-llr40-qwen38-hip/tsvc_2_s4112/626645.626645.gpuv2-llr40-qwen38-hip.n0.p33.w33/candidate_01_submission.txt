@@ -1,0 +1,23 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void __launch_bounds__(256) gather_kernel(
+    double* __restrict__ a, const double* __restrict__ b,
+    const int* __restrict__ ip, int64_t n)
+{
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    int64_t stride = (int64_t)gridDim.x * blockDim.x;
+    for (; i < n; i += stride) {
+        a[i] += b[ip[i]] * 2.0;
+    }
+}
+
+void tsvc_launch(double* a, const double* b, const int* ip, int64_t n)
+{
+    const int threads = 256;
+    int64_t blocks = (n + threads - 1) / threads;
+    const int64_t maxblocks = 262144;
+    if (blocks > maxblocks) blocks = maxblocks;
+    if (blocks < 1) blocks = 1;
+    gather_kernel<<<(unsigned)blocks, threads>>>(a, b, ip, n);
+}

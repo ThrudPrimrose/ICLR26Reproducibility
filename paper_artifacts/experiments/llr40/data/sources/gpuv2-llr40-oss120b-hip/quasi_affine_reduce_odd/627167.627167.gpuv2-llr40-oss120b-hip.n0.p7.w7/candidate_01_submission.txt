@@ -1,0 +1,27 @@
+#include <hip/hip_runtime.h>
+
+constexpr int BLOCK_SIZE = 256;
+
+extern "C" __global__ void quasi_affine_reduce_odd_kernel(const double* __restrict__ a,
+                                          double* __restrict__ out,
+                                          int64_t LEN_1D) {
+    __shared__ double sdata[BLOCK_SIZE];
+    int tid = threadIdx.x;
+    int64_t globalIdx = (int64_t)blockIdx.x * BLOCK_SIZE + tid;
+    int64_t stride = (int64_t)gridDim.x * BLOCK_SIZE * 2;
+    double sum = 0.0;
+    for (int64_t i = 1 + 2LL * globalIdx; i < LEN_1D; i += stride) {
+        sum += a[i];
+    }
+    sdata[tid] = sum;
+    __syncthreads();
+    for (int s = BLOCK_SIZE / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            sdata[tid] += sdata[tid + s];
+        }
+        __syncthreads();
+    }
+    if (tid == 0) {
+        atomicAdd(out, sdata[0]);
+    }
+}

@@ -1,0 +1,60 @@
+#include <stdint.h>
+#include <immintrin.h>
+#include <math.h>
+
+void tsvc_2_s3110_fp64(const double *restrict aa, double *restrict bb, const int64_t LEN_2D) {
+    const int64_t n = LEN_2D * LEN_2D;
+    double maxv;
+    int64_t best_idx;
+
+    if (n < 8) {
+        maxv = aa[0];
+        best_idx = 0;
+        for (int64_t k = 1; k < n; ++k) {
+            double v = aa[k];
+            if (v > maxv) {
+                maxv = v;
+                best_idx = k;
+            }
+        }
+    } else {
+        const __m512i lane_idx = _mm512_set_epi64(7, 6, 5, 4, 3, 2, 1, 0);
+        __m512d vmax = _mm512_loadu_pd(aa);
+        __m512i imax = lane_idx;
+
+        int64_t k = 8;
+        for (; k + 8 <= n; k += 8) {
+            __m512d v = _mm512_loadu_pd(aa + k);
+            __m512i idxvec = _mm512_add_epi64(lane_idx, _mm512_set1_epi64(k));
+            __mmask8 mask = _mm512_cmp_pd_mask(v, vmax, _CMP_GT_OQ);
+            vmax = _mm512_mask_blend_pd(mask, vmax, v);
+            imax = _mm512_mask_blend_epi64(mask, imax, idxvec);
+        }
+
+        double lanes[8];
+        int64_t idxs[8];
+        _mm512_storeu_pd(lanes, vmax);
+        _mm512_storeu_si512(idxs, imax);
+
+        maxv = lanes[0];
+        best_idx = idxs[0];
+        for (int i = 1; i < 8; ++i) {
+            if (lanes[i] > maxv) {
+                maxv = lanes[i];
+                best_idx = idxs[i];
+            }
+        }
+
+        for (; k < n; ++k) {
+            double v = aa[k];
+            if (v > maxv) {
+                maxv = v;
+                best_idx = k;
+            }
+        }
+    }
+
+    const int64_t xindex = best_idx / LEN_2D;
+    const int64_t yindex = best_idx % LEN_2D;
+    bb[0] = maxv + (double)xindex + (double)yindex;
+}

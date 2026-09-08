@@ -1,0 +1,71 @@
+subroutine ext_break_capture_fp64(a, out_index, out_value, LEN_1D) bind(C, name="ext_break_capture_fp64")
+  use, intrinsic :: iso_c_binding
+  implicit none
+  real(c_double), dimension(*), intent(in) :: a
+  integer(c_int64_t), intent(out) :: out_index
+  real(c_double), intent(out) :: out_value
+  integer(c_int64_t), value, intent(in) :: LEN_1D
+
+  real(c_double), parameter :: K = 1.0d0
+  integer(8) :: i, j, n
+  integer :: ss, ee, blksz, next_block, nblk, blk
+  logical :: found, lh
+  integer(8) :: found_idx
+
+  n = LEN_1D
+  ! Fortran base: numpy -1 sentinel is stored as 0; crossing stored as 1-based position
+  out_index = 0_c_int64_t
+  out_value = -1.0d0
+
+  if (n < 1048576) then
+     do i = 1, n
+        if (a(i) > K) then
+           out_index = i
+           out_value = a(i)
+           exit
+        end if
+     end do
+     return
+  end if
+
+  blksz = 65536
+  found = .false.
+  found_idx = 0
+  next_block = 0
+  nblk = (int(n) + blksz - 1)/blksz
+  !$omp parallel shared(a,n,found,found_idx,next_block,nblk,blksz) private(blk,i,ss,ee,j,lh)
+     do
+        if (found) exit
+        !$omp critical
+           blk = next_block
+           next_block = next_block + 1
+        !$omp end critical
+        if (blk >= nblk) exit
+        ss = blk*blksz + 1
+        ee = min((blk+1)*blksz, int(n))
+        lh = .false.
+        do i = ss, ee
+           lh = lh .or. (a(i) > K)
+        end do
+        if (lh) then
+           do j = ss, ee
+              if (a(j) > K) then
+                 !$omp critical
+                 if (.not. found) then
+                    found = .true.
+                    found_idx = j
+                 else if (j < found_idx) then
+                    found_idx = j
+                 end if
+                 !$omp end critical
+                 exit
+              end if
+           end do
+        end if
+     end do
+  !$omp end parallel
+  if (found) then
+     out_index = found_idx
+     out_value = a(found_idx)
+  end if
+end subroutine

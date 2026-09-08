@@ -1,0 +1,112 @@
+#include <stdint.h>
+#include <omp.h>
+#include <immintrin.h>
+
+#define MAX_THREADS 256
+#define SERIAL_THRESHOLD 8192
+
+static inline double zmm_last(__m512d v) {
+#ifdef __AVX512DQ__
+    __m128d last_lane = _mm512_extractf64x2_pd(v, 3);
+    return _mm_cvtsd_f64(_mm_unpackhi_pd(last_lane, last_lane));
+#else
+    return _mm512_reduce_add_pd(v);
+#endif
+}
+
+static inline __m512d prefix_sum_zmm(__m512d v) {
+    __m512i vi = _mm512_castpd_si512(v);
+    __m512d s1 = _mm512_add_pd(v, _mm512_castsi512_pd(_mm512_alignr_epi64(vi, _mm512_setzero_si512(), 7)));
+    __m512d s2 = _mm512_add_pd(s1, _mm512_castsi512_pd(_mm512_alignr_epi64(_mm512_castpd_si512(s1), _mm512_setzero_si512(), 6)));
+    __m512d s4 = _mm512_add_pd(s2, _mm512_castsi512_pd(_mm512_alignr_epi64(_mm512_castpd_si512(s2), _mm512_setzero_si512(), 4)));
+    return s4;
+}
+
+void tsvc_2_s3112_fp64(const double *restrict a, double *restrict b, const int64_t LEN_1D) {
+    if (LEN_1D <= 0) return;
+
+    int nt = omp_get_max_threads();
+    if (LEN_1D < SERIAL_THRESHOLD || nt <= 1) {
+        double sum = 0.0;
+        for (int64_t i = 0; i < LEN_1D; ++i) {
+            sum += a[i];
+            b[i] = sum;
+        }
+        return;
+    }
+
+    if (nt > MAX_THREADS) nt = MAX_THREADS;
+
+    double partials[MAX_THREADS];
+    double offsets[MAX_THREADS];
+
+    int64_t chunk = LEN_1D / nt;
+    int64_t rem = LEN_1D % nt;
+
+    #pragma omp parallel num_threads(nt)
+    {
+        int tid = omp_get_thread_num();
+        int64_t start = tid * chunk + (tid < rem ? tid : rem);
+        int64_t end = start + chunk + (tid < rem ? 1 : 0);
+
+        // Pass 1: compute chunk sums
+        {
+            double sum = 0.0;
+            int64_t i = start;
+#ifdef __AVX512F__
+            for (; i < end && (i & 7) != 0; ++i) {
+                sum += a[i];
+            }
+            for (; i + 7 < end; i += 8) {
+                __m512d v = _mm512_loadu_pd(&a[i]);
+                __m512d p = prefix_sum_zmm(v);
+                sum += zmm_last(p);
+            }
+#endif
+            for (; i < end; ++i) {
+                sum += a[i];
+            }
+            partials[tid] = sum;
+        }
+
+        #pragma omp barrier
+
+        #pragma omp single
+        {
+            offsets[0] = 0.0;
+            for (int t = 1; t < nt; ++t) {
+                offsets[t] = offsets[t - 1] + partials[t - 1];
+            }
+        }
+
+        #pragma omp barrier
+
+        // Pass 2: compute final prefix sums and write b
+        {
+            double sum = offsets[tid];
+            int64_t i = start;
+#ifdef __AVX512F__
+            for (; i < end && (i & 7) != 0; ++i) {
+                sum += a[i];
+                b[i] = sum;
+            }
+            __m512d run = _mm512_set1_pd(sum);
+            int64_t last_vec = end & ~7;
+            for (; i < last_vec; i += 8) {
+                __m512d v = _mm512_loadu_pd(&a[i]);
+                __m512d p = prefix_sum_zmm(v);
+                __m512d out = _mm512_add_pd(p, run);
+                _mm512_stream_pd(&b[i], out);
+                sum += zmm_last(p);
+                run = _mm512_set1_pd(sum);
+            }
+#endif
+            for (; i < end; ++i) {
+                sum += a[i];
+                b[i] = sum;
+            }
+        }
+    }
+
+    _mm_sfence();
+}

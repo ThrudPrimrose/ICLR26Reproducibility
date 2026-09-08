@@ -1,0 +1,28 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s231_fp64(double *restrict aa, const double *restrict bb, const int64_t LEN_2D) {
+  int64_t L = LEN_2D;
+  if (L <= 1) return;
+  #pragma omp target map(tofrom: aa[0:2*L]) map(to: bb[L:2*L])
+  {
+    #pragma omp parallel for
+    for (int64_t i = 0; i < L; ++i)
+      aa[L + i] = aa[i] + bb[L + i];
+  }
+  #pragma omp parallel
+  {
+    int64_t l = L;
+    int tid = omp_get_thread_num();
+    int nt  = omp_get_num_threads();
+    int64_t i0 = (l * tid) / nt;
+    int64_t i1 = (l * (tid+1)) / nt;
+    for (int64_t j = 2; j < l; ++j) {
+      const double *prev = aa + (j-1)*l;
+      const double *brow = bb + j*l;
+      double       *crow = aa + j*l;
+      for (int64_t i = i0; i < i1; ++i)
+        crow[i] = prev[i] + brow[i];
+    }
+  }
+}

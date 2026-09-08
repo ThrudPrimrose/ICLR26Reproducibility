@@ -1,0 +1,71 @@
+#include <stdint.h>
+#include <string.h>
+#include <omp.h>
+
+typedef struct { unsigned long b[16]; } cpuset_t;
+extern int sched_setaffinity(int, unsigned long, const void *);
+extern int sched_getaffinity(int, unsigned long, void *);
+extern int sched_getcpu(void);
+
+#ifndef NTHREADS
+#define NTHREADS 48
+#endif
+#ifndef CHUNK
+#define CHUNK 32
+#endif
+#ifndef USE_SMT
+#define USE_SMT 1
+#endif
+#define CORES_PER_RANK 24
+#define SIB_OFFSET 96
+
+static void pin_worker(int base, int tid) {
+  int core = base + (tid % CORES_PER_RANK);
+  cpuset_t m;
+  memset(&m, 0, sizeof m);
+  m.b[core / 64] |= 1UL << (core % 64);
+#if USE_SMT
+  m.b[(core + SIB_OFFSET) / 64] |= 1UL << ((core + SIB_OFFSET) % 64);
+#endif
+  (void)sched_setaffinity(0, sizeof m, &m);
+}
+
+static inline void cas_add(double *p, double guess, double v) {
+  double old = guess;
+  double newv;
+  do {
+    newv = old + v;
+  } while (!__atomic_compare_exchange(p, &old, &newv, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
+}
+
+void scatter_accum_dup_fp64(double *restrict bins, const int32_t *restrict ip, const double *restrict src, const int64_t LEN_1D) {
+  int base = sched_getcpu();
+  base = (base / CORES_PER_RANK) * CORES_PER_RANK;
+  int64_t n = LEN_1D;
+  omp_set_num_threads(NTHREADS);
+  #pragma omp parallel
+  {
+    int tid = omp_get_thread_num();
+    pin_worker(base, tid);
+    int nt = omp_get_num_threads();
+    int64_t chunk_n = (n + nt - 1) / nt;
+    int64_t c0 = (int64_t)tid * chunk_n;
+    int64_t c1 = c0 + chunk_n;
+    if (c1 > n) c1 = n;
+    const int32_t *ip_t = ip + c0;
+    const double *src_t = src + c0;
+    int64_t m = c1 - c0;
+    int64_t i = 0;
+    while (i + CHUNK <= m) {
+      int32_t ix[CHUNK];
+      double sv[CHUNK], bv[CHUNK];
+      int k;
+      for (k = 0; k < CHUNK; ++k) ix[k] = ip_t[i + k];
+      for (k = 0; k < CHUNK; ++k) sv[k] = src_t[i + k];
+      for (k = 0; k < CHUNK; ++k) bv[k] = bins[(int64_t)ix[k]];
+      for (k = 0; k < CHUNK; ++k) cas_add(&bins[(int64_t)ix[k]], bv[k], sv[k]);
+      i += CHUNK;
+    }
+    for (; i < m; ++i) cas_add(&bins[(int64_t)ip_t[i]], bins[(int64_t)ip_t[i]], src_t[i]);
+  }
+}

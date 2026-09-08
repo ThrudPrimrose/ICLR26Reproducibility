@@ -1,0 +1,45 @@
+import numpy as np
+import numba
+
+# Parallel Numba implementation of the s2233 kernel.
+# This kernel performs two independent prefix-sum operations along rows for each column.
+# Both aa and bb are updated in-place using the recurrence:
+#   aa[j, i] = aa[j-1, i] + cc[j, i]
+#   bb[j, i] = bb[j-1, i] + cc[j, i]
+# where i iterates over columns and j over rows, starting from offset=8.
+# The operations for different columns are independent, so we can parallelize over the column index.
+
+@numba.njit(parallel=True, fastmath=False)
+def _aa_kernel(aa, cc, LEN_2D, offset):
+    for i in numba.prange(offset, LEN_2D):
+        # prefix sum over rows for column i of aa
+        for j in range(offset, LEN_2D):
+            aa[j, i] = aa[j - 1, i] + cc[j, i]
+
+@numba.njit(parallel=True, fastmath=False)
+def _bb_kernel(bb, cc, LEN_2D, offset):
+    for i in numba.prange(offset, LEN_2D):
+        # prefix sum over rows for column i of bb (note the order of indices is the same as for aa)
+        for j in range(offset, LEN_2D):
+            bb[j, i] = bb[j - 1, i] + cc[j, i]
+
+def s2233(aa, bb, cc, LEN_2D):
+    """Parallel Numba implementation of the s2233 kernel.
+
+    Parameters
+    ----------
+    aa : np.ndarray
+        Input/output array, shape (LEN_2D, LEN_2D).
+    bb : np.ndarray
+        Input/output array, shape (LEN_2D, LEN_2D).
+    cc : np.ndarray
+        Input array, shape (LEN_2D, LEN_2D).
+    LEN_2D : int
+        Size of each dimension.
+    """
+    offset = 8
+    if LEN_2D <= offset:
+        return None
+    _aa_kernel(aa, cc, LEN_2D, offset)
+    _bb_kernel(bb, cc, LEN_2D, offset)
+    return None

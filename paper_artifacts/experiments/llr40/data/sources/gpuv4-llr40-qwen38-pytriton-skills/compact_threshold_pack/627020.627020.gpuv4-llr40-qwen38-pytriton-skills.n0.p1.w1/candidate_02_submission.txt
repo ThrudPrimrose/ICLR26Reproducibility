@@ -1,0 +1,79 @@
+import os
+import numpy as np
+import numba
+from numba import njit, prange
+
+_T = max(1, len(os.sched_getaffinity(0)))
+numba.set_num_threads(_T)
+
+
+@njit(parallel=True, fastmath=True)
+def _compact(src, weight, packed, out_count, stg, cnt, base):
+    L = src.shape[0]
+    nch = stg.shape[0]
+    C = stg.shape[1]
+    for b in prange(nch):
+        lo = b * C
+        hi = min(lo + C, L)
+        k = 0
+        for i in range(lo, hi):
+            s = src[i]
+            if s > 0.0:
+                stg[b, k] = s * weight[i]
+                k += 1
+        cnt[b] = k
+    base[0] = 0
+    for b in range(nch):
+        base[b + 1] = base[b] + cnt[b]
+    for b in prange(nch):
+        off = base[b]
+        cb = cnt[b]
+        if cb > 0:
+            packed[off:off + cb] = stg[b, :cb]
+    out_count[0] = base[nch]
+
+
+_BUFS = {}
+
+
+def _bufs(L):
+    b = _BUFS.get(L)
+    if b is None:
+        T = max(1, _T)
+        C = ((L + T - 1) // T + 255) // 256 * 256
+        nch = (L + C - 1) // C
+        stg = np.empty((nch, C), dtype=np.float64)
+        cnt = np.empty(nch, dtype=np.int64)
+        base = np.empty(nch + 1, dtype=np.int64)
+        b = (stg, cnt, base)
+        _BUFS[L] = b
+    return b
+
+
+def compact_threshold_pack(src, weight, packed, out_count, LEN_1D):
+    if (src.dtype == np.float64 and weight.dtype == np.float64
+            and packed.dtype == np.float64 and out_count.dtype == np.int64
+            and src.flags.c_contiguous and weight.flags.c_contiguous
+            and packed.flags.c_contiguous and out_count.flags.c_contiguous):
+        stg, cnt, base = _bufs(LEN_1D)
+        _compact(src, weight, packed, out_count, stg, cnt, base)
+        return
+    idx = np.flatnonzero(src > 0)
+    n = idx.size
+    if n:
+        np.multiply(src[idx], weight[idx], out=packed[:n])
+    out_count[0] = n
+
+
+def _warm():
+    n = 300_000
+    rng = np.random.default_rng(0)
+    s = np.where(rng.integers(0, 100, n) > 20, rng.uniform(0.5, 2.0, n), -rng.uniform(0.5, 2.0, n))
+    w = rng.uniform(-2, 2, n)
+    p = np.zeros(n)
+    c = np.zeros(1, dtype=np.int64)
+    compact_threshold_pack(s, w, p, c, n)
+    compact_threshold_pack(s, w, p, c, n)
+
+
+_warm()

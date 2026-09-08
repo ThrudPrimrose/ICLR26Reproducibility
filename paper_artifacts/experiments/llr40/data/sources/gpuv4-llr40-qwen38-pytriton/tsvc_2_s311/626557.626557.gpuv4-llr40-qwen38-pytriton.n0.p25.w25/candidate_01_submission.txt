@@ -1,0 +1,44 @@
+"""TSVC tsvc_2 s311: sum_out[0] = sum(a[0:LEN_1D]).
+
+Threaded NumPy reduction: numpy releases the GIL during .sum(), so
+concurrent per-slice pairwise sums scale across cores.
+"""
+import os
+from concurrent.futures import ThreadPoolExecutor
+
+import numpy as np
+
+_NCPU = min(int(os.cpu_count() or 4), 32)
+_pool = ThreadPoolExecutor(max_workers=_NCPU)
+
+
+def _sum_sliced(arr, n, nt):
+    chunk = (n + nt - 1) // nt
+    futs = [_pool.submit(arr[i * chunk:min((i + 1) * chunk, n)].sum)
+            for i in range(nt)]
+    total = 0.0
+    for f in futs:
+        total += f.result()
+    return total
+
+
+def s311(a, sum_out, LEN_1D):
+    n = LEN_1D
+    if n <= 0:
+        sum_out[0] = 0.0
+        return
+    nt = n // 8_000_000
+    if nt < 1:
+        nt = 1
+    elif nt > _NCPU:
+        nt = _NCPU
+    if nt == 1:
+        sum_out[0] = a[:n].sum()
+    else:
+        sum_out[0] = _sum_sliced(a, n, nt)
+
+
+# Warm the pool (thread creation) and the reduction path at import time.
+_w = np.zeros(64, dtype=np.float64)
+for _i in range(_NCPU):
+    _pool.submit(_w.sum).result()

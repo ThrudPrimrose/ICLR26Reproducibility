@@ -1,0 +1,20 @@
+#include <stdint.h>
+
+void tsvc_2_s255_fp64(double *restrict a, const double *restrict b, const int64_t LEN_1D) {
+    const int64_t n = LEN_1D;
+    if (n <= 0) return;
+    /*
+     * The serial reference carries scalars x=b[i-1], y=b[i-2] through the
+     * loop, but those are just two wrapped lookups into b -- there is no
+     * dependence on a[i-1], a[i-2].  So every element is independent:
+     *     a[i] = (b[i] + b[(i-1) mod n] + b[(i-2) mod n]) * 0.333
+     * with wrap-around only at i = 0 (b[n-1], b[n-2]) and i = 1 (b[n-1]).
+     * The two selects handle the peel; the loop is fully parallel.
+     */
+    #pragma omp target teams distribute parallel for map(to: b[0:n]) map(from: a[0:n])
+    for (int64_t i = 0; i < n; i++) {
+        const double m1 = (i >= 1) ? b[i - 1] : b[n - 1];
+        const double m2 = (i >= 2) ? b[i - 2] : ((i == 1) ? b[n - 1] : b[n - 2]);
+        a[i] = (b[i] + m1 + m2) * 0.333;
+    }
+}

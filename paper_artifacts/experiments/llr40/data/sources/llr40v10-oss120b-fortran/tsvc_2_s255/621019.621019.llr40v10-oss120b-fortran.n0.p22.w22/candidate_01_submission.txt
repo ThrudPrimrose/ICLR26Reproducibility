@@ -1,0 +1,29 @@
+module tsvc_2_s255_mod
+  use iso_c_binding
+  implicit none
+contains
+  subroutine tsvc_2_s255_fp64(a, b, LEN_1D) bind(C, name="tsvc_2_s255_fp64")
+    ! Hand-optimized version of TSVC kernel s255: circular 3-point moving average.
+    ! Arguments are C-style pointers (contiguous arrays) of length LEN_1D.
+    implicit none
+    integer(c_int64_t), intent(in), value :: LEN_1D
+    real(c_double), intent(out) :: a(LEN_1D)
+    real(c_double), intent(in) :: b(LEN_1D)
+    integer(c_int64_t) :: i
+    real(c_double), parameter :: inv3 = 0.333_c_double
+
+    if (LEN_1D >= 1) then
+      a(1) = (b(1) + b(LEN_1D) + b(LEN_1D-1)) * inv3
+    end if
+    if (LEN_1D >= 2) then
+      a(2) = (b(2) + b(1) + b(LEN_1D)) * inv3
+    end if
+    if (LEN_1D > 2) then
+!$omp parallel do default(none) shared(a, b, LEN_1D) schedule(static)
+      do i = 3, LEN_1D
+        a(i) = (b(i) + b(i-1) + b(i-2)) * inv3
+      end do
+!$omp end parallel do
+    end if
+  end subroutine tsvc_2_s255_fp64
+end module tsvc_2_s255_mod

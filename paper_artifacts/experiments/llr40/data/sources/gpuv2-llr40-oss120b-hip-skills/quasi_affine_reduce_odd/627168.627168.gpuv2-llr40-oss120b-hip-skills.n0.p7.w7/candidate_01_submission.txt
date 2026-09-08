@@ -1,0 +1,22 @@
+#include <hip/hip_runtime.h>
+extern "C" __global__ void reduce_odd_kernel(const double* __restrict__ a, double* __restrict__ out, long long LEN_1D) {
+    extern __shared__ double sdata[];
+    unsigned int tid = threadIdx.x;
+    unsigned int blockSize = blockDim.x;
+    long long idx = 1 + 2LL * ((long long)blockIdx.x * blockSize + tid);
+    double val = 0.0;
+    if (idx < LEN_1D) {
+        val = a[idx];
+    }
+    sdata[tid] = val;
+    __syncthreads();
+    for (unsigned int s = blockSize / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            sdata[tid] += sdata[tid + s];
+        }
+        __syncthreads();
+    }
+    if (tid == 0) {
+        atomicAdd(out, sdata[0]);
+    }
+}

@@ -1,0 +1,62 @@
+/* Optimized version of the TSVC tsvc_2 s2233 microkernel.
+ *
+ * This kernel performs two independent vertical prefix-sum operations on the
+ * two output matrices `aa` and `bb` using the input matrix `cc`:
+ *   1) For each column i (i >= 8) compute:
+ *        aa[j,i] = aa[j-1,i] + cc[j,i]  for j = 8 .. LEN-1
+ *   2) For each column j (j >= 8) compute:
+ *        bb[i,j] = bb[i-1,j] + cc[i,j]  for i = 8 .. LEN-1
+ *
+ * The original reference implementation nests the inner loop over `j` inside an
+ * outer loop over `i`. That ordering creates a loop‑carried dependency across
+ * rows for the `bb` update, preventing direct parallelisation of the outer loop.
+ *
+ * To enable parallelism we decouple the two passes and invert the loop
+ * nesting for the `bb` computation. Both passes become independent vertical
+ * scans per column, which can be parallelised with OpenMP. Additionally we
+ * eliminate the repeated load of the previous element by keeping a scalar
+ * accumulator in a register, which reduces memory traffic and improves
+ * instruction‑level parallelism.
+ *
+ * The algorithm respects the original bounds (indices start at 8) and uses
+ * `restrict` pointers as required by the benchmark ABI.
+ */
+
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa,
+                       double *restrict bb,
+                       const double *restrict cc,
+                       const int64_t LEN_2D) {
+    /* ------------------------------------------------------------------ */
+    /* First pass: vertical prefix sum for `aa`. Each column `i` is
+     * independent, so we parallelise over columns.
+     */
+    #pragma omp parallel for schedule(static)
+    for (int64_t i = 8; i < LEN_2D; ++i) {
+        // Seed with the value from the previous row (row 7).
+        double acc = aa[7 * LEN_2D + i];
+        // Propagate downwards.
+        for (int64_t j = 8; j < LEN_2D; ++j) {
+            acc += cc[j * LEN_2D + i];
+            aa[j * LEN_2D + i] = acc;
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Second pass: vertical prefix sum for `bb`. The original code updates
+     * `bb[i,j]` using `bb[i-1,j]`. By swapping the loop order we can treat
+     * each column `j` as an independent scan over rows `i`.
+     */
+    #pragma omp parallel for schedule(static)
+    for (int64_t j = 8; j < LEN_2D; ++j) {
+        // Seed with the value from row 7, same column `j`.
+        double acc = bb[7 * LEN_2D + j];
+        for (int64_t i = 8; i < LEN_2D; ++i) {
+            acc += cc[i * LEN_2D + j];
+            bb[i * LEN_2D + j] = acc;
+        }
+    }
+}
+

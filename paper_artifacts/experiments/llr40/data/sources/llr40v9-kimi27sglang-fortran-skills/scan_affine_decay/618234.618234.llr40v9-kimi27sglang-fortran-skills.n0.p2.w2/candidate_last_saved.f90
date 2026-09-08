@@ -1,0 +1,76 @@
+subroutine scan_affine_decay_fp64(c, x, y, LEN_1D, workspace, workspace_size) bind(C, name='scan_affine_decay_fp64')
+  use iso_c_binding
+  use omp_lib
+  implicit none
+
+  real(c_double), intent(in) :: c(*)
+  real(c_double), intent(in) :: x(*)
+  real(c_double), intent(inout) :: y(*)
+  integer(c_int64_t), value, intent(in) :: LEN_1D
+  type(c_ptr), value, intent(in) :: workspace
+  integer(c_int64_t), value, intent(in) :: workspace_size
+
+  integer(c_int64_t), parameter :: max_nb = 32768_c_int64_t
+  integer(c_int64_t) :: n, nb, b, lo, hi, i
+  real(c_double) :: cagg, local, prev
+  real(c_double) :: aggC(0:max_nb - 1), aggX(0:max_nb - 1), bound(0:max_nb - 1)
+
+  n = LEN_1D
+  if (n <= 0) return
+
+  ! numpy reference: y[0] = x[0]; y[i] = c[i]*y[i-1] + x[i] for i>=1
+  y(1) = x(1)
+  if (n <= 1) return
+
+  nb = n / 131072_c_int64_t
+  if (nb < 4_c_int64_t * omp_get_max_threads()) nb = 4_c_int64_t * omp_get_max_threads()
+  if (nb > max_nb) nb = max_nb
+  if (n < 4_c_int64_t * nb) then
+     do i = 2, n
+        y(i) = c(i) * y(i - 1) + x(i)
+     end do
+     return
+  end if
+
+  !$omp parallel private(b, lo, hi, i, cagg, local, prev)
+
+  ! First pass: compute the affine map of each block for a zero left input.
+  !$omp do schedule(static)
+  do b = 0, nb - 1
+     lo = (n * b) / nb + 1
+     hi = (n * (b + 1)) / nb
+     local = x(lo)
+     cagg = c(lo)
+     do i = lo + 1, hi
+        local = c(i) * local + x(i)
+        cagg = cagg * c(i)
+     end do
+     aggC(b) = cagg
+     aggX(b) = local
+  end do
+  !$omp end do
+
+  ! Serial prefix over block boundary values; the input entering block 0 is zero.
+  !$omp single
+  bound(0) = 0.0_c_double
+  do b = 1, nb - 1
+     bound(b) = aggC(b - 1) * bound(b - 1) + aggX(b - 1)
+  end do
+  !$omp end single
+
+  ! Second pass: replay each block with the correct left input.
+  !$omp do schedule(static)
+  do b = 0, nb - 1
+     lo = (n * b) / nb + 1
+     hi = (n * (b + 1)) / nb
+     prev = bound(b)
+     do i = lo, hi
+        prev = c(i) * prev + x(i)
+        y(i) = prev
+     end do
+  end do
+  !$omp end do
+
+  !$omp end parallel
+
+end subroutine scan_affine_decay_fp64

@@ -1,0 +1,96 @@
+/* TSVC s119: aa[i][j] = aa[i-1][j-1] + bb[i][j]  for i,j in 1..N-1.
+ * Column-strip OpenMP parallelism; exact FADD order -> bit-identical.
+ * 12x ZMM unroll (24 loads in flight), 64B-aligned full-line stores
+ * (no RFO fetches), vectorized tail, 2-row-ahead b prefetch,
+ * threads pinned one-per-core.
+ */
+#include <stdint.h>
+#include <string.h>
+extern char *setenv(const char *name, const char *value, int overwrite);
+#include <omp.h>
+#include <immintrin.h>
+
+static inline void row_zmm(double *restrict o, const double *restrict a,
+                           const double *restrict b, int64_t m,
+                           const double *restrict b1, const double *restrict b2) {
+    int64_t k = 0;
+    while (k < m && ((uintptr_t)(o + k) & 63)) { o[k] = a[k] + b[k]; ++k; }
+    for (; k + 96 <= m; k += 96) {
+        __builtin_prefetch(b1 + k, 0, 0);
+        __builtin_prefetch(b2 + k, 0, 0);
+        __m512d v[12];
+        #pragma GCC unroll 12
+        for (int t = 0; t < 12; ++t)
+            v[t] = _mm512_add_pd(_mm512_loadu_pd(a + k + 8*t),
+                                  _mm512_loadu_pd(b + k + 8*t));
+        #pragma GCC unroll 12
+        for (int t = 0; t < 12; ++t) _mm512_storeu_pd(o + k + 8*t, v[t]);
+    }
+    for (; k + 16 <= m; k += 16) {
+        __m512d x0 = _mm512_add_pd(_mm512_loadu_pd(a + k),     _mm512_loadu_pd(b + k));
+        __m512d x1 = _mm512_add_pd(_mm512_loadu_pd(a + k + 8), _mm512_loadu_pd(b + k + 8));
+        _mm512_storeu_pd(o + k,     x0);
+        _mm512_storeu_pd(o + k + 8, x1);
+    }
+    for (; k + 8 <= m; k += 8) {
+        _mm512_storeu_pd(o + k, _mm512_add_pd(_mm512_loadu_pd(a + k), _mm512_loadu_pd(b + k)));
+    }
+    for (; k < m; ++k) o[k] = a[k] + b[k];
+}
+
+#define MAX_STRIPS 256
+
+void tsvc_2_s119_fp64(double *restrict aa, const double *restrict bb, const int64_t LEN_2D) {
+    const int64_t N = LEN_2D;
+    if (N < 2) return;
+    const int64_t W = N - 1;
+
+    static int env_done = 0;
+    if (!env_done) {
+        setenv("OMP_PLACES", "cores", 0);
+        setenv("OMP_PROC_BIND", "spread", 0);
+        env_done = 1;
+    }
+
+    int P = (N < 2000) ? 1 : omp_get_max_threads();
+    if (P < 1) P = 1;
+    if (P > W) P = (int)W;
+    if (P > MAX_STRIPS) P = MAX_STRIPS;
+
+    const int64_t base = W / P;
+    const int64_t rem  = W % P;
+
+    if (P == 1) {
+        const double *a = aa;
+        const double *b = bb + N + 1;
+        double *o       = aa + N + 1;
+        for (int64_t i = 1; i < N; ++i) {
+            row_zmm(o, a, b, W, b + N, (i < N - 2) ? b + 2 * N : b);
+            a += N; b += N; o += N;
+        }
+        return;
+    }
+
+    _Alignas(64) int64_t done[MAX_STRIPS];
+    memset(done, 0, sizeof(done));
+
+    #pragma omp parallel num_threads(P)
+    {
+        const int c = omp_get_thread_num();
+        const int64_t j0 = 1 + c * base + ((c < rem) ? c : rem);
+        const int64_t j1 = 1 + (c + 1) * base + ((c + 1 < rem) ? c + 1 : rem);
+        const int64_t m  = j1 - j0;
+        const double *a  = aa + j0 - 1;
+        const double *b  = bb + N + j0;
+        double *o        = aa + N + j0;
+        for (int64_t i = 1; i < N; ++i) {
+            if (c > 0) {
+                while (__atomic_load_n(&done[c - 1], __ATOMIC_ACQUIRE) < i - 1)
+                    __builtin_ia32_pause();
+            }
+            row_zmm(o, a, b, m, b + N, (i < N - 2) ? b + 2 * N : b);
+            __atomic_store_n(&done[c], i, __ATOMIC_RELEASE);
+            a += N; b += N; o += N;
+        }
+    }
+}

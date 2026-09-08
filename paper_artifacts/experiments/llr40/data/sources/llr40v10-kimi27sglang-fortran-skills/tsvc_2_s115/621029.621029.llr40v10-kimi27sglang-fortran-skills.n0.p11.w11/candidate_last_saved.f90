@@ -1,0 +1,21 @@
+subroutine tsvc_2_s115_fp64(a, aa, LEN_2D) bind(C, name="tsvc_2_s115_fp64")
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_2D
+  real(c_double), intent(inout) :: a(LEN_2D)
+  real(c_double), intent(in) :: aa(LEN_2D, LEN_2D)
+
+  integer(c_int64_t) :: j, i
+  real(c_double) :: aj
+
+  !$omp parallel private(j, i, aj)
+  do j = 1, LEN_2D
+    aj = a(j)
+    !$omp do simd schedule(static)
+    do i = j + 1, LEN_2D
+      a(i) = a(i) - aa(i, j) * aj
+    end do
+    !$omp end do simd
+  end do
+  !$omp end parallel
+end subroutine tsvc_2_s115_fp64

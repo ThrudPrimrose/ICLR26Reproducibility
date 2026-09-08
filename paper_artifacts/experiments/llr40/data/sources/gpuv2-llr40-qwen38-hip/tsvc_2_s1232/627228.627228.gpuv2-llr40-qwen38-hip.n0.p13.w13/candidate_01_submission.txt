@@ -1,0 +1,20 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+
+__global__ void ts2_kernel(const double *__restrict__ bb, const double *__restrict__ cc,
+                           double *__restrict__ aa, long long N, long long V) {
+    long long j = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    long long i = (long long)blockIdx.y * blockDim.y + threadIdx.y;
+    if (j < N && i < N && j * V <= i) {
+        long long idx = i * N + j;
+        aa[idx] = bb[idx] + cc[idx];
+    }
+}
+
+extern "C" void launch_ts2(const double *bb, const double *cc, double *aa, long long N, long long V) {
+    const unsigned bx = 128, by = 8;
+    dim3 block(bx, by);
+    dim3 grid((unsigned)((N + bx - 1) / bx), (unsigned)((N + by - 1) / by));
+    ts2_kernel<<<grid, block>>>(bb, cc, aa, N, V);
+}

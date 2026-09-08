@@ -1,0 +1,115 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <time.h>
+#include <omp.h>
+
+#define G 65536            /* micro-block size */
+#define MAXT 24
+
+static double *sAB = NULL;    /* [MAXT][G*2] (A_i, Z_i) per thread, reused per wave */
+static double *blkA = NULL;   /* per micro-block A_k */
+static double *blkB = NULL;   /* per micro-block B_k */
+static double *carv = NULL;   /* per micro-block carry-in */
+static size_t  snk = 0;
+static int     probed = 0;
+
+static double now_ms(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (double)t.tv_sec * 1000.0 + (double)t.tv_nsec / 1e6;
+}
+
+static void ensure(size_t nk) {
+    if (nk <= snk) return;
+    free(blkA); free(blkB); free(carv);
+    if (!sAB) sAB = (double *)calloc(sizeof(double) * MAXT * G * 2, 1);
+    snk = nk;
+    blkA = (double *)malloc(sizeof(double) * nk);
+    blkB = (double *)malloc(sizeof(double) * nk);
+    carv = (double *)malloc(sizeof(double) * nk);
+    memset(blkA, 0, sizeof(double) * nk);
+    memset(blkB, 0, sizeof(double) * nk);
+    memset(carv, 0, sizeof(double) * nk);
+}
+
+void scan_affine_decay_fp64(const double *restrict c, const double *restrict x,
+                            double *restrict y, const int64_t LEN_1D) {
+    long long n = (long long)LEN_1D;
+    if (n <= 0) return;
+    if (n == 1) { y[0] = x[0]; return; }
+    if (n < (1LL << 20)) {
+        y[0] = x[0];
+        for (long long i = 1; i < n; i++) y[i] = c[i] * y[i - 1] + x[i];
+        return;
+    }
+
+    long long K = (n + G - 1) / G;
+    ensure((size_t)K);
+
+    double t0 = now_ms();
+    int probe = !probed;
+    probed = 1;
+    double t1, t2;
+
+    double carry = 0.0;
+    #pragma omp parallel
+    {
+        int t = omp_get_thread_num();
+        int T = omp_get_num_threads();
+        double *ab = &sAB[(size_t)t * G * 2];
+        long long nw = (K + T - 1) / T;
+
+        for (long long w = 0; w < nw; w++) {
+            long long kw0 = w * T, kw1 = kw0 + T;
+            if (kw1 > K) kw1 = K;
+
+            /* Pass 1: (A,Z) chains; store per-element prefixes for this thread. */
+            #pragma omp for schedule(static)
+            for (long long k = kw0; k < kw1; k++) {
+                long long b0 = k * G;
+                long long b1 = b0 + G;
+                if (b1 > n) b1 = n;
+                double a = 1.0, z = 0.0;
+                for (long long i = b0, j = 0; i < b1; i++, j++) {
+                    double ci = c[i];
+                    a = ci * a;
+                    z = ci * z + x[i];
+                    ab[2 * j] = a;
+                    ab[2 * j + 1] = z;
+                }
+                blkA[k] = a;
+                blkB[k] = z;
+            }
+
+            #pragma omp single
+            {
+                double v = carry;
+                for (long long k = kw0; k < kw1; k++) {
+                    carv[k] = v;
+                    v = blkA[k] * v + blkB[k];
+                }
+                carry = v;
+            }
+
+            /* Pass 2: vectorized apply y = A_i * v + Z_i. */
+            #pragma omp for schedule(static)
+            for (long long k = kw0; k < kw1; k++) {
+                long long b0 = k * G;
+                long long b1 = b0 + G;
+                if (b1 > n) b1 = n;
+                double v = carv[k];
+                for (long long i = b0, j = 0; i < b1; i++, j++)
+                    y[i] = ab[2 * j] * v + ab[2 * j + 1];
+            }
+        }
+    }
+    t2 = now_ms();
+    t1 = t2;
+
+    if (probe) {
+        printf("n=%lld K=%lld work=%.3f ms total=%.3f ms\n", n, K, t1 - t0, t2 - t0);
+        fflush(stdout);
+    }
+}

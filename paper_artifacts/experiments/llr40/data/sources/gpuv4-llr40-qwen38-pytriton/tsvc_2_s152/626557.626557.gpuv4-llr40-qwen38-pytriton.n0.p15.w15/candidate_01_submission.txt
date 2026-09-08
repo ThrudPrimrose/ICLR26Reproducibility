@@ -1,0 +1,45 @@
+# TSVC tsvc_2 s152:  b = d*e ;  a += b*c   (in-place)
+# Strategy: numba parallel (prange) two-pass kernel, warmed at import time.
+import numpy as np
+import numba
+from numba import njit, prange
+
+@njit(parallel=True)
+def _fused_par(a, b, c, d, e, n):
+    for i in prange(n):
+        b[i] = d[i] * e[i]
+    for i in prange(n):
+        a[i] += b[i] * c[i]
+
+@njit()
+def _fused_ser(a, b, c, d, e, n):
+    for i in range(n):
+        b[i] = d[i] * e[i]
+    for i in range(n):
+        a[i] += b[i] * c[i]
+
+_TINY = 65536
+
+def s152(a, b, c, d, e, LEN_1D):
+    n = int(LEN_1D)
+    if n <= _TINY:
+        _fused_ser(a, b, c, d, e, n)
+    else:
+        _fused_par(a, b, c, d, e, n)
+    return None
+
+def _warm():
+    n = 1 << 20
+    a = np.zeros(n); b = np.zeros(n); c = np.zeros(n)
+    d = np.zeros(n); e = np.zeros(n)
+    _fused_ser(a, b, c, d, e, n)
+    _fused_par(a, b, c, d, e, n)
+    # defensively warm the non-contiguous (double[:]) dispatches too
+    m = np.zeros((2, n))
+    av = m[0, ::2]; bv = np.zeros((2, n))
+    cv = np.zeros((2, n)); dv = np.zeros((2, n)); ev = np.zeros((2, n))
+    col_b = bv[0, ::2]; col_c = cv[0, ::2]; col_d = dv[0, ::2]; col_e = ev[0, ::2]
+    _fused_ser(av, col_b, col_c, col_d, col_e, len(av))
+    _fused_par(av, col_b, col_c, col_d, col_e, len(av))
+
+_warm()

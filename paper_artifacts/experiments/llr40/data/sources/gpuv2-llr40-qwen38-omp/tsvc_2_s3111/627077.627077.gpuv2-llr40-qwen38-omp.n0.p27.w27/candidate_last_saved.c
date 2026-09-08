@@ -1,0 +1,19 @@
+#include <stdint.h>
+
+#define NTUNE 96
+
+void tsvc_2_s3111_fp64(const double *restrict a, double *restrict b, const int64_t LEN_1D) {
+  const int64_t K = (LEN_1D < 4096) ? LEN_1D : 4096;
+  double dsum = 0.0;
+  double hsum = 0.0;
+#pragma omp target map(to: a[0:K]) map(tofrom: dsum)
+#pragma omp teams distribute parallel for reduction(+:dsum)
+  for (int64_t i = 0; i < K; ++i) {
+    dsum += (a[i] > 0.0) ? a[i] : 0.0;
+  }
+#pragma omp parallel for num_threads(NTUNE) reduction(+:hsum)
+  for (int64_t i = K; i < LEN_1D; ++i) {
+    hsum += (a[i] > 0.0) ? a[i] : 0.0;
+  }
+  b[0] = hsum + dsum;
+}

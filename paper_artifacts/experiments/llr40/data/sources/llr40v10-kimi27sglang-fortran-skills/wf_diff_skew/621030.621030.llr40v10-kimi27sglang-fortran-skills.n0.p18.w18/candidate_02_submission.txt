@@ -1,0 +1,23 @@
+subroutine wf_diff_skew_fp64(a, LEN_2D, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_2D
+  type(c_ptr), value, intent(in) :: workspace
+  integer(c_int64_t), value, intent(in) :: workspace_size
+  real(c_double), intent(inout) :: a(LEN_2D, LEN_2D)
+  integer(c_int64_t) :: n, r, c
+
+  n = LEN_2D
+  if (n < 2) return
+
+  !$omp parallel private(r, c)
+  do r = 2, n
+    !$omp do simd schedule(static)
+    do c = 1, n - 1
+      a(c, r) = a(c, r) + a(c, r - 1) + a(c + 1, r - 1)
+    end do
+    !$omp end do simd
+  end do
+  !$omp end parallel
+end subroutine wf_diff_skew_fp64

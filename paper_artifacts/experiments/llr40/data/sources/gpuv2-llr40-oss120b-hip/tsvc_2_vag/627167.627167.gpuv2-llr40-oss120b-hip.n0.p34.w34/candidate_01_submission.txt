@@ -1,0 +1,10 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void tsvc_2_vag_kernel(double* __restrict__ a, const double* __restrict__ b, const int32_t* __restrict__ ip, int64_t LEN_1D) {
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (idx < LEN_1D) {
+        int32_t src_idx = ip[idx];
+        a[idx] = b[src_idx];
+    }
+}

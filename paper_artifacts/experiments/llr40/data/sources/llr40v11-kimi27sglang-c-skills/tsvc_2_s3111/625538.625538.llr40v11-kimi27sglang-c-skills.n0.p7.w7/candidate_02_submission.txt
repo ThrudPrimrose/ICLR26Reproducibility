@@ -1,0 +1,20 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s3111_fp64(const double *restrict a, double *restrict b, const int64_t LEN_1D) {
+    double sum = 0.0;
+
+    if (LEN_1D < 4096) {
+        #pragma omp simd reduction(+:sum)
+        for (int64_t i = 0; i < LEN_1D; ++i) {
+            sum += (a[i] > 0.0) ? a[i] : 0.0;
+        }
+    } else {
+        #pragma omp parallel for simd reduction(+:sum) schedule(static)
+        for (int64_t i = 0; i < LEN_1D; ++i) {
+            sum += (a[i] > 0.0) ? a[i] : 0.0;
+        }
+    }
+
+    b[0] = sum;
+}

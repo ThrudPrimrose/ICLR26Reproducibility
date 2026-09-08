@@ -1,0 +1,55 @@
+import os
+import numpy as np
+import numba
+
+# Choose thread count at import (free). Numba caps at the CPU affinity count.
+try:
+    _nt = len(os.sched_getaffinity(0))
+except Exception:
+    _nt = os.cpu_count() or 1
+_nt = max(1, min(int(_nt), 64))
+try:
+    numba.set_num_threads(_nt)
+except Exception:
+    pass
+
+_T = 512  # ~one 4KiB page of doubles per row: minimises TLB page-walks, full-page bursts
+
+@numba.njit(parallel=True)
+def _aa(aa, cc, N, T):
+    # aa[j,i] = aa[j-1,i] + cc[j,i]  (serial scan down each column; columns independent)
+    nt = (N - 8 + T - 1) // T
+    for t in numba.prange(nt):
+        i0 = 8 + t * T
+        n = min(T, N - i0)
+        acc = np.empty(n)
+        for c in range(n):
+            acc[c] = aa[7, i0 + c]
+        for j in range(8, N):
+            for c in range(n):
+                acc[c] += cc[j, i0 + c]
+                aa[j, i0 + c] = acc[c]
+
+@numba.njit(parallel=True)
+def _bb(bb, cc, N):
+    # bb[j,i] = bb[j,i-1] + cc[j,i]  (serial scan across each row; rows independent)
+    for j in numba.prange(8, N):
+        acc = bb[j, 7]
+        for i in range(8, N):
+            acc += cc[j, i]
+            bb[j, i] = acc
+
+def s233(aa, bb, cc, LEN_2D):
+    N = int(LEN_2D)
+    if N > 8:
+        _aa(aa, cc, N, _T)
+        _bb(bb, cc, N)
+    return None
+
+# Pre-compile (and warm) at import time -- not charged by the timer.
+try:
+    _a = np.ones((16, 16)); _c = np.ones((16, 16)); _b = np.ones((16, 16))
+    _aa(_a, _c, 16, _T); _bb(_b, _c, 16)
+    _aa(_a, _c, 16, _T); _bb(_b, _c, 16)
+except Exception:
+    pass

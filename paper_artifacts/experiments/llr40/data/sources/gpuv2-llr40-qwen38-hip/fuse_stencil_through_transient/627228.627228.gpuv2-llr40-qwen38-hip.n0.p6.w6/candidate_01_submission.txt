@@ -1,0 +1,16 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void fst_kernel(const double *__restrict__ a, double *__restrict__ out, int64_t n) {
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n - 3) return;
+    out[i + 1] = (a[i] + a[i + 1] + a[i + 2]) * (a[i + 1] + a[i + 2] + a[i + 3]);
+}
+
+void fst_launch(const double *a, double *out, int64_t n) {
+    if (n < 4) return;
+    int64_t count = n - 3;
+    const int block = 256;
+    int64_t grid = (count + block - 1) / block;
+    fst_kernel<<<(unsigned)grid, block>>>(a, out, n);
+}

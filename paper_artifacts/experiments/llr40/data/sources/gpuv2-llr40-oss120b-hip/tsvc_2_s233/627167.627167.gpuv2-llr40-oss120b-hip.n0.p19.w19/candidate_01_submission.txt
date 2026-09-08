@@ -1,0 +1,20 @@
+// Device kernels for TSVC tsvc_2 s233 (fp64)
+
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void tsvc_2_s233_aa_kernel(double *__restrict__ aa, const double *__restrict__ cc, int64_t N) {
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x + 8;
+    if (i >= N) return;
+    for (int64_t j = 8; j < N; ++j) {
+        aa[j * N + i] = aa[(j - 1) * N + i] + cc[j * N + i];
+    }
+}
+
+extern "C" __global__ void tsvc_2_s233_bb_kernel(double *__restrict__ bb, const double *__restrict__ cc, int64_t N) {
+    int64_t j = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x + 8;
+    if (j >= N) return;
+    for (int64_t i = 8; i < N; ++i) {
+        bb[j * N + i] = bb[j * N + (i - 1)] + cc[j * N + i];
+    }
+}

@@ -1,0 +1,102 @@
+subroutine tsvc_2_s3112_fp64(a, b, len_1d) bind(C, name='tsvc_2_s3112_fp64')
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  type(c_ptr), value :: a, b
+  integer(c_int64_t), value :: len_1d
+
+  real(c_double), dimension(:), pointer :: ap, bp
+  integer(c_int64_t), parameter :: I1 = int(1, c_int64_t), I8 = int(8, c_int64_t)
+  integer(c_int64_t) :: n, n8, bs, j, i, base, lim, blk_end
+  integer :: nt, nb
+  real(c_double) :: s, off
+  real(c_double) :: a0, a1, a2, a3, a4, a5, a6, a7
+  real(c_double) :: p0, p1, p2, p3, p4, p5, p6, p7
+  real(c_double), allocatable :: blksum(:), blkoff(:)
+
+  n = len_1d
+  if (n <= 0) return
+  call c_f_pointer(a, ap, [n])
+  call c_f_pointer(b, bp, [n])
+
+  if (n < int(1048576, c_int64_t)) then
+    s = 0.0d0
+    do i = 1, n
+      s = s + ap(i)
+      bp(i) = s
+    end do
+    return
+  end if
+
+  nt = omp_get_max_threads()
+  n8 = n / I8
+  bs = n8 / int(nt*4, c_int64_t) * I8
+  if (bs < I8) bs = I8
+  nb = int(n / bs)
+  if (mod(n, bs) /= int(0, c_int64_t)) nb = nb + 1
+  allocate(blksum(nb), blkoff(nb))
+
+  ! Pass 1: in-order sum of each block
+  !$omp parallel do
+  do j = 1, nb
+    s = 0.0d0
+    base = int(j - 1, c_int64_t) * bs + I1
+    if (j == nb) then
+      blk_end = n
+    else
+      blk_end = base + bs - I1
+    end if
+    do i = base, blk_end
+      s = s + ap(i)
+    end do
+    blksum(j) = s
+  end do
+
+  ! Pass 2: scan over block sums (tiny)
+  s = 0.0d0
+  do j = 1, nb
+    blkoff(j) = s
+    s = s + blksum(j)
+  end do
+
+  ! Pass 3: recompute in-block prefixes (tiles of 8) + offset, write b
+  !$omp parallel do
+  do j = 1, nb
+    off = blkoff(j)
+    base = int(j - 1, c_int64_t) * bs + I1
+    if (j == nb) then
+      blk_end = n
+    else
+      blk_end = base + bs - I1
+    end if
+    lim = base + (blk_end - base) / I8 * I8 - I1
+    do i = base, lim, I8
+      a0 = ap(i);   a1 = ap(i+1); a2 = ap(i+2); a3 = ap(i+3)
+      a4 = ap(i+4); a5 = ap(i+5); a6 = ap(i+6); a7 = ap(i+7)
+      p0 = off + a0
+      p1 = p0 + a1
+      p2 = p1 + a2
+      p3 = p1 + (a2 + a3)
+      p4 = p3 + a4
+      p5 = p4 + a5
+      p6 = p5 + a6
+      p7 = p6 + a7
+      bp(i)   = p0
+      bp(i+1) = p1
+      bp(i+2) = p2
+      bp(i+3) = p3
+      bp(i+4) = p4
+      bp(i+5) = p5
+      bp(i+6) = p6
+      bp(i+7) = p7
+      off = p7
+    end do
+    ! remainder of this block (< 8 elements)
+    s = 0.0d0
+    do i = lim + I1, blk_end
+      s = s + ap(i)
+      bp(i) = off + s
+    end do
+  end do
+  deallocate(blksum, blkoff)
+end subroutine

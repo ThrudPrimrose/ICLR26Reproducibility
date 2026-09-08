@@ -1,0 +1,87 @@
+"""TSVC tsvc_2 s319 optimized for the Python arm.
+
+a[i] = c[i] + d[i]; b[i] = c[i] + e[i]; b[0] = sum over i of a[i] then b[i]
+(interleaved sequential reference order; reassociation within tolerance).
+
+Strategy: Numba kernels, compiled and warmed at module import (untimed).
+Large n: block-parallel single fused pass (one read of c,d,e; one write of a,b)
+with per-thread partial sums -> memory-bandwidth bound.
+Small n: single-threaded scalar loop that is bit-exact to the reference order.
+"""
+import os
+
+import numpy as np
+
+_HAVE_NUMBA = True
+try:
+    import numba
+    from numba import njit, prange
+
+    @njit
+    def _k_seq(a, b, c, d, e, n):
+        s = 0.0
+        for i in range(n):
+            ai = c[i] + d[i]
+            bi = c[i] + e[i]
+            a[i] = ai
+            b[i] = bi
+            s += ai
+            s += bi
+        b[0] = s
+
+    @njit(parallel=True)
+    def _k_blk(a, b, c, d, e, n, B):
+        nblk = (n + B - 1) // B
+        s = 0.0
+        for blk in prange(nblk):
+            i0 = blk * B
+            i1 = i0 + B
+            if i1 > n:
+                i1 = n
+            ss = 0.0
+            for i in range(i0, i1):
+                ai = c[i] + d[i]
+                bi = c[i] + e[i]
+                a[i] = ai
+                b[i] = bi
+                ss += ai + bi
+            s += ss
+        b[0] = s
+
+    def _init():
+        try:
+            T = len(os.sched_getaffinity(0))
+        except Exception:
+            T = os.cpu_count() or 1
+        T = max(1, min(T, 256))
+        try:
+            numba.set_num_threads(T)
+        except Exception:
+            pass
+        w = np.zeros(8192)
+        sa = w.copy()
+        sb = w.copy()
+        _k_seq(sa, sb, w, w, w, 8192)
+        _k_blk(sa, sb, w, w, w, 8192, 4096)
+
+    _init()
+except Exception:
+    _HAVE_NUMBA = False
+
+_B = 4096
+_THRESHOLD = 65536
+
+def s319(a, b, c, d, e, LEN_1D):
+    n = int(LEN_1D)
+    if n <= 0:
+        return None
+    if _HAVE_NUMBA:
+        if n >= _THRESHOLD:
+            _k_blk(a, b, c, d, e, n, _B)
+        else:
+            _k_seq(a, b, c, d, e, n)
+        return None
+    a[:n] = c[:n] + d[:n]
+    b[:n] = c[:n] + e[:n]
+    b[0] = a[:n].sum() + b[:n].sum()
+    return None

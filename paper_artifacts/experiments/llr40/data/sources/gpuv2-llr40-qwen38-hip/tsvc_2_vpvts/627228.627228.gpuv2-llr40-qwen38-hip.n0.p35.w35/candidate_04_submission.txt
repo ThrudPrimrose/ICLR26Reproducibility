@@ -1,0 +1,46 @@
+// Device half: __global__ kernels + launcher.
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+namespace vpvts_detail {
+
+__global__ void vpvts_main(double4* __restrict__ a, const double4* __restrict__ b,
+                           const int64_t n4, const double S) {
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n4) {
+        double4 av = a[i];
+        double4 bv = b[i];
+        av.x += bv.x * S;
+        av.y += bv.y * S;
+        av.z += bv.z * S;
+        av.w += bv.w * S;
+        a[i] = av;
+    }
+}
+
+__global__ void vpvts_tail(double* __restrict__ a, const double* __restrict__ b,
+                           const int64_t base, const int64_t n, const double S) {
+    int64_t i = base + (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < base + n) a[i] += b[i] * S;
+}
+
+void vpvts_launch(double* a, const double* b, const int64_t n, const double S, hipStream_t stream) {
+    if (n <= 0) return;
+    const int block = 512;
+    if (((uintptr_t)a & 31) == 0 && ((uintptr_t)b & 31) == 0) {
+        const int64_t n4 = n >> 2;
+        if (n4 > 0) {
+            const int64_t grid = (n4 + block - 1) / block;
+            vpvts_main<<<grid, block, 0, stream>>>((double4*)a, (double4*)b, n4, S);
+        }
+        const int64_t tail = n & 3;
+        if (tail > 0) {
+            vpvts_tail<<<1, (int)tail, 0, stream>>>(a, b, n4 * 4, tail, S);
+        }
+    } else {
+        const int64_t grid = (n + block - 1) / block;
+        vpvts_tail<<<grid, block, 0, stream>>>(a, b, 0, n, S);
+    }
+}
+
+} // namespace vpvts_detail

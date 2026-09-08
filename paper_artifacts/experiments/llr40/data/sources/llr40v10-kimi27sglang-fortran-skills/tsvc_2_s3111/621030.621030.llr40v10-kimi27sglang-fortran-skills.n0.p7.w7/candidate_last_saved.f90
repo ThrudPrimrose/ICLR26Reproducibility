@@ -1,0 +1,19 @@
+subroutine tsvc_2_s3111_fp64(a, b, LEN_1D, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D
+  real(c_double), intent(in) :: a(LEN_1D)
+  real(c_double), intent(inout) :: b(2)
+  integer(c_int8_t), intent(inout) :: workspace(*)
+  integer(c_int64_t), value, intent(in) :: workspace_size
+  real(c_double) :: sum_val
+  integer(c_int64_t) :: i
+
+  sum_val = 0.0d0
+  !$omp parallel do if(LEN_1D > 200000) reduction(+:sum_val)
+  do i = 1, LEN_1D
+    sum_val = sum_val + max(a(i), 0.0d0)
+  end do
+  !$omp end parallel do
+  b(1) = sum_val
+end subroutine tsvc_2_s3111_fp64

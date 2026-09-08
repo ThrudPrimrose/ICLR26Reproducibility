@@ -1,0 +1,75 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <omp.h>
+
+/* Primary symbol expected by the C ABI for the fp64 variant. */
+void scan_affine_decay_fp64(const double *restrict c,
+                            const double *restrict x,
+                            double *restrict y,
+                            const int64_t LEN_1D)
+{
+    if (LEN_1D <= 1) return;
+
+    const int64_t n = LEN_1D;
+    /* Block size tuned for L2 residency and low scheduling overhead. */
+    const int64_t block_size = 65536;
+    const int64_t nb = (n + block_size - 1) / block_size;
+
+    double *restrict blockC = (double *)malloc((size_t)nb * sizeof(double));
+    double *restrict blockS = (double *)malloc((size_t)nb * sizeof(double));
+    double *restrict prefix = (double *)malloc(((size_t)nb + 1) * sizeof(double));
+    if (!blockC || !blockS || !prefix) {
+        free(blockC); free(blockS); free(prefix);
+        return;
+    }
+
+    /* Pass 1: per-block aggregates (prod_end, sum_end) assuming start value 0. */
+    #pragma omp parallel for schedule(static, 1)
+    for (int64_t b = 0; b < nb; ++b) {
+        const int64_t l = b * block_size;
+        const int64_t r = (l + block_size < n) ? l + block_size : n;
+        double prod = 1.0;
+        double sum  = 0.0;
+        for (int64_t i = l; i < r; ++i) {
+            const double ci = c[i];
+            prod = prod * ci;
+            sum  = sum * ci + x[i];
+        }
+        blockC[b] = prod;
+        blockS[b] = sum;
+    }
+
+    /* Pass 2: serial prefix over the block aggregates -> boundary value per block. */
+    prefix[0] = 0.0;
+    for (int64_t b = 0; b < nb; ++b) {
+        const double cb = blockC[b];
+        const double sb = blockS[b];
+        const double p  = prefix[b];
+        prefix[b + 1] = cb * p + sb;
+    }
+
+    /* Pass 3: apply correct boundary and write y. */
+    #pragma omp parallel for schedule(static, 1)
+    for (int64_t b = 0; b < nb; ++b) {
+        const int64_t l = b * block_size;
+        const int64_t r = (l + block_size < n) ? l + block_size : n;
+        double prev = prefix[b];
+        for (int64_t i = l; i < r; ++i) {
+            prev = c[i] * prev + x[i];
+            y[i] = prev;
+        }
+    }
+
+    free(blockC);
+    free(blockS);
+    free(prefix);
+}
+
+/* Fallback alias in case the harness looks up the bare kernel name. */
+void scan_affine_decay(const double *restrict c,
+                       const double *restrict x,
+                       double *restrict y,
+                       const int64_t LEN_1D)
+{
+    scan_affine_decay_fp64(c, x, y, LEN_1D);
+}

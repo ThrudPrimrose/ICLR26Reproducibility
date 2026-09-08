@@ -1,0 +1,68 @@
+"""TSVC tsvc_2 s316: result[0] = min(a[:LEN_1D]).
+
+Numba parallel reduction (contiguous per-thread blocks, 4x-unrolled inner
+loop) for large inputs; single-thread Numba min for small ones.  All
+compilation/warmup happens at import time, outside the timed section.
+"""
+import numpy as np
+from numba import njit, prange, get_num_threads
+
+
+@njit(fastmath=True)
+def _min1(a, n):
+    x = a[0]
+    for i in range(1, n):
+        if a[i] < x:
+            x = a[i]
+    return x
+
+
+def _mk_unroll(U):
+    body = "\n".join("            if a[j+%d] < m: m = a[j+%d]" % (k, k) for k in range(U))
+    src = '''
+def _f(a, n):
+    nt = get_num_threads()
+    local = np.empty(nt, np.float64)
+    for t in prange(nt):
+        lo = (t * n) // nt
+        hi = ((t + 1) * n) // nt
+        m = np.inf
+        j = lo
+        while j + U < hi:
+BODY
+            j += U
+        while j < hi:
+            if a[j] < m:
+                m = a[j]
+            j += 1
+        local[t] = m
+    r = local[0]
+    for t in range(1, nt):
+        if local[t] < r:
+            r = local[t]
+    return r
+'''.replace("U", str(U)).replace("BODY", body)
+    ns = dict(globals())
+    exec(src, ns)
+    return ns['_f']
+
+
+_minp = njit(parallel=True, fastmath=True)(_mk_unroll(4))
+
+# Warm everything up at import (compilation + thread pool), untimed.
+_w = np.arange(1 << 16, dtype=np.float64)
+for _ in range(3):
+    _min1(_w, _w.shape[0])
+    _minp(_w, _w.shape[0])
+
+_SMALL = 1 << 20
+
+
+def s316(a, result, LEN_1D):
+    n = int(LEN_1D)
+    if n <= _SMALL:
+        x = _min1(a, n) if n > 1 else a[0]
+    else:
+        x = _minp(a, n)
+    result[0] = x
+    return None

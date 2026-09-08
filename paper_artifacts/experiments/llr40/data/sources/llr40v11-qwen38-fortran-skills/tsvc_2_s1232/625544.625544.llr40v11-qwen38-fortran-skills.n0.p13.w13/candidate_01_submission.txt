@@ -1,0 +1,25 @@
+subroutine tsvc_2_s1232_fp64(aa, bb, cc, len2d, vlen) bind(C)
+  use iso_c_binding
+  integer(c_int64_t), value, intent(in) :: len2d, vlen
+  real(c_double), intent(inout) :: aa(len2d, len2d)
+  real(c_double), intent(in)    :: bb(len2d, len2d), cc(len2d, len2d)
+
+  integer :: i, j
+  integer(c_int64_t) :: hi
+
+  if (len2d <= 0) return
+  if (vlen < 1) then
+    do i = 1, len2d
+      do j = 1, len2d
+        aa(j, i) = bb(j, i) + cc(j, i)
+      end do
+    end do
+  else
+    do i = 1, len2d
+      hi = (i - 1) / vlen + 1
+      do j = 1, hi
+        aa(j, i) = bb(j, i) + cc(j, i)
+      end do
+    end do
+  end if
+end subroutine tsvc_2_s1232_fp64

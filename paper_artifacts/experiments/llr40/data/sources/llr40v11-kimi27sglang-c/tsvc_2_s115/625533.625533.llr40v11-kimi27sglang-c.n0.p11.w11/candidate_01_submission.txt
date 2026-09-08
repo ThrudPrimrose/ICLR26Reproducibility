@@ -1,0 +1,14 @@
+#include <stdint.h>
+
+void tsvc_2_s115_fp64(double *restrict a, const double *restrict aa, const int64_t LEN_2D) {
+    for (int64_t j = 0; j < LEN_2D; j++) {
+        double aj = a[j];
+        const double *row = &aa[j * LEN_2D + j + 1];
+        double *dest = &a[j + 1];
+        int64_t n = LEN_2D - j - 1;
+        #pragma omp simd
+        for (int64_t k = 0; k < n; k++) {
+            dest[k] -= row[k] * aj;
+        }
+    }
+}

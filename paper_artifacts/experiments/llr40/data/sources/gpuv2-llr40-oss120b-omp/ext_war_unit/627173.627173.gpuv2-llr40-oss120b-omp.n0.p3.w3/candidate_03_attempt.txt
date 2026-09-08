@@ -1,0 +1,27 @@
+#include <stdint.h>
+#include <stdlib.h>
+
+void ext_war_unit_fp64(double *restrict a, const double *restrict b, const int64_t LEN_1D) {
+    if (LEN_1D <= 1) return;
+    // Allocate temporary buffer on host for mapping; will be allocated on device.
+    double *temp = (double *)malloc((size_t)LEN_1D * sizeof(double));
+    if (!temp) return;
+    /*
+     * Offload the computation to the device. Map the input arrays and allocate a temporary buffer on the device.
+     * The temporary buffer holds the original values of 'a' to avoid data races.
+     */
+    #pragma omp target data map(tofrom: a[0:LEN_1D]) map(to: b[0:LEN_1D]) map(alloc: temp[0:LEN_1D])
+    {
+        // Copy original 'a' into the temporary buffer on the device.
+        #pragma omp target teams distribute parallel for simd
+        for (int64_t i = 0; i < LEN_1D; ++i) {
+            temp[i] = a[i];
+        }
+        // Compute the result using the temporary buffer to avoid race conditions.
+        #pragma omp target teams distribute parallel for simd
+        for (int64_t i = 0; i < LEN_1D - 1; ++i) {
+            a[i] = temp[i + 1] + b[i];
+        }
+    }
+    free(temp);
+}

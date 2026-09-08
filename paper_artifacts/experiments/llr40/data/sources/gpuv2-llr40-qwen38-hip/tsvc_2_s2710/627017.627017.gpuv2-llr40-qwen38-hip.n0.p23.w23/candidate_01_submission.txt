@@ -1,0 +1,34 @@
+// Device half: kernel + launcher.
+#include <hip/hip_runtime.h>
+
+__global__ void s2710_kernel(double* __restrict__ a, double* __restrict__ b,
+                             double* __restrict__ c, const double* __restrict__ d,
+                             const double* __restrict__ e, const double* __restrict__ x,
+                             long long n) {
+  long long i = (long long)blockIdx.x * (long long)blockDim.x + threadIdx.x;
+  if (i >= n) return;
+  if (a[i] > b[i]) {
+    a[i] += b[i] * d[i];
+    if (n > 10) {
+      c[i] += d[i] * d[i];
+    } else {
+      c[i] = d[i] * e[i] + 1.0;
+    }
+  } else {
+    b[i] = a[i] + e[i] * e[i];
+    if (x[0] > 0.0) {
+      c[i] = a[i] + d[i] * d[i];
+    } else {
+      c[i] += e[i] * e[i];
+    }
+  }
+}
+
+void tsvc_2_s2710_launch(double* a, double* b, double* c, const double* d,
+                         const double* e, const double* x, long long n) {
+  if (n <= 0) return;
+  const int tpb = 256;
+  long long blocks = (n + tpb - 1) / tpb;
+  if (blocks > (long long)(1 << 30)) blocks = 1 << 30;  // guard (never expected)
+  s2710_kernel<<<(unsigned)blocks, tpb>>>(a, b, c, d, e, x, n);
+}

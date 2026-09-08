@@ -1,0 +1,41 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s275_fp64(double *restrict aa, const double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+    const int64_t n = LEN_2D;
+    #pragma omp parallel num_threads(96)
+    {
+        const int nt = omp_get_num_threads();
+        const int tid = omp_get_thread_num();
+        int64_t chunk = (n + nt - 1) / nt;
+        chunk = (chunk + 7) & ~7;
+        int64_t i0 = tid * chunk;
+        int64_t i1 = i0 + chunk;
+        if (i1 > n) i1 = n;
+        if (i0 > n) i0 = n;
+
+        int64_t act[chunk];
+        double prev[chunk];
+        int64_t na = 0;
+        for (int64_t i = i0; i < i1; i++) {
+            if (aa[i] > 0.0) {
+                act[na] = i;
+                prev[na] = aa[i];
+                na++;
+            }
+        }
+
+        for (int64_t j = 1; j < n; j++) {
+            const int64_t row = j * n;
+            const double *restrict brow = bb + row;
+            const double *restrict crow = cc + row;
+            double *restrict arow = aa + row;
+            for (int64_t k = 0; k < na; k++) {
+                const int64_t i = act[k];
+                const double nv = prev[k] + brow[i] * crow[i];
+                arow[i] = nv;
+                prev[k] = nv;
+            }
+        }
+    }
+}

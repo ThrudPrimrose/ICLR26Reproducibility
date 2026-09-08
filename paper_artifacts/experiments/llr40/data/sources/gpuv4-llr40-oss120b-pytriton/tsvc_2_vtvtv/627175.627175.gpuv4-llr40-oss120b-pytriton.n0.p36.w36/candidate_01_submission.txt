@@ -1,0 +1,24 @@
+"""Optimized implementation of the TSVC_2 ``vtvtv`` kernel using NumPy.
+
+The kernel multiplies three 1‑D arrays element‑wise and stores the result back
+into ``a`` in‑place:
+
+    a[i] = a[i] * b[i] * c[i]
+
+We implement this with NumPy's in‑place ``multiply`` ufuncs, which run at native C
+speed without any Python‑level loops or JIT compilation overhead.  The function
+returns ``None`` to indicate an in‑place update, as required by the benchmark
+harness.
+"""
+
+import numpy as np
+
+def vtvtv(a: np.ndarray, b: np.ndarray, c: np.ndarray, LEN_1D: int) -> None:
+    # Views limited to the requested length.
+    a_view = a[:LEN_1D]
+    b_view = b[:LEN_1D]
+    c_view = c[:LEN_1D]
+    # Perform in‑place multiplication.
+    np.multiply(a_view, b_view, out=a_view)
+    np.multiply(a_view, c_view, out=a_view)
+    return None

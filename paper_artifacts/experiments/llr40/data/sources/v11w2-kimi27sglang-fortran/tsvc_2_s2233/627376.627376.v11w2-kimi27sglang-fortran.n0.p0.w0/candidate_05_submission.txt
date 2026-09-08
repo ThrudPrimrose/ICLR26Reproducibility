@@ -1,0 +1,36 @@
+module kernel_mod
+  use, intrinsic :: iso_c_binding
+  implicit none
+  integer(c_int64_t), parameter :: B = 64
+contains
+  subroutine tsvc_2_s2233_fp64(aa, bb, cc, LEN_2D) bind(C, name="tsvc_2_s2233_fp64")
+    real(c_double), intent(inout) :: aa(0:*), bb(0:*)
+    real(c_double), intent(in)    :: cc(0:*)
+    integer(c_int64_t), value, intent(in) :: LEN_2D
+    integer(c_int64_t) :: i, j, ii, jj, n
+
+    n = LEN_2D
+
+    !$omp parallel do
+    do i = 8, n - 1, B
+      do j = 8, n - 1
+        !$omp simd
+        do ii = i, min(n - 1, i + B - 1)
+          aa(j * n + ii) = aa((j - 1) * n + ii) + cc(j * n + ii)
+        end do
+      end do
+    end do
+    !$omp end parallel do
+
+    !$omp parallel do
+    do j = 8, n - 1, B
+      do i = 8, n - 1
+        !$omp simd
+        do jj = j, min(n - 1, j + B - 1)
+          bb(i * n + jj) = bb((i - 1) * n + jj) + cc(i * n + jj)
+        end do
+      end do
+    end do
+    !$omp end parallel do
+  end subroutine
+end module

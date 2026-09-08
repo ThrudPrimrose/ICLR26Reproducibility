@@ -1,0 +1,10 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void tsvc_2_s4112_kernel(double* __restrict__ a, const double* __restrict__ b, const int32_t* __restrict__ ip, int64_t n) {
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    int64_t stride = static_cast<int64_t>(blockDim.x) * gridDim.x;
+    for (int64_t i = idx; i < n; i += stride) {
+        a[i] += b[ip[i]] * 2.0;
+    }
+}

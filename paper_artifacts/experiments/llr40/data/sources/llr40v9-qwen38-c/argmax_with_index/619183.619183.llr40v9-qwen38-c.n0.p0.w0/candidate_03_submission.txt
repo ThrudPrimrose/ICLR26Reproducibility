@@ -1,0 +1,438 @@
+/* argmax_with_index: single-invocation fp64 argmax (value + first index).
+ *
+ * Exact reference semantics: running max with STRICT '>', so the first
+ * occurrence of the maximum wins; NaNs never beat anything; if a[0] is NaN
+ * the scan adopts nothing -> (a[0], 0) (handled up front).
+ *
+ * Vector cores (AVX-512: 8 fp64 lanes; AVX2: 4; scalar fallback),
+ * runtime-dispatched. Hardware VPMAXPD here is NaN-poisoning, so values are
+ * combined with masked moves, never max_pd.
+ *
+ * Per-lane state: max + first index; a lane adopts a new element when it
+ * strictly improves, or when the lane max is still NaN and the element is
+ * valid. Chunk result = (max over lanes, min index among lanes holding it);
+ * NaN lanes are neutralized to -inf before the horizontal reduce.
+ *
+ * Parallel: OpenMP splits into contiguous chunks; results combined in order
+ * (adopt only on strictly greater), so all-NaN chunks are skipped and ties
+ * keep the earliest index. The array's NUMA node is detected once from
+ * /proc/self/numa_maps and every worker pins itself to a CPU of that node
+ * (sched_setaffinity): remote reads on this 4-socket machine are 2-3x
+ * slower than local, so local concentration wins big.
+ */
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#include <stdint.h>
+#include <immintrin.h>
+#include <math.h>
+#include <omp.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+
+/* prototype independent of which feature macros parsed <unistd.h> earlier */
+long syscall(long number, ...);
+
+#define MAXT 256
+#define NMAXCPUS 64
+
+/* Self-contained CPU affinity (no glibc feature-macro dependency): the CPU
+ * mask layout matches the kernel's (8 bytes per word, 64 CPUs per word). */
+#define AFFWORDS 16
+typedef unsigned long cpu_mask_t[AFFWORDS];
+static void cm_zero(cpu_mask_t m) { for (int i = 0; i < AFFWORDS; i++) m[i] = 0; }
+static void cm_set(cpu_mask_t m, int c) { m[c >> 6] |= 1UL << (c & 63); }
+static int cm_test(const cpu_mask_t m, int c) { return (int)((m[c >> 6] >> (c & 63)) & 1UL); }
+static int cm_get(cpu_mask_t m) {
+    return (int)syscall(SYS_sched_getaffinity, 0, sizeof(cpu_mask_t), m);
+}
+static int cm_set_self(cpu_mask_t m) {
+    return (int)syscall(SYS_sched_setaffinity, 0, sizeof(cpu_mask_t), m);
+}
+static int quick_aff_count(void)
+{
+    cpu_mask_t aff; cm_zero(aff);
+    if (cm_get(aff) < 0) return 1;
+    int c = 0;
+    for (int i = 0; i < AFFWORDS; i++) c += (int)__builtin_popcountl(aff[i]);
+    return c;
+}
+static inline void finish(double m, int64_t ix, double *ov, int64_t *oi)
+{
+    ov[0] = m; oi[0] = ix;
+}
+
+/* n >= 1. Sets (*m, *idx) to the max of a[0..n) and its first index;
+ * *m = NaN, *idx = -1 iff the chunk contains no non-NaN element.
+ * Full NaN-safe 2-chain version (fallback / small / no-AVX512-adjacent cases). */
+static __attribute__((noinline))
+void argmax_512_full(const double *a, int64_t n, double *m, int64_t *idx)
+{
+    if (n < 16) {
+        double mv = a[0]; int64_t ix = 0;
+        for (int64_t i = 1; i < n; i++) { double v = a[i]; if ((mv != mv) || (v > mv)) { mv = v; ix = i; } }
+        *m = mv; *idx = ix;
+        return;
+    }
+    __m512d v0 = _mm512_loadu_pd(a);
+    __m512d v1 = _mm512_loadu_pd(a + 8);
+    const __m512i lanev = _mm512_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7, 0, 0, 0, 0, 0, 0, 0, 0);
+    __m512i i0 = lanev;
+    __m512i i1 = _mm512_add_epi32(lanev, _mm512_set1_epi32(8));
+    int64_t base = 16;
+    for (; base + 16 <= n; base += 16) {
+        __m512d x0 = _mm512_loadu_pd(a + base);
+        __m512d x1 = _mm512_loadu_pd(a + base + 8);
+        __mmask8 u0 = _mm512_cmp_pd_mask(x0, v0, _CMP_GT_OQ)
+                     | (_mm512_cmp_pd_mask(v0, v0, _CMP_UNORD_Q) & ~_mm512_cmp_pd_mask(x0, x0, _CMP_UNORD_Q));
+        __mmask8 u1 = _mm512_cmp_pd_mask(x1, v1, _CMP_GT_OQ)
+                     | (_mm512_cmp_pd_mask(v1, v1, _CMP_UNORD_Q) & ~_mm512_cmp_pd_mask(x1, x1, _CMP_UNORD_Q));
+        v0 = _mm512_mask_mov_pd(v0, u0, x0);
+        v1 = _mm512_mask_mov_pd(v1, u1, x1);
+        i0 = _mm512_mask_mov_epi32(i0, u0, _mm512_add_epi32(lanev, _mm512_set1_epi32((int)base)));
+        i1 = _mm512_mask_mov_epi32(i1, u1, _mm512_add_epi32(lanev, _mm512_set1_epi32((int)(base + 8))));
+    }
+    double mv0, mv1; int64_t ix0 = -1, ix1 = -1;
+    int32_t arr[16];
+    {
+        __mmask8 va = ~_mm512_cmp_pd_mask(v0, v0, _CMP_UNORD_Q);
+        if (va == 0) mv0 = NAN;
+        else {
+            v0 = _mm512_mask_mov_pd(v0, ~va, _mm512_set1_pd(-INFINITY));
+            mv0 = _mm512_reduce_max_pd(v0);
+            __mmask8 eq = _mm512_cmp_pd_mask(v0, _mm512_set1_pd(mv0), _CMP_EQ_OQ);
+            _mm512_storeu_epi32(arr, i0);
+            for (int k = 0; k < 8; k++)
+                if (((eq >> k) & 1) && (ix0 < 0 || arr[k] < ix0)) ix0 = arr[k];
+        }
+        va = ~_mm512_cmp_pd_mask(v1, v1, _CMP_UNORD_Q);
+        if (va == 0) mv1 = NAN;
+        else {
+            v1 = _mm512_mask_mov_pd(v1, ~va, _mm512_set1_pd(-INFINITY));
+            mv1 = _mm512_reduce_max_pd(v1);
+            __mmask8 eq = _mm512_cmp_pd_mask(v1, _mm512_set1_pd(mv1), _CMP_EQ_OQ);
+            _mm512_storeu_epi32(arr, i1);
+            for (int k = 0; k < 8; k++)
+                if (((eq >> k) & 1) && (ix1 < 0 || arr[k] < ix1)) ix1 = arr[k];
+        }
+    }
+    double mv = mv0; int64_t ix = ix0;
+    if (ix1 >= 0) {
+        if ((mv1 != mv1) || (mv1 > mv)) { mv = mv1; ix = ix1; }
+        else if (mv1 == mv && ix1 < ix) ix = ix1;   /* tie: first occurrence overall */
+    }
+    for (int64_t i = base; i < n; i++) { double v = a[i]; if ((mv != mv) || (v > mv)) { mv = v; ix = i; } }
+    *m = mv; *idx = ix;
+}
+
+/* Fast core: NaN-free assumption in the hot loop (1 compare + 1 masked move
+ * per lane per 64 B; no per-iter index arithmetic -- a candidate register
+ * advances every iteration, the recorded one only on updates). If ANY lane
+ * saw a NaN (detected in 2 final compares) the exact full core is re-run.
+ * Correctness: with a finite running max, no element can first appear equal
+ * to it without having triggered the strict-'>' update, so the recorded
+ * per-lane positions are the first occurrences. */
+static __attribute__((noinline))
+void argmax_512(const double *a, int64_t n, double *m, int64_t *idx)
+{
+    if (n < 16) {
+        double mv = a[0]; int64_t ix = 0;
+        for (int64_t i = 1; i < n; i++) { double v = a[i]; if ((mv != mv) || (v > mv)) { mv = v; ix = i; } }
+        *m = mv; *idx = ix;
+        return;
+    }
+    __m512d v0 = _mm512_loadu_pd(a);
+    __m512d v1 = _mm512_loadu_pd(a + 8);
+    const __m512i lanev = _mm512_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7, 0, 0, 0, 0, 0, 0, 0, 0);
+    const __m512i step  = _mm512_set1_epi32(16);
+    __m512i w0 = lanev;                                          /* recorded first positions */
+    __m512i w1 = _mm512_add_epi32(lanev, _mm512_set1_epi32(8));
+    __m512i c0 = _mm512_add_epi32(w0, step);                     /* advancing candidates */
+    __m512i c1 = _mm512_add_epi32(w1, step);
+    int64_t base = 16;
+    for (; base + 16 <= n; base += 16) {
+        __m512d x0 = _mm512_loadu_pd(a + base);
+        __m512d x1 = _mm512_loadu_pd(a + base + 8);
+        __mmask8 g0 = _mm512_cmp_pd_mask(x0, v0, _CMP_GT_OQ);
+        __mmask8 g1 = _mm512_cmp_pd_mask(x1, v1, _CMP_GT_OQ);
+        v0 = _mm512_mask_mov_pd(v0, g0, x0);
+        v1 = _mm512_mask_mov_pd(v1, g1, x1);
+        w0 = _mm512_mask_mov_epi32(w0, g0, c0);
+        w1 = _mm512_mask_mov_epi32(w1, g1, c1);
+        c0 = _mm512_add_epi32(c0, step);
+        c1 = _mm512_add_epi32(c1, step);
+    }
+    __mmask8 nn = _mm512_cmp_pd_mask(v0, v0, _CMP_UNORD_Q)
+                | _mm512_cmp_pd_mask(v1, v1, _CMP_UNORD_Q);
+    if (nn) { argmax_512_full(a, n, m, idx); return; }          /* NaN seen: exact path */
+    double mv0, mv1; int64_t ix0 = -1, ix1 = -1;
+    int32_t arr[16];
+    mv0 = _mm512_reduce_max_pd(v0);
+    {
+        __mmask8 eq = _mm512_cmp_pd_mask(v0, _mm512_set1_pd(mv0), _CMP_EQ_OQ);
+        _mm512_storeu_epi32(arr, w0);
+        for (int k = 0; k < 8; k++)
+            if (((eq >> k) & 1) && (ix0 < 0 || arr[k] < ix0)) ix0 = arr[k];
+    }
+    mv1 = _mm512_reduce_max_pd(v1);
+    {
+        __mmask8 eq = _mm512_cmp_pd_mask(v1, _mm512_set1_pd(mv1), _CMP_EQ_OQ);
+        _mm512_storeu_epi32(arr, w1);
+        for (int k = 0; k < 8; k++)
+            if (((eq >> k) & 1) && (ix1 < 0 || arr[k] < ix1)) ix1 = arr[k];
+    }
+    double mv = mv0; int64_t ix = ix0;
+    if ((mv1 > mv) || (mv1 == mv && ix1 < ix)) { mv = mv1; ix = ix1; }
+    for (int64_t i = base; i < n; i++) { double v = a[i]; if (v > mv) { mv = v; ix = i; } }
+    *m = mv; *idx = ix;
+}
+
+static __attribute__((noinline))
+void argmax_256(const double *a, int64_t n, double *m, int64_t *idx)
+{
+    if (n < 4) {
+        double mv = a[0]; int64_t ix = 0;
+        for (int64_t i = 1; i < n; i++) { double v = a[i]; if ((mv != mv) || (v > mv)) { mv = v; ix = i; } }
+        *m = mv; *idx = ix;
+        return;
+    }
+    __m256d vmax = _mm256_loadu_pd(a);
+    const __m256i lanev = _mm256_setr_epi32(0, 1, 2, 3, 0, 0, 0, 0);
+    __m256i vidx = lanev;
+    int64_t base = 4;
+    for (; base + 4 <= n; base += 4) {
+        __m256d v = _mm256_loadu_pd(a + base);
+        __mmask8 gt = _mm256_cmp_pd_mask(v, vmax, _CMP_GT_OQ);
+        __mmask8 upd = gt | (_mm256_cmp_pd_mask(vmax, vmax, _CMP_UNORD_Q)
+                             & ~_mm256_cmp_pd_mask(v, v, _CMP_UNORD_Q));
+        vmax = _mm256_mask_mov_pd(vmax, upd, v);
+        __m256i cand = _mm256_add_epi32(lanev, _mm256_set1_epi32((int)base));
+        vidx = _mm256_mask_mov_epi32(vidx, upd, cand);
+    }
+    double mv; int64_t ix = -1;
+    __mmask8 valid = ~_mm256_cmp_pd_mask(vmax, vmax, _CMP_UNORD_Q);
+    if (valid == 0) {
+        mv = NAN;
+    } else {
+        vmax = _mm256_mask_mov_pd(vmax, ~valid, _mm256_set1_pd(-INFINITY));
+        __m128d lo = _mm256_castpd256_pd128(vmax);
+        __m128d hi = _mm256_extractf128_pd(vmax, 1);
+        lo = _mm_max_pd(lo, hi);
+        lo = _mm_max_pd(lo, _mm_unpackhi_pd(lo, lo));
+        mv = _mm_cvtsd_f64(lo);
+        __mmask8 eq = _mm256_cmp_pd_mask(vmax, _mm256_set1_pd(mv), _CMP_EQ_OQ);
+        int32_t arr[4];
+        _mm_storeu_epi32(arr, _mm256_castsi256_si128(vidx));
+        for (int k = 0; k < 4; k++)
+            if (((eq >> k) & 1) && (ix < 0 || arr[k] < ix))
+                ix = arr[k];
+    }
+    for (int64_t i = base; i < n; i++) { double v = a[i]; if ((mv != mv) || (v > mv)) { mv = v; ix = i; } }
+    *m = mv; *idx = ix;
+}
+
+static void argmax_1(const double *a, int64_t n, double *m, int64_t *idx)
+{
+    double mv = a[0]; int64_t ix = 0;
+    for (int64_t i = 1; i < n; i++) { double v = a[i]; if ((mv != mv) || (v > mv)) { mv = v; ix = i; } }
+    *m = mv; *idx = ix;
+}
+
+/* ---- NUMA helpers (cached per pointer) ---------------------------------- */
+
+static int parse_cpulist(const char *s, int *cpus, int max)
+{
+    int n = 0;
+    while (*s && n < max) {
+        int lo, hi; char endc = 0;
+        if (sscanf(s, "%d-%d %c", &lo, &hi, &endc) >= 2) {
+            for (int c = lo; c <= hi && n < max; c++) cpus[n++] = c;
+            s = strchr(s, ',');
+            if (!s) break;
+        } else if (sscanf(s, "%d", &lo) == 1) {
+            cpus[n++] = lo;
+            s = strchr(s, ',');
+            if (!s) break;
+        } else break;
+        s++;
+    }
+    return n;
+}
+
+/* placement: 0 = unknown/unpinned, 1 = single node, 2 = multi-node/interleaved */
+static int g_plc = 0;
+static int g_node = -1;
+static int g_cpus[NMAXCPUS];
+static int g_ncpus = 0;
+static const void *g_plc_a = (const void *)-1;
+/* diagnostics */
+static int g_pages[16]; static int g_ptotal = 0;
+static int g_aff[512]; static int g_naff = 0;
+static char g_nodeline[8][96];
+
+static void diag_collect(void)
+{
+    cpu_mask_t aff; cm_zero(aff);
+    if (cm_get(aff) < 0) return;
+    g_naff = 0;
+    for (int c = 0; c < 512 && g_naff < 512; c++)
+        if (cm_test(aff, c)) g_aff[g_naff++] = c;
+    for (int n = 0; n < 8; n++) {
+        char path[64];
+        snprintf(path, sizeof path, "/sys/devices/system/node/node%d/cpulist", n);
+        FILE *f = fopen(path, "r");
+        if (!f) { g_nodeline[n][0] = 0; continue; }
+        size_t r = fread(g_nodeline[n], 1, sizeof g_nodeline[n] - 1, f);
+        g_nodeline[n][r] = 0; fclose(f);
+        while (r && (g_nodeline[n][r-1] == '\n' || g_nodeline[n][r-1] == ' ')) g_nodeline[n][--r] = 0;
+    }
+}
+
+static void detect_placement(const void *a)
+{
+    if (g_plc_a == a) return;
+    g_plc_a = a; g_plc = 0; g_node = -1; g_ncpus = 0;
+    unsigned long target = (unsigned long)a;
+    unsigned long vstart = 0;
+    FILE *f = fopen("/proc/self/maps", "r");
+    if (f) {
+        char line[256];
+        while (fgets(line, sizeof line, f)) {
+            unsigned long s, e;
+            if (sscanf(line, "%lx-%lx", &s, &e) == 2 && target >= s && target < e) { vstart = s; break; }
+        }
+        fclose(f);
+    }
+    if (vstart == 0) return;
+    f = fopen("/proc/self/numa_maps", "r");
+    if (!f) return;
+    int npages[16]; memset(npages, 0, sizeof npages); int nnnodes = 0; int total = 0;
+    char line[1024];
+    while (fgets(line, sizeof line, f)) {
+        unsigned long s;
+        if (sscanf(line, "%lx", &s) == 1 && s == vstart) {
+            for (char *p = line; *p; ) {
+                if (p[0] == 'N' && p[1] >= '0' && p[1] <= '9' && p[2] == '=') {
+                    int node = p[1] - '0'; int val;
+                    if (node < 16 && sscanf(p + 3, "%d", &val) == 1) {
+                        npages[node] += val; total += val;
+                    }
+                    p += 3;
+                } else p++;
+            }
+            break;
+        }
+    }
+    fclose(f);
+    if (total == 0) return;
+    memcpy(g_pages, npages, sizeof g_pages); g_ptotal = total;
+    diag_collect();
+    for (int n = 0; n < 16; n++) if (npages[n] > total / 4) nnnodes++;
+    if (nnnodes == 1) {
+        for (int n = 0; n < 16; n++) if (npages[n] > total / 4) g_node = n;
+        g_plc = 1;
+    } else {
+        g_plc = 2;
+        return;
+    }
+    char path[64];
+    snprintf(path, sizeof path, "/sys/devices/system/node/node%d/cpulist", g_node);
+    f = fopen(path, "r");
+    if (!f) { g_plc = 0; return; }
+    char buf[512]; size_t r = fread(buf, 1, sizeof buf - 1, f); buf[r] = 0; fclose(f);
+    int all[NMAXCPUS]; int nall = parse_cpulist(buf, all, NMAXCPUS);
+    cpu_mask_t aff; cm_zero(aff);
+    int gr = cm_get(aff);
+    if (gr < 0) { g_plc = 0; return; }   /* unknown affinity: stay unpinned */
+    if (getenv("AMAX_DEBUG")) fprintf(stderr, " [amax] cm_get=%d nall=%d\n", gr, nall);
+    g_ncpus = 0;
+    for (int i = 0; i < nall && g_ncpus < NMAXCPUS; i++)
+        if (cm_test(aff, all[i])) g_cpus[g_ncpus++] = all[i];
+    if (g_ncpus == 0) g_plc = 0;
+}
+
+/* -------------------------------------------------------------------------- */
+
+void argmax_with_index_fp64(const double *restrict a, int64_t *restrict out_index, double *restrict out_value,
+                            const int64_t LEN_1D)
+{
+    if (LEN_1D <= 0) { out_index[0] = 0; out_value[0] = 0.0; return; }
+    /* if a[0] is NaN the reference scan adopts nothing afterwards */
+    if (a[0] != a[0]) { out_value[0] = a[0]; out_index[0] = 0; return; }
+
+    double m = 0.0; int64_t ix = 0;
+    int naff = quick_aff_count();
+    if (LEN_1D < 4000000 || LEN_1D > 2000000000LL || naff <= 1) {
+        /* small, or only one CPU allowed: a single vectorized scan wins
+         * (no /proc walking, no team creation) */
+        if (__builtin_cpu_supports("avx512f"))      argmax_512(a, LEN_1D, &m, &ix);
+        else if (__builtin_cpu_supports("avx2"))    argmax_256(a, LEN_1D, &m, &ix);
+        else                                        argmax_1(a, LEN_1D, &m, &ix);
+        return finish(m, ix, out_value, out_index);
+    }
+    {
+        detect_placement(a);
+        int nt;
+        if (g_plc == 1) nt = g_ncpus;                 /* data-node CPUs only */
+        else            nt = 16;                      /* fallback: moderate, unpinned */
+        int ntmax = omp_get_max_threads();
+        if (nt > ntmax) nt = ntmax;
+        if (nt < 1) nt = 1;
+        double rm[MAXT]; int64_t ri[MAXT]; int nch = 0;
+        int usepin = (g_plc == 1) ? 1 : 0;
+        #pragma omp parallel num_threads(nt) shared(rm, ri, nch)
+        {
+            int nt2 = omp_get_num_threads();
+            int tid = omp_get_thread_num();
+            if (usepin && tid < g_ncpus) {
+                cpu_mask_t mask; cm_zero(mask);
+                cm_set(mask, g_cpus[tid]);
+                cm_set_self(mask);
+            }
+            int64_t cs = (LEN_1D + nt2 - 1) / nt2;
+            cs = (cs + 7) / 8 * 8;
+            #pragma omp for schedule(static)
+            for (int c = 0; c < nt2; c++) {
+                int64_t b = (int64_t)c * cs;
+                int64_t e = b + cs;
+                if (e > LEN_1D) e = LEN_1D;
+                if (__builtin_cpu_supports("avx512f"))      argmax_512(a + b, e - b, &rm[c], &ri[c]);
+                else if (__builtin_cpu_supports("avx2"))    argmax_256(a + b, e - b, &rm[c], &ri[c]);
+                else                                        argmax_1(a + b, e - b, &rm[c], &ri[c]);
+                if (ri[c] >= 0) ri[c] += b;
+            }
+            #pragma omp single
+            nch = nt2;
+        }
+        m = rm[0]; ix = ri[0];
+        for (int c = 1; c < nch; c++)
+            if (rm[c] == rm[c] && rm[c] > m) { m = rm[c]; ix = ri[c]; }
+        if (getenv("AMAX_DEBUG")) {
+            int ok = 0;
+            for (int i = 0; i < g_ncpus; i++) { fprintf(stderr, " cpu[%d]=%d", i, g_cpus[i]); ok = 1; }
+            fprintf(stderr, " [amax] plc=%d node=%d ncpus=%d nt=%d ntmax=%d n=%lld%s\n",
+                    g_plc, g_node, g_ncpus, nt, ntmax, (long long)LEN_1D, ok ? "" : " (none)");
+        }
+        {
+            static int s_dbg = 0;
+            if (s_dbg < 2) {
+                s_dbg++;
+                fprintf(stdout, "[amaxdbg] n=%lld plc=%d node=%d ncpus=%d nt=%d ntmax=%d\n",
+                        (long long)LEN_1D, g_plc, g_node, g_ncpus, nt, ntmax);
+                char bl[512]; int o = 0;
+                for (int i = 0; i < g_naff && o < 500; i++) o += snprintf(bl + o, sizeof bl - o, "%d%s", g_aff[i], i + 1 < g_naff ? " " : "");
+                fprintf(stdout, "[amaxdbg] aff(%d): %s\n", g_naff, bl);
+                for (int n = 0; n < 8; n++)
+                    if (g_nodeline[n][0]) fprintf(stdout, "[amaxdbg] node%d: %s\n", n, g_nodeline[n]);
+                fprintf(stdout, "[amaxdbg] pages: N0=%d N1=%d N2=%d N3=%d total=%d\n",
+                        g_pages[0], g_pages[1], g_pages[2], g_pages[3], g_ptotal);
+                fflush(stdout);
+            }
+        }
+    }
+    out_value[0] = m;
+    out_index[0] = ix;
+}

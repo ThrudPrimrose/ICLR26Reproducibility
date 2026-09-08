@@ -1,0 +1,112 @@
+#include <stdint.h>
+#include <immintrin.h>
+#include <omp.h>
+
+static struct { double v; char pad[64 - sizeof(double)]; } last_raw[4096];
+
+static inline void scan_serial(double *restrict a,
+                               const double *restrict b,
+                               const double *restrict c,
+                               int64_t n)
+{
+    double prev = 0.0;
+    int64_t i = 0;
+    for (; i + 3 < n; i += 4) {
+        __m256d vb = _mm256_loadu_pd(b + i);
+        __m256d vc = _mm256_loadu_pd(c + i);
+        __m256d cur = _mm256_mul_pd(vb, vc);
+
+        __m256d shifted = _mm256_permute4x64_pd(cur, _MM_SHUFFLE(2, 1, 0, 3));
+        __m256d prev_bc = _mm256_set1_pd(prev);
+        __m256d addend = _mm256_blend_pd(shifted, prev_bc, 1);
+        __m256d out = _mm256_add_pd(cur, addend);
+        _mm256_storeu_pd(a + i, out);
+
+        prev_bc = _mm256_permute4x64_pd(cur, _MM_SHUFFLE(3, 3, 3, 3));
+        prev = _mm256_cvtsd_f64(prev_bc);
+    }
+    for (; i < n; ++i) {
+        double cur = b[i] * c[i];
+        a[i] = cur + prev;
+        prev = cur;
+    }
+}
+
+void tsvc_2_s252_fp64(double *restrict a, const double *restrict b, const double *restrict c, const int64_t LEN_1D) {
+    if (LEN_1D <= 0) return;
+
+    int max_threads = omp_get_max_threads();
+    if (LEN_1D < 4096 || max_threads <= 1) {
+        scan_serial(a, b, c, LEN_1D);
+        return;
+    }
+
+    /* Pass 1: write raw elementwise products into a, record the last raw
+     * product of each thread's chunk for boundary exchange. */
+    #pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        int nt = omp_get_num_threads();
+        int64_t chunk = (LEN_1D + nt - 1) / nt;
+        int64_t start = tid * chunk;
+        int64_t end = start + chunk;
+        if (start > LEN_1D) start = LEN_1D;
+        if (end > LEN_1D) end = LEN_1D;
+
+        int64_t i = start;
+        for (; i + 3 < end; i += 4) {
+            __m256d vb = _mm256_loadu_pd(b + i);
+            __m256d vc = _mm256_loadu_pd(c + i);
+            __m256d p = _mm256_mul_pd(vb, vc);
+            _mm256_storeu_pd(a + i, p);
+        }
+        for (; i < end; ++i) {
+            a[i] = b[i] * c[i];
+        }
+
+        if (end > start)
+            last_raw[tid].v = b[end - 1] * c[end - 1];
+        else
+            last_raw[tid].v = 0.0;
+    }
+
+    /* Pass 2: in-place stencil a[i] = raw[i] + raw[i-1].  Each thread starts
+     * with the last raw value of the previous thread's chunk. */
+    #pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        int nt = omp_get_num_threads();
+        int64_t chunk = (LEN_1D + nt - 1) / nt;
+        int64_t start = tid * chunk;
+        int64_t end = start + chunk;
+        if (start > LEN_1D) start = LEN_1D;
+        if (end > LEN_1D) end = LEN_1D;
+
+        double prev = (tid == 0) ? 0.0 : last_raw[tid - 1].v;
+        int64_t i = start;
+
+        if (i < end) {
+            double cur = a[i];
+            a[i] = cur + prev;
+            prev = cur;
+            ++i;
+
+            __m256d prev_bc = _mm256_set1_pd(prev);
+            for (; i + 3 < end; i += 4) {
+                __m256d curv = _mm256_loadu_pd(a + i);
+                __m256d shifted = _mm256_permute4x64_pd(curv, _MM_SHUFFLE(2, 1, 0, 3));
+                __m256d addend = _mm256_blend_pd(shifted, prev_bc, 1);
+                __m256d out = _mm256_add_pd(curv, addend);
+                _mm256_storeu_pd(a + i, out);
+
+                prev_bc = _mm256_permute4x64_pd(curv, _MM_SHUFFLE(3, 3, 3, 3));
+            }
+            prev = _mm256_cvtsd_f64(prev_bc);
+            for (; i < end; ++i) {
+                double cur = a[i];
+                a[i] = cur + prev;
+                prev = cur;
+            }
+        }
+    }
+}

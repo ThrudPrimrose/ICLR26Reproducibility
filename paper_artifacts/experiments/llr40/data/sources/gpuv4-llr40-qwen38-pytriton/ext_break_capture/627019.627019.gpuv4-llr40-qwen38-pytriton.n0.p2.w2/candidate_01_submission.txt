@@ -1,0 +1,61 @@
+# TSVC s332 ext_break_capture: find first i with a[i] > K, capture i and a[i].
+# Strategy: parallel per-chunk max() via a thread pool (numpy releases the GIL in the C
+# kernels), consuming chunk results in index order and stopping at the first chunk whose
+# max exceeds K; a final pinpoint (compare + argmax) inside that chunk finds the first
+# index. Bytes read ~= 8 * (crossing index) + one chunk, at aggregate memory bandwidth.
+import os
+
+import numpy as np
+
+_AFF = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
+_NWORKERS = max(1, int(_AFF))
+
+try:
+    from concurrent.futures import ThreadPoolExecutor
+    _POOL = ThreadPoolExecutor(max_workers=_NWORKERS)
+except Exception:  # pragma: no cover
+    _POOL = None
+
+
+def ext_break_capture(a, out_index, out_value, LEN_1D, K):
+    n = int(LEN_1D)
+    if n <= 0:
+        out_index[0] = -1
+        out_value[0] = -1.0
+        return None
+    K = float(K)
+    a = np.ascontiguousarray(a, dtype=np.float64)
+
+    pool = _POOL
+    if pool is None or n < (1 << 16):
+        # small: one vectorised pass
+        m = a[:n] > K
+        i = int(m.argmax())
+        if m[i]:
+            out_index[0] = i
+            out_value[0] = a[i]
+        else:
+            out_index[0] = -1
+            out_value[0] = -1.0
+        return None
+
+    T = _NWORKERS
+    C = max(1 << 20, -(-n // (8 * T)))
+    # per-chunk maxima, results consumed in index order; stop at first exceeding K
+    starts = range(0, n, C)
+    first_lo = -1
+    for lo, mx in zip(starts, pool.map(lambda s: a[s : s + C].max(), starts)):
+        if mx > K:
+            first_lo = lo
+            break
+    if first_lo < 0:
+        out_index[0] = -1
+        out_value[0] = -1.0
+        return None
+    hi = min(first_lo + C, n)
+    m = a[first_lo:hi] > K
+    j = int(m.argmax())
+    i = first_lo + j
+    out_index[0] = i
+    out_value[0] = a[i]
+    return None

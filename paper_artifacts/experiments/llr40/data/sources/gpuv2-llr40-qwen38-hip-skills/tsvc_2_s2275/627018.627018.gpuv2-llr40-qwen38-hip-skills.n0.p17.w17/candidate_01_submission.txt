@@ -1,0 +1,65 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define HC(x) do { hipError_t e_ = (x); \
+  if (e_ != hipSuccess) { printf("HIP error %s:%d: %s\n", __FILE__, __LINE__, hipGetErrorString(e_)); abort(); } } while (0)
+
+struct alignas(32) d4 { double v[4]; };
+
+extern "C" __global__ void k_main(
+    const d4 *__restrict__ bb4, const d4 *__restrict__ cc4, d4 *__restrict__ aa4,
+    const d4 *__restrict__ b4, const d4 *__restrict__ c4, const d4 *__restrict__ dd4, d4 *__restrict__ a4,
+    const double *__restrict__ bsc, const double *__restrict__ csc, const double *__restrict__ dsc,
+    double *__restrict__ asc, const double *__restrict__ bb_sc, const double *__restrict__ cc_sc,
+    double *__restrict__ aa_sc,
+    int64_t N4, int64_t V4, int64_t Nrem, int64_t Vrem) {
+  const int64_t total = N4 + V4 + Nrem + Vrem;
+  const int64_t stride = (int64_t)gridDim.x * blockDim.x;
+  for (int64_t id = (int64_t)blockIdx.x * blockDim.x + threadIdx.x; id < total; id += stride) {
+    if (id < N4) {
+      d4 bv = bb4[id], cv = cc4[id], av = aa4[id];
+      #pragma unroll
+      for (int k = 0; k < 4; ++k) av.v[k] = av.v[k] + bv.v[k] * cv.v[k];
+      aa4[id] = av;
+    } else if (id < N4 + V4) {
+      int64_t i = id - N4;
+      d4 bv = b4[i], cv = c4[i], dv = dd4[i];
+      d4 av;
+      #pragma unroll
+      for (int k = 0; k < 4; ++k) av.v[k] = bv.v[k] + cv.v[k] * dv.v[k];
+      a4[i] = av;
+    } else {
+      int64_t t = id - N4 - V4;
+      if (t < Nrem) {
+        int64_t idx = N4 * 4 + t;
+        aa_sc[idx] = aa_sc[idx] + bb_sc[idx] * cc_sc[idx];
+      } else {
+        int64_t idx = V4 * 4 + (t - Nrem);
+        asc[idx] = bsc[idx] + csc[idx] * dsc[idx];
+      }
+    }
+  }
+}
+
+extern "C" void tsvc_launch_impl(double *a, double *aa, const double *b, const double *bb,
+                                 const double *c, const double *cc, const double *d,
+                                 int64_t LEN_2D) {
+  const int64_t N = LEN_2D * LEN_2D;
+  const int64_t N4 = N >> 2, Nrem = N & 3;
+  const int64_t V4 = LEN_2D >> 2, Vrem = LEN_2D & 3;
+  const int64_t total = N4 + V4 + Nrem + Vrem;
+
+  constexpr int T = 256;
+  int64_t blocks = (total + T - 1) / T;
+  if (blocks > 4864) blocks = 4864;
+  if (blocks < 1) blocks = 1;
+
+  k_main<<<(unsigned)blocks, T>>>((const d4 *)bb, (const d4 *)cc, (d4 *)aa,
+                                  (const d4 *)b, (const d4 *)c, (const d4 *)d, (d4 *)a,
+                                  b, c, d, a, bb, cc, aa,
+                                  N4, V4, Nrem, Vrem);
+  HC(hipGetLastError());
+  HC(hipDeviceSynchronize());
+}

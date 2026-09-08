@@ -1,0 +1,8 @@
+import numpy as np
+from scipy.linalg import solve_triangular
+
+def s115(a, aa, LEN_2D):
+    # Solve lower unit triangular system using scipy's solve_triangular on the transpose of aa.
+    # The matrix M = aa.T is lower triangular (ignoring upper part) with implicit unit diagonal.
+    x = solve_triangular(aa.T, a, lower=True, unit_diagonal=True, overwrite_b=False, check_finite=False)
+    a[:] = x

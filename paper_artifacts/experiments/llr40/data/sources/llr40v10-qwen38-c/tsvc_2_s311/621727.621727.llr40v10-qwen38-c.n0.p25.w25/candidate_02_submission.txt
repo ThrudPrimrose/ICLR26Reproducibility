@@ -1,0 +1,20 @@
+#include <stdint.h>
+#include <immintrin.h>
+
+void tsvc_2_s311_fp64(const double *restrict a, double *restrict sum_out, const int64_t LEN_1D) {
+  int64_t n = LEN_1D;
+  int64_t i = 0;
+  __m512d v0 = _mm512_setzero_pd();
+  __m512d v1 = _mm512_setzero_pd();
+  int64_t limit = (n & ~7LL);
+  for (; i < limit; i += 8) {
+    v0 = _mm512_add_pd(v0, _mm512_loadu_pd(a + i));
+    v1 = _mm512_add_pd(v1, _mm512_loadu_pd(a + i + 4));
+  }
+  double t[8];
+  _mm512_storeu_pd(t, v0);
+  _mm512_storeu_pd(t + 4, v1);
+  double s = ((t[0] + t[1]) + (t[2] + t[3])) + ((t[4] + t[5]) + (t[6] + t[7]));
+  for (; i < n; i++) s += a[i];
+  sum_out[0] = s;
+}

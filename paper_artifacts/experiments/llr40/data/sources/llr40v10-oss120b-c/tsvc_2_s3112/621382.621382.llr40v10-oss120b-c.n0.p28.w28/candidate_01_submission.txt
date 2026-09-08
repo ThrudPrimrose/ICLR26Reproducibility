@@ -1,0 +1,32 @@
+/* Optimized TSVC tsvc_2 s3112 kernel with loop unrolling (factor 8).
+ * Computes prefix sum of input array a into output array b exactly as reference.
+ */
+
+#include <stdint.h>
+
+void tsvc_2_s3112_fp64(const double *restrict a, double *restrict b, const int64_t LEN_1D) {
+    const double *aptr = a;
+    double *bptr = b;
+    double sum = 0.0;
+    int64_t i = 0;
+    int64_t n = LEN_1D;
+    const int64_t UNROLL = 8;
+    int64_t limit = n - (n % UNROLL);
+    for (; i < limit; i += UNROLL) {
+        sum += aptr[0]; bptr[0] = sum;
+        sum += aptr[1]; bptr[1] = sum;
+        sum += aptr[2]; bptr[2] = sum;
+        sum += aptr[3]; bptr[3] = sum;
+        sum += aptr[4]; bptr[4] = sum;
+        sum += aptr[5]; bptr[5] = sum;
+        sum += aptr[6]; bptr[6] = sum;
+        sum += aptr[7]; bptr[7] = sum;
+        aptr += UNROLL;
+        bptr += UNROLL;
+    }
+    for (; i < n; ++i) {
+        sum += *aptr++;
+        *bptr++ = sum;
+    }
+}
+

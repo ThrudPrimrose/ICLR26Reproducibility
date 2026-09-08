@@ -1,0 +1,10 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void segment_reduce_ragged_kernel(const double* __restrict__ val,
+                                                         const int64_t* __restrict__ row_ptr,
+                                                         const double* __restrict__ w,
+                                                         double* __restrict__ out,
+                                                         int64_t NSEG) {
+    // Empty kernel (computation done on host).
+}

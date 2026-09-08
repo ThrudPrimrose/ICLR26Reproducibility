@@ -1,0 +1,32 @@
+#include <omp.h>
+#include <stdint.h>
+void tsvc_2_s235_fp64(double *restrict a, double *restrict aa, const double *restrict b, const double *restrict bb,
+                      const double *restrict c, const int64_t LEN_2D) {
+  if (LEN_2D <= 0) return;
+  #pragma omp parallel
+  {
+    int nt  = omp_get_num_threads();
+    int tid = omp_get_thread_num();
+    int64_t base = LEN_2D / nt, rem = LEN_2D % nt;
+    int64_t i0   = base * tid + (tid < rem ? tid : rem);
+    int64_t n    = base + (tid < rem ? 1 : 0);
+    double *ai = a + i0; const double *bi = b + i0, *ci = c + i0;
+    for (int64_t k = 0; k < n; ++k) ai[k] += bi[k] * ci[k];
+    for (int64_t j = 1; j < LEN_2D; ++j) {
+      double *aa_j     = aa + j * LEN_2D + i0;
+      const double *aa_jm1 = aa + (j-1) * LEN_2D + i0;
+      const double *bb_j   = bb + j * LEN_2D + i0;
+      /* prefetch bb only (streaming read); aa write-allocate is pipelined by store buffer */
+      if (j + 2 < LEN_2D) {
+        const double *bb_nx  = bb + (j+1)*LEN_2D + i0;
+        const double *bb_nx2 = bb + (j+2)*LEN_2D + i0;
+        for (int64_t k = 0; k < n; k += 8) {
+          __builtin_prefetch(bb_nx  + k, 0, 1);
+          __builtin_prefetch(bb_nx2 + k, 0, 1);
+        }
+      }
+      for (int64_t k = 0; k < n; ++k)
+        aa_j[k] = aa_jm1[k] + bb_j[k] * ai[k];
+    }
+  }
+}

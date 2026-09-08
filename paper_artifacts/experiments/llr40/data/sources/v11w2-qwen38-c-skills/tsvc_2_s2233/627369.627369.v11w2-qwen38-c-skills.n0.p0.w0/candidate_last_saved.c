@@ -1,0 +1,105 @@
+#include <stdint.h>
+#include <omp.h>
+#include <immintrin.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+  const int64_t N = LEN_2D;
+  if (N <= 8) return;
+  const int64_t ncols = N - 8;
+  const int64_t nblocks = (ncols + 16 - 1) / 16;
+  #pragma omp parallel
+  {
+    const int nt = omp_get_num_threads();
+    const int tid = omp_get_thread_num();
+    for (int64_t base = tid; base < nblocks; base += 3 * nt) {
+      int ks = 0;
+      while (ks < 3 && base + (int64_t)ks * nt < nblocks) ks++;
+      int64_t c0[3];
+      __m256d A00; __m256d A01; __m256d A02; __m256d A03; __m256d B00; __m256d B01; __m256d B02; __m256d B03; __m256d A10; __m256d A11; __m256d A12; __m256d A13; __m256d B10; __m256d B11; __m256d B12; __m256d B13; __m256d A20; __m256d A21; __m256d A22; __m256d A23; __m256d B20; __m256d B21; __m256d B22; __m256d B23;
+      if (ks > 0) {
+        c0[0] = 8 + (base + 0*nt) * 16;
+        A00 = _mm256_loadu_pd(aa + 7*N + c0[0] + 0); B00 = _mm256_loadu_pd(bb + 7*N + c0[0] + 0);
+        A01 = _mm256_loadu_pd(aa + 7*N + c0[0] + 4); B01 = _mm256_loadu_pd(bb + 7*N + c0[0] + 4);
+        A02 = _mm256_loadu_pd(aa + 7*N + c0[0] + 8); B02 = _mm256_loadu_pd(bb + 7*N + c0[0] + 8);
+        A03 = _mm256_loadu_pd(aa + 7*N + c0[0] + 12); B03 = _mm256_loadu_pd(bb + 7*N + c0[0] + 12);
+      }
+      if (ks > 1) {
+        c0[1] = 8 + (base + 1*nt) * 16;
+        A10 = _mm256_loadu_pd(aa + 7*N + c0[1] + 0); B10 = _mm256_loadu_pd(bb + 7*N + c0[1] + 0);
+        A11 = _mm256_loadu_pd(aa + 7*N + c0[1] + 4); B11 = _mm256_loadu_pd(bb + 7*N + c0[1] + 4);
+        A12 = _mm256_loadu_pd(aa + 7*N + c0[1] + 8); B12 = _mm256_loadu_pd(bb + 7*N + c0[1] + 8);
+        A13 = _mm256_loadu_pd(aa + 7*N + c0[1] + 12); B13 = _mm256_loadu_pd(bb + 7*N + c0[1] + 12);
+      }
+      if (ks > 2) {
+        c0[2] = 8 + (base + 2*nt) * 16;
+        A20 = _mm256_loadu_pd(aa + 7*N + c0[2] + 0); B20 = _mm256_loadu_pd(bb + 7*N + c0[2] + 0);
+        A21 = _mm256_loadu_pd(aa + 7*N + c0[2] + 4); B21 = _mm256_loadu_pd(bb + 7*N + c0[2] + 4);
+        A22 = _mm256_loadu_pd(aa + 7*N + c0[2] + 8); B22 = _mm256_loadu_pd(bb + 7*N + c0[2] + 8);
+        A23 = _mm256_loadu_pd(aa + 7*N + c0[2] + 12); B23 = _mm256_loadu_pd(bb + 7*N + c0[2] + 12);
+      }
+      {
+        int allfull = 1;
+        for (int j = 0; j < ks; j++) if (c0[j] + 16 > N) allfull = 0;
+        if (!allfull) {
+          for (int j = 0; j < ks; j++) {
+            const int64_t ce = c0[j] + 16 < N ? c0[j] + 16 : N;
+            for (int64_t c = c0[j]; c < ce; c++) {
+              double a = aa[7 * N + c], b = bb[7 * N + c];
+              for (int64_t r = 8; r < N; r++) { const int64_t o = r * N + c;
+                a += cc[o]; aa[o] = a; b += cc[o]; bb[o] = b; }
+            }
+          }
+          continue;
+        }
+        for (int64_t r = 8; r < N; r++) {
+          const int64_t rb = r * N;
+          if (ks > 0) {
+            const int64_t o = rb + c0[0];
+            __m256d c0 = _mm256_loadu_pd(cc + o + 0);
+            __m256d c1 = _mm256_loadu_pd(cc + o + 4);
+            __m256d c2 = _mm256_loadu_pd(cc + o + 8);
+            __m256d c3 = _mm256_loadu_pd(cc + o + 12);
+            A00 = _mm256_add_pd(A00, c0); _mm256_storeu_pd(aa + o + 0, A00);
+            A01 = _mm256_add_pd(A01, c1); _mm256_storeu_pd(aa + o + 4, A01);
+            A02 = _mm256_add_pd(A02, c2); _mm256_storeu_pd(aa + o + 8, A02);
+            A03 = _mm256_add_pd(A03, c3); _mm256_storeu_pd(aa + o + 12, A03);
+            B00 = _mm256_add_pd(B00, c0); _mm256_storeu_pd(bb + o + 0, B00);
+            B01 = _mm256_add_pd(B01, c1); _mm256_storeu_pd(bb + o + 4, B01);
+            B02 = _mm256_add_pd(B02, c2); _mm256_storeu_pd(bb + o + 8, B02);
+            B03 = _mm256_add_pd(B03, c3); _mm256_storeu_pd(bb + o + 12, B03);
+          }
+          if (ks > 1) {
+            const int64_t o = rb + c0[1];
+            __m256d c0 = _mm256_loadu_pd(cc + o + 0);
+            __m256d c1 = _mm256_loadu_pd(cc + o + 4);
+            __m256d c2 = _mm256_loadu_pd(cc + o + 8);
+            __m256d c3 = _mm256_loadu_pd(cc + o + 12);
+            A10 = _mm256_add_pd(A10, c0); _mm256_storeu_pd(aa + o + 0, A10);
+            A11 = _mm256_add_pd(A11, c1); _mm256_storeu_pd(aa + o + 4, A11);
+            A12 = _mm256_add_pd(A12, c2); _mm256_storeu_pd(aa + o + 8, A12);
+            A13 = _mm256_add_pd(A13, c3); _mm256_storeu_pd(aa + o + 12, A13);
+            B10 = _mm256_add_pd(B10, c0); _mm256_storeu_pd(bb + o + 0, B10);
+            B11 = _mm256_add_pd(B11, c1); _mm256_storeu_pd(bb + o + 4, B11);
+            B12 = _mm256_add_pd(B12, c2); _mm256_storeu_pd(bb + o + 8, B12);
+            B13 = _mm256_add_pd(B13, c3); _mm256_storeu_pd(bb + o + 12, B13);
+          }
+          if (ks > 2) {
+            const int64_t o = rb + c0[2];
+            __m256d c0 = _mm256_loadu_pd(cc + o + 0);
+            __m256d c1 = _mm256_loadu_pd(cc + o + 4);
+            __m256d c2 = _mm256_loadu_pd(cc + o + 8);
+            __m256d c3 = _mm256_loadu_pd(cc + o + 12);
+            A20 = _mm256_add_pd(A20, c0); _mm256_storeu_pd(aa + o + 0, A20);
+            A21 = _mm256_add_pd(A21, c1); _mm256_storeu_pd(aa + o + 4, A21);
+            A22 = _mm256_add_pd(A22, c2); _mm256_storeu_pd(aa + o + 8, A22);
+            A23 = _mm256_add_pd(A23, c3); _mm256_storeu_pd(aa + o + 12, A23);
+            B20 = _mm256_add_pd(B20, c0); _mm256_storeu_pd(bb + o + 0, B20);
+            B21 = _mm256_add_pd(B21, c1); _mm256_storeu_pd(bb + o + 4, B21);
+            B22 = _mm256_add_pd(B22, c2); _mm256_storeu_pd(bb + o + 8, B22);
+            B23 = _mm256_add_pd(B23, c3); _mm256_storeu_pd(bb + o + 12, B23);
+          }
+        }
+      }
+    }
+  }
+}

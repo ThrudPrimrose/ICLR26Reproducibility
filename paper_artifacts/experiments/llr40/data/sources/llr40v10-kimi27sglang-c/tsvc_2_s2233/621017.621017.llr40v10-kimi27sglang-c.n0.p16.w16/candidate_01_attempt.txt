@@ -1,0 +1,27 @@
+#include <stdint.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+
+  const int64_t BS = 1024;
+
+  // Fuse the two independent recurrences and tile the inner dimension so each thread
+  // works on a contiguous block of columns.  cc[k,m] is read once and reused for aa and bb.
+  #pragma omp parallel for schedule(static)
+  for (int64_t mb = 8; mb < LEN_2D; mb += BS) {
+    const int64_t me = (mb + BS < LEN_2D) ? mb + BS : LEN_2D;
+
+    for (int64_t k = 8; k < LEN_2D; ++k) {
+      double *restrict const aa_k   = aa + k * LEN_2D;
+      double *restrict const aa_km1 = aa + (k - 1) * LEN_2D;
+      double *restrict const bb_k   = bb + k * LEN_2D;
+      double *restrict const bb_km1 = bb + (k - 1) * LEN_2D;
+      const double *restrict const cc_k = cc + k * LEN_2D;
+
+      #pragma omp simd
+      for (int64_t m = mb; m < me; ++m) {
+        aa_k[m] = aa_km1[m] + cc_k[m];
+        bb_k[m] = bb_km1[m] + cc_k[m];
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+    #pragma omp parallel
+    {
+        // Phase 1: Update AA. Parallel across columns (i).
+        #pragma omp for schedule(static)
+        for (int64_t i = 8; i < LEN_2D; ++i) {
+            int64_t j = 8;
+            // Unrolled inner loop over rows (j) to preserve the recurrence while reducing overhead.
+            for (; j + 3 < LEN_2D; j += 4) {
+                aa[(j) * LEN_2D + i] = aa[(j - 1) * LEN_2D + i] + cc[(j) * LEN_2D + i];
+                aa[(j + 1) * LEN_2D + i] = aa[(j) * LEN_2D + i] + cc[(j + 1) * LEN_2D + i];
+                aa[(j + 2) * LEN_2D + i] = aa[(j + 1) * LEN_2D + i] + cc[(j + 2) * LEN_2D + i];
+                aa[(j + 3) * LEN_2D + i] = aa[(j + 2) * LEN_2D + i] + cc[(j + 3) * LEN_2D + i];
+            }
+            for (; j < LEN_2D; ++j) {
+                aa[j * LEN_2D + i] = aa[(j - 1) * LEN_2D + i] + cc[j * LEN_2D + i];
+            }
+        }
+        // Phase 2: Update BB. Parallel across columns (j). Each column computes a sequential prefix sum over rows (i).
+        #pragma omp for schedule(static)
+        for (int64_t j = 8; j < LEN_2D; ++j) {
+            for (int64_t i = 8; i < LEN_2D; ++i) {
+                bb[i * LEN_2D + j] = bb[(i - 1) * LEN_2D + j] + cc[i * LEN_2D + j];
+            }
+        }
+    }
+}

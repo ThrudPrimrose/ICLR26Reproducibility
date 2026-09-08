@@ -1,0 +1,41 @@
+// Device half: kernel + launcher
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void scan_col_kernel(double* __restrict__ aa, const double* __restrict__ bb,
+                                const int64_t N) {
+  const int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= N) return;
+  double s = aa[i];
+  const int64_t count = N - 1;          // rows 1..N-1
+  int64_t j = 1;
+  const int64_t full = count / 8;
+  for (int64_t g = 0; g < full; ++g) {
+    const int64_t b = j;
+    j += 8;
+    double b0 = bb[(b + 0) * N + i];
+    double b1 = bb[(b + 1) * N + i];
+    double b2 = bb[(b + 2) * N + i];
+    double b3 = bb[(b + 3) * N + i];
+    double b4 = bb[(b + 4) * N + i];
+    double b5 = bb[(b + 5) * N + i];
+    double b6 = bb[(b + 6) * N + i];
+    double b7 = bb[(b + 7) * N + i];
+    s += b0; aa[(b + 0) * N + i] = s;
+    s += b1; aa[(b + 1) * N + i] = s;
+    s += b2; aa[(b + 2) * N + i] = s;
+    s += b3; aa[(b + 3) * N + i] = s;
+    s += b4; aa[(b + 4) * N + i] = s;
+    s += b5; aa[(b + 5) * N + i] = s;
+    s += b6; aa[(b + 6) * N + i] = s;
+    s += b7; aa[(b + 7) * N + i] = s;
+  }
+  for (; j < N; ++j) { s += bb[j * N + i]; aa[j * N + i] = s; }
+}
+
+void launch_scan(double* aa, const double* bb, const int64_t N, hipStream_t stream) {
+  if (N <= 1) return;
+  const int B = 256;
+  const int64_t blocks = (N + B - 1) / B;
+  scan_col_kernel<<<(unsigned)blocks, B, 0, stream>>>(aa, bb, N);
+}

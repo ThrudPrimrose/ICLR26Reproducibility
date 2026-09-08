@@ -1,0 +1,47 @@
+#include <hip/hip_runtime.h>
+
+// a[i] = b[i] + c[i]*c[i] + b[i]*b[i] + c[i]   (i < n)
+// d[i] = a_new[i] + a_old[i+1]                 (i < n)
+// a is an in-place array: d[i] must use the INPUT value of a[i+1].
+//
+// Race analysis: thread i writes a[i] and thread i-1 reads the OLD a[i].
+// Within a block, the phase-1 load + __syncthreads() + phase-2 store orders
+// them. Across a block boundary, element e = first of block k+1 would be read
+// old by block k's last thread but written by block k+1's first thread.
+// Fix: block k's last thread additionally stores a[e] (same value, computed
+// from b/c), and block k+1's first thread therefore skips its a[e] store.
+
+__global__ void s1244_kernel(const double* __restrict__ b,
+                             const double* __restrict__ c,
+                             double* __restrict__ a,
+                             double* __restrict__ d,
+                             const long long n) {
+    const long long bs = blockDim.x;
+    const long long i = (long long)blockIdx.x * bs + threadIdx.x;
+
+    double old_next = 0.0;
+    if (i < n) old_next = a[i + 1];
+    __syncthreads();
+    if (i < n) {
+        const double bi = b[i];
+        const double ci = c[i];
+        const double ai = bi + ci * ci + bi * bi + ci;
+        d[i] = ai + old_next;
+        if (threadIdx.x != 0 || blockIdx.x == 0) a[i] = ai;
+    }
+    const long long e = (long long)(blockIdx.x + 1) * bs;
+    if (threadIdx.x == bs - 1 && e < n) {
+        const double be = b[e];
+        const double ce = c[e];
+        a[e] = be + ce * ce + be * be + ce;
+    }
+}
+
+extern "C" void tsvc2_launch(const double* b, const double* c,
+                             double* a, double* d,
+                             long long n, hipStream_t stream) {
+    if (n <= 0) return;
+    const int threads = 256;
+    const long long grid = (n + threads - 1) / threads;
+    s1244_kernel<<<(unsigned)grid, threads, 0, stream>>>(b, c, a, d, n);
+}

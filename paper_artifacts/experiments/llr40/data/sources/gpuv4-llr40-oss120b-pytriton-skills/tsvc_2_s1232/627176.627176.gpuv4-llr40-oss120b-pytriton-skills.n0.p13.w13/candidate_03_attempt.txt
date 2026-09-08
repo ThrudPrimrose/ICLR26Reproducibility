@@ -1,0 +1,37 @@
+"""Optimized implementation of the TSVC_2 kernel ``s1232`` using a mask.
+
+A single ``np.add`` with a ``where`` mask avoids the overhead of a Python loop over columns.
+The mask is ``O(N^2)`` memory but stays within the per‑kernel budget for the hidden sizes.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+
+def s1232(
+    aa: np.ndarray,
+    bb: np.ndarray,
+    cc: np.ndarray,
+    LEN_2D: int,
+    VLEN: int,
+) -> None:
+    """In‑place kernel for TSVC_2 ``s1232`` using a boolean mask.
+
+    Parameters
+    ----------
+    aa, bb, cc:
+        ``LEN_2D``×``LEN_2D`` arrays. ``aa`` is the output buffer.
+    LEN_2D:
+        Size of each dimension.
+    VLEN:
+        Vector length factor that defines the lower‑bound condition.
+    """
+    # Build the mask where the condition i >= j * VLEN holds.
+    # ``i`` rows, ``j`` columns.
+    i = np.arange(LEN_2D, dtype=np.int64)[:, None]
+    j = np.arange(LEN_2D, dtype=np.int64)[None, :]
+    mask = i >= j * VLEN
+    # Perform the addition only where the mask is True, writing directly into ``aa``.
+    np.add(bb, cc, out=aa, where=mask)
+    return None

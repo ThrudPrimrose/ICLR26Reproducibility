@@ -1,0 +1,49 @@
+import numpy as np
+import numba
+
+@numba.njit(parallel=True, fastmath=True)
+def _s319_par(a, b, c, d, e, n):
+    s = 0.0
+    for i in numba.prange(n):
+        ai = c[i] + d[i]
+        a[i] = ai
+        bi = c[i] + e[i]
+        b[i] = bi
+        s += ai + bi
+    if n > 0:
+        b[0] = s
+
+@numba.njit(fastmath=True)
+def _s319_seq(a, b, c, d, e, n):
+    s = 0.0
+    for i in range(n):
+        ai = c[i] + d[i]
+        a[i] = ai
+        s += ai
+        bi = c[i] + e[i]
+        b[i] = bi
+        s += bi
+    if n > 0:
+        b[0] = s
+
+_PAR_AT = 8192
+_warmed = False
+
+def _warm():
+    global _warmed
+    if not _warmed:
+        x = np.zeros(16384, dtype=np.float64)
+        _s319_par(x, x.copy(), x, x, x, x.size)
+        _s319_seq(x, x.copy(), x, x, x, x.size)
+        _warmed = True
+
+def s319(a, b, c, d, e, LEN_1D):
+    _warm()
+    n = int(LEN_1D)
+    if n >= _PAR_AT:
+        _s319_par(a, b, c, d, e, n)
+    else:
+        _s319_seq(a, b, c, d, e, n)
+    return None
+
+_warm()

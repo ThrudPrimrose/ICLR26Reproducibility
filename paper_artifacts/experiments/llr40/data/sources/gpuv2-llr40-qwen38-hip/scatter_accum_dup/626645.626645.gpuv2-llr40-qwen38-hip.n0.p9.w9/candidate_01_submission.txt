@@ -1,0 +1,38 @@
+// scatter_accum_dup device half: bins[ip[i]] += src[i]; ip may repeat -> atomic.
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+namespace {
+
+#define SAD_HIP_CHECK(x)                                                                 \
+    do {                                                                                  \
+        hipError_t e_ = (x);                                                              \
+        if (e_ != hipSuccess) {                                                           \
+            std::fprintf(stderr, "HIP error %s at %s:%d\n", hipGetErrorString(e_),        \
+                         __FILE__, __LINE__);                                             \
+            std::abort();                                                                 \
+        }                                                                                 \
+    } while (0)
+
+__global__ void scatter_atomics(double* __restrict__ bins, const int32_t* __restrict__ ip,
+                                const double* __restrict__ src, int64_t n) {
+    const int64_t stride = (int64_t)gridDim.x * blockDim.x;
+    const int64_t i0 = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    for (int64_t i = i0; i < n; i += stride) {
+        atomicAdd(&bins[ip[i]], src[i]);
+    }
+}
+
+}  // namespace
+
+extern "C" void scatter_accum_dup_launch(double* bins, const int32_t* ip, const double* src,
+                                         int64_t n) {
+    const int block = 256;
+    int64_t blocks = (n + block - 1) / block;
+    if (blocks > 4096) blocks = 4096;
+    if (blocks < 1) blocks = 1;
+    scatter_atomics<<<(unsigned)blocks, (unsigned)block>>>(bins, ip, src, n);
+    SAD_HIP_CHECK(hipGetLastError());
+}

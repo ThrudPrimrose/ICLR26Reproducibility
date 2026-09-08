@@ -1,0 +1,32 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define HIP_CHECK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { \
+    printf("HIP error %s at %s:%d\n", hipGetErrorString(e_), __FILE__, __LINE__); std::abort(); } } while (0)
+
+__global__ void s235_kernel(double* __restrict__ a, double* __restrict__ aa,
+                            const double* __restrict__ b, const double* __restrict__ bb,
+                            const double* __restrict__ c, int64_t N) {
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= N) return;
+    double ai = a[i] + b[i] * c[i];
+    a[i] = ai;
+    double s = aa[i];
+    for (int64_t j = 1; j < N; ++j) {
+        int64_t idx = j * N + i;
+        s += bb[idx] * ai;
+        aa[idx] = s;
+    }
+}
+
+extern "C" void s235_launch(double* a, double* aa, const double* b, const double* bb,
+                            const double* c, int64_t N) {
+    const int64_t threads = 256;
+    int64_t blocks = (N + threads - 1) / threads;
+    if (blocks < 1) blocks = 1;
+    s235_kernel<<<blocks, threads>>>(a, aa, b, bb, c, N);
+    HIP_CHECK(hipGetLastError());
+    HIP_CHECK(hipDeviceSynchronize());
+}

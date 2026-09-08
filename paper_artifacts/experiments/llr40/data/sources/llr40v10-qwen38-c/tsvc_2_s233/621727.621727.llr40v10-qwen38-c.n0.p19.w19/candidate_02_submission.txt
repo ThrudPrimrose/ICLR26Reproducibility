@@ -1,0 +1,82 @@
+#include <stdint.h>
+#include <omp.h>
+#include <stdlib.h>
+#include <immintrin.h>
+#include <emmintrin.h>
+#include <ammintrin.h>
+
+/*
+ * aa[j][i] = aa[j-1][i] + cc[j][i]  (recurrence down column i; columns independent)
+ * bb[j][i] = bb[j][i-1] + cc[j][i]  (recurrence across row j; rows independent)
+ *
+ * Bandwidth bound: ~165 GB/s CPU stream on HBM, 24 pinned cores.  Two-pass
+ * traffic is 4 arrays (2.24 GB); the floor is 3 arrays (1.68 GB) if the cc
+ * block can be read once and re-read from L3.  We process row blocks whose
+ * cc footprint (B*L*8 ~ 68 MB) fits the socket L3 (96 MB), stream aa/bb
+ * stores non-temporally (they bypass L3 on Zen4) so the cc block stays, and
+ * keep each thread's previous aa slab row in a small buffer (NT stores do
+ * not leave it in cache).
+ */
+void tsvc_2_s233_fp64(double *restrict aa, double *restrict bb,
+                      const double *restrict cc, const int64_t LEN_2D) {
+  const int64_t n = LEN_2D - 8; /* active rows/cols */
+  if (n <= 0) return;
+
+  const int64_t B = 1024; /* rows per block; cc block ~ 68 MB < 96 MB L3 */
+
+  #pragma omp parallel
+  {
+    const int nt = omp_get_num_threads();
+    const int tid = omp_get_thread_num();
+    const int64_t base = n / nt, rem = n % nt;
+    const int64_t off = (int64_t)tid * base + (tid < rem ? tid : rem);
+    const int64_t cnt = base + (tid < rem ? 1 : 0);
+    const int64_t i0 = 8 + off;
+
+    double *prev = (double *)aligned_alloc(64, (size_t)(cnt + 8) * 8);
+
+    for (int64_t b0 = 8; b0 < LEN_2D; b0 += B) {
+      const int64_t b1 = b0 + B < LEN_2D ? b0 + B : LEN_2D;
+
+      /* phase 1: aa slab rows [b0,b1) */
+      for (int64_t j = b0; j < b1; ++j) {
+        if (j == b0)
+          for (int64_t k = 0; k < cnt; ++k)
+            prev[k] = aa[(j - 1) * LEN_2D + i0 + k];
+        double *r = aa + j * LEN_2D + i0;
+        const double *c = cc + j * LEN_2D + i0;
+        int64_t k = 0;
+        while (k < cnt && ((uintptr_t)(r + k) & 63)) {
+          prev[k] += c[k];
+          r[k] = prev[k];
+          ++k;
+        }
+        for (; k + 8 <= cnt; k += 8) {
+          __m512d v = _mm512_add_pd(_mm512_loadu_pd(prev + k), _mm512_load_pd(c + k));
+          _mm512_storeu_pd(prev + k, v);
+          _mm512_stream_pd(r + k, v);
+        }
+        for (; k < cnt; ++k) {
+          prev[k] += c[k];
+          r[k] = prev[k];
+        }
+      }
+
+      #pragma omp barrier
+
+      /* phase 2: bb rows [b0,b1), contiguous chunks per thread */
+      const int64_t rb = b0 + (b1 - b0) * (int64_t)tid / nt;
+      const int64_t re = b0 + (b1 - b0) * (int64_t)(tid + 1) / nt;
+      for (int64_t j = rb; j < re; ++j) {
+        double *r = bb + j * LEN_2D + 8;
+        const double *c = cc + j * LEN_2D + 8;
+        double s = bb[j * LEN_2D + 7];
+        for (int64_t k = 0; k < n; ++k) {
+          s += c[k];
+          _mm_stream_sd(r + k, _mm_set_sd(s));
+        }
+      }
+    }
+    free(prev);
+  }
+}

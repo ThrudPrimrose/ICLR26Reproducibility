@@ -1,0 +1,48 @@
+#include <hip/hip_runtime.h>
+#include <chrono>
+#include <cstdint>
+
+static double* d_tmp = nullptr;
+static size_t tmp_bytes = 0;
+
+__global__ void k_copy(const double* __restrict__ a, double* __restrict__ tmp, int64_t n) {
+  int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+  int64_t stride = (int64_t)gridDim.x * blockDim.x;
+  for (; i < n; i += stride) tmp[i] = a[i];
+}
+
+__global__ void k_shift_add(const double* __restrict__ tmp, const double* __restrict__ b,
+                            double* __restrict__ a, int64_t m) {
+  int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+  int64_t stride = (int64_t)gridDim.x * blockDim.x;
+  for (; i < m; i += stride) a[i] = tmp[i + 1] + b[i];
+}
+
+void ext_war_launch(double* a, const double* b, int64_t n) {
+  if (n <= 1) return;
+  size_t need = (size_t)n * 8;
+  if (need > tmp_bytes) {
+    if (d_tmp) (void)hipFree(d_tmp);
+    d_tmp = nullptr; tmp_bytes = 0;
+    if (hipMalloc(&d_tmp, need) != hipSuccess) { fprintf(stderr, "hipMalloc failed\n"); abort(); }
+    tmp_bytes = need;
+  }
+  const int BS = 256;
+  int blocks = (int)((n + BS - 1) / BS);
+  k_copy<<<blocks, BS>>>(a, d_tmp, n);
+  if (hipGetLastError() != hipSuccess) abort();
+  int64_t m = n - 1;
+  int blocks2 = (int)((m + BS - 1) / BS);
+  k_shift_add<<<blocks2, BS>>>(d_tmp, b, a, m);
+  if (hipGetLastError() != hipSuccess) abort();
+  if (hipDeviceSynchronize() != hipSuccess) abort();
+  // calibration: fixed host spin
+  {
+    using namespace std::chrono;
+    auto t0 = high_resolution_clock::now();
+    long long acc = 0;
+    while (duration_cast<microseconds>(high_resolution_clock::now() - t0).count() < 2000) acc += 1;
+    (void)acc;
+  }
+
+}

@@ -1,0 +1,48 @@
+#include <stdint.h>
+#include <immintrin.h>
+#define TWO _mm512_set1_pd(2.0)
+#define ONE _mm512_set1_pd(1.0)
+
+void fuse_move_ifs_fp64(double *restrict a, double *restrict b, const double *restrict cond, const double *restrict src,
+                        const int64_t K, const int64_t LEN_2D) {
+  const int64_t n = LEN_2D;
+  const double c2 = 2.0, c1 = 1.0;
+  #pragma omp parallel for schedule(static)
+  for (int64_t i = 0; i < n; ++i) {
+    const double *restrict srow = src + i * n;
+    double *restrict arow = a + i * n;
+    double *restrict brow = b + i * n;
+    const int64_t off = (int64_t)(-(int64_t)((size_t)(i * n) & 7)) & 7; /* elems to next 64B alignment */
+    const int64_t je = n - ((n - off) & 7);               /* last 64B-aligned block start */
+    const int pos = (cond[i] > 0.0);
+    for (int64_t t = 0; t < off; ++t) {
+      const double v = srow[t];
+      if (pos) arow[t] = v * c2;
+      if (K > 0) brow[t] = v + c1;
+    }
+    if (pos) {
+      if (K > 0) {
+        for (int64_t j = off; j < je; j += 8) {
+          const __m512d v = _mm512_load_pd(srow + j);
+          _mm512_stream_pd(arow + j, _mm512_mul_pd(v, TWO));
+          _mm512_stream_pd(brow + j, _mm512_add_pd(v, ONE));
+        }
+      } else {
+        for (int64_t j = off; j < je; j += 8) {
+          const __m512d v = _mm512_load_pd(srow + j);
+          _mm512_stream_pd(arow + j, _mm512_mul_pd(v, TWO));
+        }
+      }
+    } else if (K > 0) {
+      for (int64_t j = off; j < je; j += 8) {
+        const __m512d v = _mm512_load_pd(srow + j);
+        _mm512_stream_pd(brow + j, _mm512_add_pd(v, ONE));
+      }
+    }
+    for (int64_t j = je; j < n; ++j) {
+      const double v = srow[j];
+      if (pos) arow[j] = v * c2;
+      if (K > 0) brow[j] = v + c1;
+    }
+  }
+}

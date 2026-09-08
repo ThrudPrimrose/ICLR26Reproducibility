@@ -1,0 +1,16 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void fuse_stencil_through_transient_kernel(const double* __restrict__ a,
+                                                                double* __restrict__ out,
+                                                                int64_t LEN_1D) {
+    // Compute a stride to cover the full range even if gridSize is limited
+    int64_t blockDim64 = static_cast<int64_t>(blockDim.x);
+    int64_t gridDim64 = static_cast<int64_t>(gridDim.x);
+    int64_t stride = blockDim64 * gridDim64;
+    // Global thread index for the "i" loop (starting at 1)
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim64 + static_cast<int64_t>(threadIdx.x);
+    for (int64_t i = idx + 1; i <= LEN_1D - 3; i += stride) {
+        out[i] = (a[i-1] + a[i] + a[i+1]) * (a[i] + a[i+1] + a[i+2]);
+    }
+}

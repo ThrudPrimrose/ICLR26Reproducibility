@@ -1,0 +1,70 @@
+subroutine scan_affine_decay_fp64(c, x, y, n, workspace, wbytes) &
+     bind(c, name="scan_affine_decay_fp64")
+  use iso_c_binding, only: c_double, c_int64_t, c_ptr
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value :: n
+  type(c_ptr), value :: workspace
+  integer(c_int64_t), value :: wbytes
+  real(c_double), intent(in) :: c(*), x(*)
+  real(c_double), intent(inout) :: y(*)
+
+  integer, parameter :: MAXT = 256
+  integer(c_int64_t) :: ni64, n64, lo64, hi64
+  integer :: ni, i, b, nt, max_threads
+  real(8) :: acc, prod, seed
+  real(8) :: Cprod(0:MAXT-1), Xsum(0:MAXT-1), seedX(0:MAXT-1)
+
+  ni64 = n
+  ni = int(ni64)
+  if (ni <= 0) return
+
+  if (ni < 4096) then
+     y(1) = x(1)
+     do i = 2, ni
+        y(i) = c(i) * y(i-1) + x(i)
+     end do
+     return
+  end if
+
+  max_threads = omp_get_max_threads()
+  nt = max_threads
+  if (nt > ni) nt = ni
+  if (nt > MAXT) nt = MAXT
+
+  n64 = ni64
+
+  !$omp parallel do schedule(static) num_threads(nt) private(b, lo64, hi64, i, acc, prod)
+  do b = 0, nt - 1
+     lo64 = (int(b, c_int64_t) * n64) / int(nt, c_int64_t) + 1_c_int64_t
+     hi64 = (int(b + 1, c_int64_t) * n64) / int(nt, c_int64_t)
+     acc = 0.0_8
+     prod = 1.0_8
+     do i = int(lo64), int(hi64)
+        prod = prod * c(i)
+        acc = c(i) * acc + x(i)
+        y(i) = acc
+     end do
+     Cprod(b) = prod
+     Xsum(b) = acc
+  end do
+  !$omp end parallel do
+
+  seedX(0) = 0.0_8
+  do b = 1, nt - 1
+     seedX(b) = Cprod(b-1) * seedX(b-1) + Xsum(b-1)
+  end do
+
+  !$omp parallel do schedule(static) num_threads(nt) private(b, lo64, hi64, i, prod, seed)
+  do b = 0, nt - 1
+     lo64 = (int(b, c_int64_t) * n64) / int(nt, c_int64_t) + 1_c_int64_t
+     hi64 = (int(b + 1, c_int64_t) * n64) / int(nt, c_int64_t)
+     seed = seedX(b)
+     prod = 1.0_8
+     do i = int(lo64), int(hi64)
+        prod = prod * c(i)
+        y(i) = y(i) + prod * seed
+     end do
+  end do
+  !$omp end parallel do
+end subroutine scan_affine_decay_fp64

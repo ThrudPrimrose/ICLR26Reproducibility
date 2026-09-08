@@ -1,0 +1,65 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define HIP_CHECK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { \
+    std::printf("HIP error: %s (%s:%d)\n", hipGetErrorString(e_), __FILE__, __LINE__); std::abort(); } } while (0)
+
+// One warp per column: for column c, rows 8..N-1:
+//   out[r,c] = out[r-1,c] + cc[r,c]   (in-place scan)
+// Warp handles 64 rows per chunk with an inclusive shuffle scan; carry passes across chunks.
+static __global__ void __launch_bounds__(256)
+scan_cols(double* __restrict__ a, double* __restrict__ b, const double* __restrict__ cc, int64_t N, int ws) {
+    if (N <= 8) return;
+    const int lane = threadIdx.x % ws;
+    const int64_t M = N - 8;                   // scanned columns: 8..N-1
+    const int64_t w = (int64_t)blockIdx.x * ((int64_t)blockDim.x / ws) + (int64_t)(threadIdx.x / ws);
+    if (w >= 2 * M) return;
+    int64_t c;
+    double* base;
+    if (w < M) { base = a; c = 8 + w; }
+    else       { base = b; c = 8 + w - M; }
+
+    double carry = base[7 * N + c];          // row 7 seed, broadcast load
+    const int64_t total = N - 8;
+    const int64_t rem = (int64_t)(total % ws);
+    int64_t r = 8;
+    for (; r + ws <= N; r += ws) {
+        double v = cc[(r + (int64_t)lane) * N + c];
+        for (int off = 1; off < ws; off <<= 1) {
+            double n = __shfl_up(v, off, ws);
+            if (lane >= off) v += n;
+        }
+        carry += v;
+        base[(r + (int64_t)lane) * N + c] = carry;
+        carry = __shfl(carry, ws - 1, ws);
+    }
+    if (rem) {
+        double v = 0.0;
+        if (lane < (int)rem) v = cc[(r + (int64_t)lane) * N + c];
+        for (int off = 1; off < ws; off <<= 1) {
+            double n = __shfl_up(v, off, ws);
+            if (lane >= off) v += n;
+        }
+        if (lane < (int)rem) base[(r + (int64_t)lane) * N + c] = carry + v;
+    }
+}
+
+extern "C" void tsvc_2_s2233_launch(double* a, double* b, const double* cc, int64_t N) {
+    if (N <= 8) return;
+    static int ws = 0;
+    if (ws == 0) {
+        int dev = 0;
+        HIP_CHECK(hipDeviceGet(&dev, 0));
+        HIP_CHECK(hipDeviceGetAttribute(&ws, hipDeviceAttributeWarpSize, dev));
+    }
+    const int tpb = 256;
+    const int wpb = (int)(tpb / ws);
+    const int64_t blocks = (2 * (N - 8) + wpb - 1) / wpb;
+    int ws_arg = (int)ws;
+    void* args[] = { &a, &b, &cc, &N, &ws_arg };
+    HIP_CHECK(hipLaunchKernel((void*)scan_cols, dim3((unsigned)blocks), dim3(tpb), args, 0, nullptr));
+    HIP_CHECK(hipGetLastError());
+    HIP_CHECK(hipStreamSynchronize(0));
+}

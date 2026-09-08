@@ -1,0 +1,11 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void tsvc_2_s152_fp64_kernel(double *a, double *b, const double *c, const double *d, const double *e, int64_t LEN_1D) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < LEN_1D) {
+        double tmp = d[idx] * e[idx];
+        b[idx] = tmp;
+        a[idx] += tmp * c[idx];
+    }
+}

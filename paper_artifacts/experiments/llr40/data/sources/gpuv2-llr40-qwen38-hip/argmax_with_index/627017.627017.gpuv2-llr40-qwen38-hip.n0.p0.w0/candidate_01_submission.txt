@@ -1,0 +1,102 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cmath>
+
+#define AM_WARP 64
+#define AM_NTHREADS 256
+#define AM_FULL_MASK 0xffffffffffffffffULL
+
+__device__ __forceinline__ void am_consider(double v, int64_t i, double &bv, int64_t &bi) {
+    if (v > bv || (v == bv && i < bi)) { bv = v; bi = i; }
+}
+
+// warp reduction leaving best in lane 0 of each warp
+__device__ __forceinline__ void am_warp_reduce(double &bv, int64_t &bi) {
+    #pragma unroll
+    for (int off = AM_WARP/2; off > 0; off >>= 1) {
+        double ov = __shfl_down_sync(AM_FULL_MASK, bv, off);
+        int64_t oi = __shfl_down_sync(AM_FULL_MASK, bi, off);
+        am_consider(ov, oi, bv, bi);
+    }
+}
+
+__device__ __forceinline__ void am_block_reduce(double bv, int64_t bi, double &res_val, int64_t &res_idx) {
+    am_warp_reduce(bv, bi);
+    __shared__ double s_val[AM_NTHREADS/AM_WARP];
+    __shared__ int64_t s_idx[AM_NTHREADS/AM_WARP];
+    if ((threadIdx.x & (AM_WARP-1)) == 0) {
+        s_val[threadIdx.x / AM_WARP] = bv;
+        s_idx[threadIdx.x / AM_WARP] = bi;
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        double fv = s_val[0]; int64_t fi = s_idx[0];
+        #pragma unroll
+        for (int w = 1; w < AM_NTHREADS/AM_WARP; ++w) am_consider(s_val[w], s_idx[w], fv, fi);
+        res_val = fv; res_idx = fi;
+    }
+}
+
+__global__ void am_kblock(const double * __restrict__ a, double * __restrict__ dval, int64_t * __restrict__ didx, int64_t n) {
+    int64_t gtid = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    int64_t stride = (int64_t)gridDim.x * blockDim.x;
+    double bv = -INFINITY; int64_t bi = INT64_MAX;
+    int64_t n4 = n >> 2;
+    const double4 *a4 = (const double4 *)a;
+    for (int64_t u = gtid; u < n4; u += stride) {
+        double4 v = a4[u];
+        int64_t base = u << 2;
+        am_consider(v.x, base+0, bv, bi);
+        am_consider(v.y, base+1, bv, bi);
+        am_consider(v.z, base+2, bv, bi);
+        am_consider(v.w, base+3, bv, bi);
+    }
+    for (int64_t i = (n4<<2) + gtid; i < n; i += stride) {
+        am_consider(a[i], i, bv, bi);
+    }
+    double fv; int64_t fi;
+    am_block_reduce(bv, bi, fv, fi);
+    if (threadIdx.x == 0) { dval[blockIdx.x] = fv; didx[blockIdx.x] = fi; }
+}
+
+__global__ void am_kfinal(const double * __restrict__ dval, const int64_t * __restrict__ didx, double *out_value, int64_t *out_index, int64_t nb) {
+    int64_t gtid = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    int64_t stride = (int64_t)gridDim.x * blockDim.x;
+    double bv = -INFINITY; int64_t bi = INT64_MAX;
+    for (int64_t i = gtid; i < nb; i += stride) {
+        am_consider(dval[i], didx[i], bv, bi);
+    }
+    double ov; int64_t oi;
+    am_block_reduce(bv, bi, ov, oi);
+    if (threadIdx.x == 0) { out_value[0] = ov; out_index[0] = oi; }
+}
+
+void argmax_launch(const double *a, int64_t *out_index, double *out_value, const int64_t n) {
+    if (n <= 0) { out_value[0] = 0.0; out_index[0] = 0; return; }
+    const int64_t NTHREADS = AM_NTHREADS;
+    static int mpc = -1;
+    if (mpc < 0) {
+        hipDeviceProp_t p;
+        hipGetDeviceProperties(&p, 0);
+        mpc = p.multiProcessorCount;
+        if (mpc <= 0) mpc = 1;
+    }
+    static double *dval = nullptr;
+    static int64_t *didx = nullptr;
+    static int64_t cap = 0;
+    int64_t blocks = (n + NTHREADS - 1) / NTHREADS;
+    int64_t maxb = (int64_t)mpc * 32;
+    if (blocks > maxb) blocks = maxb;
+    if (blocks < 1) blocks = 1;
+    if (blocks > cap) {
+        if (dval) { hipFree(dval); hipFree(didx); }
+        dval = nullptr; didx = nullptr; cap = 0;
+        hipMalloc(&dval, (size_t)blocks * sizeof(double));
+        hipMalloc(&didx, (size_t)blocks * sizeof(int64_t));
+        cap = blocks;
+    }
+    dim3 block((unsigned)NTHREADS);
+    dim3 grid((unsigned)blocks);
+    am_kblock<<<grid, block>>>(a, dval, didx, n);
+    am_kfinal<<<dim3(1), block>>>(dval, didx, out_value, out_index, blocks);
+}

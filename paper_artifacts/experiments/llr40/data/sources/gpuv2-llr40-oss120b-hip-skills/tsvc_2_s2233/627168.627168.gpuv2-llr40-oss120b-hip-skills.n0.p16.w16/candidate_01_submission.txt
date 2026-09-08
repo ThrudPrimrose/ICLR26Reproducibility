@@ -1,0 +1,30 @@
+// Device kernels for TSVC 2 s2233 (fp64).
+// Each thread processes a single column (for aa) or row (for bb) and performs a sequential scan.
+
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void scan_aa_kernel(double* __restrict__ aa,
+                                          const double* __restrict__ cc,
+                                          int64_t LEN_2D) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x + 8; // start at i = 8
+    if (i >= LEN_2D) return;
+    for (int64_t j = 8; j < LEN_2D; ++j) {
+        int64_t idx_cur = j * LEN_2D + i;
+        int64_t idx_prev = (j - 1) * LEN_2D + i;
+        aa[idx_cur] = aa[idx_prev] + cc[idx_cur];
+    }
+}
+
+extern "C" __global__ void scan_bb_kernel(double* __restrict__ bb,
+                                          const double* __restrict__ cc,
+                                          int64_t LEN_2D) {
+    // Each thread processes a single column (j) and scans down rows (i).
+    int j = blockIdx.x * blockDim.x + threadIdx.x + 8; // column index
+    if (j >= LEN_2D) return;
+    for (int64_t i = 8; i < LEN_2D; ++i) {
+        int64_t idx_cur = i * LEN_2D + j;
+        int64_t idx_prev = (i - 1) * LEN_2D + j;
+        bb[idx_cur] = bb[idx_prev] + cc[idx_cur];
+    }
+}

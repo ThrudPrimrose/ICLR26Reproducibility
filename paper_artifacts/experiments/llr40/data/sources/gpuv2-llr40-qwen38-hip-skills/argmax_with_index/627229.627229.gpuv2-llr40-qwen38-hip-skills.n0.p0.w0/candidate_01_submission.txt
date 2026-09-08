@@ -1,0 +1,106 @@
+// Device half for argmax_with_index (hip)
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
+
+#define AMWI_BLOCK 256
+#define AMWI_VEC   4
+#define AMWI_CHUNK (AMWI_BLOCK * AMWI_VEC)   // 1024 elements per block
+
+struct __align__(16) P8 { double v; int64_t i; };
+
+// Total order: larger value wins; on tie (incl. NaN-vs-NaN) smaller index wins.
+// Matches the reference left-to-right strict-> scan in all cases.
+__device__ __forceinline__ bool beats(double nv, int64_t ni, double bv, int64_t bi) {
+  if (nv > bv) return true;
+  if (bv > nv) return false;
+  return ni < bi;
+}
+
+__device__ __forceinline__ void merge2(double& v, int64_t& i, double w, int64_t j) {
+  if (beats(w, j, v, i)) { v = w; i = j; }
+}
+
+__device__ __forceinline__ void warp_reduce(double& v, int64_t& i) {
+  const int ws = warpSize;
+  for (int off = ws >> 1; off > 0; off >>= 1) {
+    const double ov = __shfl_down(v, off, ws);
+    const int64_t oi = __shfl_down(i, off, ws);
+    merge2(v, i, ov, oi);
+  }
+}
+
+__device__ __forceinline__ void block_reduce(double& v, int64_t& i, P8* lds) {
+  const int tid = threadIdx.x;
+  const int ws = warpSize;
+  warp_reduce(v, i);
+  if ((tid & (ws - 1)) == 0) { P8 tmp = P8{v, i}; lds[tid / ws] = tmp; }
+  __syncthreads();
+  if (tid == 0) {
+    P8 r = lds[0];
+    for (int j = 1; j < AMWI_BLOCK / ws; ++j) merge2(r.v, r.i, lds[j].v, lds[j].i);
+    v = r.v; i = r.i;
+  }
+}
+
+__global__ void k_partial(const double* __restrict__ a, P8* __restrict__ partials,
+                          int64_t n, int aligned) {
+  __shared__ P8 lds[8];
+  const int tid = threadIdx.x;
+  const int64_t s = (int64_t)blockIdx.x * AMWI_CHUNK + (int64_t)tid * AMWI_VEC;
+
+  double v; int64_t i;
+  if (aligned && s + AMWI_VEC <= n) {
+    const double4 d = *reinterpret_cast<const double4*>(a + s);
+    v = d.x; i = s;
+    double u = d.y; int64_t ui = s + 1;
+    merge2(u, ui, d.z, s + 2);
+    merge2(u, ui, d.w, s + 3);
+    merge2(v, i, u, ui);
+  } else {
+    v = -INFINITY; i = n;
+    const int64_t lim = s + AMWI_VEC < n ? s + AMWI_VEC : n;
+    for (int64_t k = s; k < lim; ++k) merge2(v, i, a[k], k);
+  }
+  block_reduce(v, i, lds);
+  if (tid == 0) partials[blockIdx.x] = P8{v, i};
+}
+
+__global__ void k_final(const P8* __restrict__ partials, int P,
+                        double* __restrict__ out_v, int64_t* __restrict__ out_i) {
+  __shared__ P8 lds[8];
+  const int tid = threadIdx.x;
+  double v = -INFINITY; int64_t i = (int64_t)P;
+  for (int j = tid; j < P; j += AMWI_BLOCK) {
+    P8 p = partials[j];
+    merge2(v, i, p.v, p.i);
+  }
+  block_reduce(v, i, lds);
+  if (tid == 0) { *out_v = v; *out_i = i; }
+}
+
+#define AMWI_CHECK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { \
+    fprintf(stderr, "HIP error %s:%d: %s\n", __FILE__, __LINE__, hipGetErrorString(e_)); \
+    abort(); } } while (0)
+
+extern "C" void amwi_launch(const double* a, int64_t* out_index, double* out_value, int64_t n) {
+  if (n <= 0) { *out_value = 0.0; *out_index = 0; return; }
+  const int64_t P64 = (n + AMWI_CHUNK - 1) / AMWI_CHUNK;
+  const int P = (int)P64;
+  static P8* pbuf = nullptr;
+  static int cap = 0;
+  if (P > cap) {
+    if (pbuf) { hipFree(pbuf); pbuf = nullptr; cap = 0; }
+    AMWI_CHECK(hipMalloc(&pbuf, (size_t)P * sizeof(P8)));
+    cap = P;
+  }
+  const int aligned = ((reinterpret_cast<uintptr_t>(a) & 31u) == 0);
+  k_partial<<<P, AMWI_BLOCK>>>(a, pbuf, n, aligned);
+  AMWI_CHECK(hipGetLastError());
+  k_final<<<1, AMWI_BLOCK>>>(pbuf, P, out_value, out_index);
+  AMWI_CHECK(hipGetLastError());
+  AMWI_CHECK(hipDeviceSynchronize());
+}

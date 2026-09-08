@@ -1,0 +1,19 @@
+/* Offload version using separate target data and target region.
+ * Maps arrays explicitly, then launches a parallel SIMD loop on the device.
+ * No explicit alignment hints to avoid assumptions about device pointer alignment.
+ */
+#include <stdint.h>
+
+void tsvc_2_vtvtv_fp64(double *restrict a, const double *restrict b,
+                        const double *restrict c, const int64_t LEN_1D) {
+    #pragma omp target data map(to: b[0:LEN_1D], c[0:LEN_1D]) map(tofrom: a[0:LEN_1D])
+    {
+        #pragma omp target
+        {
+            #pragma omp teams distribute parallel for simd
+            for (int64_t i = 0; i < LEN_1D; ++i) {
+                a[i] = a[i] * b[i] * c[i];
+            }
+        }
+    }
+}

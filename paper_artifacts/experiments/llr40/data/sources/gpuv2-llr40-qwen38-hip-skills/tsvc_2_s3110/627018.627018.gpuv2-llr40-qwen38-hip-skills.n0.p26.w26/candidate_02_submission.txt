@@ -1,0 +1,145 @@
+// Device half: tsvc_2 s3110 -- 2D argmax over fp64, output bb[0] = maxv + i + j.
+// gfx942 (CDNA3), wavefront 64. Deterministic: (max value, first row-major index) combine.
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstddef>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+
+#define HS_CHECK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { \
+    std::fprintf(stderr, "HIP error %s at %s:%d\n", hipGetErrorString(e_), __FILE__, __LINE__); std::abort(); } } while (0)
+
+namespace {
+
+struct __align__(16) Part { double v; int64_t i; };
+
+// (v,i) beats (bv,bi): strictly larger value; equal value -> smaller row-major index.
+// NaN never wins; anything finite/-Inf beats a NaN.
+__device__ __forceinline__ bool better(double v, int64_t i, double bv, int64_t bi) {
+    if (v != v) return false;
+    if (bv != bv) return true;
+    if (v > bv) return true;
+    if (v < bv) return false;
+    return i < bi;
+}
+
+__device__ __forceinline__ void consider(double v, int64_t i, double& bv, int64_t& bi) {
+    if (better(v, i, bv, bi)) { bv = v; bi = i; }
+}
+
+__device__ __forceinline__ void warp_reduce(double& bv, int64_t& bi) {
+    const int w = warpSize;
+    for (int o = w >> 1; o > 0; o >>= 1) {
+        const double ov = __shfl_down(bv, o, w);
+        const int64_t oi = __shfl_down(bi, o, w);
+        if (better(ov, oi, bv, bi)) { bv = ov; bi = oi; }
+    }
+}
+
+constexpr int kBlock = 256;
+constexpr int kMaxGrid = 2048;
+
+__global__ void __launch_bounds__(kBlock)
+k_reduce(const double4* __restrict__ a4, const double* __restrict__ a,
+         Part* __restrict__ part, int64_t n4, int64_t nrem, int64_t ntot) {
+    const int tid = threadIdx.x;
+    const int bid = blockIdx.x;
+    double bv = -INFINITY;
+    int64_t bi = ntot;  // sentinel: larger than any real index
+
+    const int64_t stride = (int64_t)gridDim.x * kBlock;
+    for (int64_t k = (int64_t)bid * kBlock + tid; k < n4; k += stride) {
+        const double4 x = a4[k];
+        const int64_t base = k << 2;
+        consider(x.x, base + 0, bv, bi);
+        consider(x.y, base + 1, bv, bi);
+        consider(x.z, base + 2, bv, bi);
+        consider(x.w, base + 3, bv, bi);
+    }
+    for (int64_t k = (int64_t)bid * kBlock + tid; k < nrem; k += stride) {
+        const int64_t p = (n4 << 2) + k;
+        consider(a[p], p, bv, bi);
+    }
+
+    warp_reduce(bv, bi);
+
+    __shared__ Part sp[kBlock / 64];
+    const int w = warpSize;
+    if ((tid & (w - 1)) == 0) sp[tid / w] = {bv, bi};
+    __syncthreads();
+    if (tid < w) {
+        const int64_t nw = kBlock / w;
+        if (tid < nw) { bv = sp[tid].v; bi = sp[tid].i; }
+        else { bv = -INFINITY; bi = ntot; }
+        warp_reduce(bv, bi);
+    }
+    if (tid == 0) part[bid] = {bv, bi};
+}
+
+__global__ void __launch_bounds__(kBlock)
+k_final(const Part* __restrict__ part, double* __restrict__ bb,
+        const double* __restrict__ a0, int nparts, int64_t len2d) {
+    const int tid = threadIdx.x;
+    double bv = -INFINITY;
+    int64_t bi = (int64_t)1 << 62;
+    for (int k = tid; k < nparts; k += kBlock) {
+        const Part p = part[k];
+        consider(p.v, p.i, bv, bi);
+    }
+    const int w = warpSize;
+    warp_reduce(bv, bi);
+
+    __shared__ Part sp[kBlock / 64];
+    if ((tid & (w - 1)) == 0) sp[tid / w] = {bv, bi};
+    __syncthreads();
+    if (tid < w) {
+        const int64_t nw = kBlock / w;
+        if (tid < nw) { bv = sp[tid].v; bi = sp[tid].i; }
+        else { bv = -INFINITY; bi = (int64_t)1 << 62; }
+        warp_reduce(bv, bi);
+    }
+    if (tid == 0) {
+        const double z = *a0;
+        if (z != z) {
+            // aa[0,0] is NaN: reference keeps (NaN, 0, 0) forever.
+            bb[0] = z + 0.0 + 0.0;
+        } else {
+            const int64_t xindex = bi / len2d;
+            const int64_t yindex = bi % len2d;
+            bb[0] = bv + (double)xindex + (double)yindex;
+        }
+    }
+}
+
+Part* g_ws = nullptr;
+int g_ws_blocks = 0;
+
+}  // namespace
+
+extern "C" void tsvc2_launch(const double* __restrict__ aa, double* __restrict__ bb,
+                             int64_t len2d) {
+    const int64_t ntot = len2d * len2d;
+    const int64_t n4 = ntot >> 2;
+    const int64_t nrem = ntot & 3;
+    int64_t grid = (n4 + kBlock - 1) / kBlock;
+    if (grid < 32) grid = 32;
+    if (grid > kMaxGrid) grid = kMaxGrid;
+
+    if ((int)grid > g_ws_blocks) {
+        if (g_ws) hipFree(g_ws);
+        g_ws = nullptr;
+        g_ws_blocks = 0;
+        Part* p = nullptr;
+        HS_CHECK(hipMalloc(&p, kMaxGrid * sizeof(Part)));
+        g_ws = p;
+        g_ws_blocks = kMaxGrid;
+    }
+
+    k_reduce<<<(int)grid, kBlock>>>( (const double4*)aa, aa, g_ws, n4, nrem, ntot);
+    HS_CHECK(hipGetLastError());
+    k_final<<<1, kBlock>>>(g_ws, bb, aa, (int)grid, len2d);
+    HS_CHECK(hipGetLastError());
+    HS_CHECK(hipDeviceSynchronize());
+    HS_CHECK(hipGetLastError());
+}

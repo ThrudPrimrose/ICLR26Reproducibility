@@ -1,0 +1,36 @@
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+#define TPB 256
+
+__global__ void __launch_bounds__(TPB) axpy_kernel(
+    double* __restrict__ a, const double* __restrict__ b, int64_t n, double S)
+{
+    double4* __restrict__ a4 = reinterpret_cast<double4*>(a);
+    const double4* __restrict__ b4 = reinterpret_cast<const double4*>(b);
+    const int64_t n4 = n >> 2;
+    int64_t i = (int64_t)blockIdx.x * TPB + threadIdx.x;
+    int64_t stride = (int64_t)gridDim.x * TPB;
+    for (; i < n4; i += stride) {
+        double4 av = a4[i];
+        double4 bv = b4[i];
+        av.x += bv.x * S;
+        av.y += bv.y * S;
+        av.z += bv.z * S;
+        av.w += bv.w * S;
+        a4[i] = av;
+    }
+    if (blockIdx.x == 0) {
+        for (int64_t j = (n4 << 2) + threadIdx.x; j < n; j += TPB)
+            a[j] += b[j] * S;
+    }
+}
+
+extern "C" void tsvc_2_axpy_launch(double* a, const double* b, const int64_t n, const int64_t S)
+{
+    if (n <= 0) return;
+    int64_t n4 = n >> 2;
+    int64_t blocks = (n4 + TPB - 1) / TPB;
+    if (blocks < 1) blocks = 1;
+    axpy_kernel<<<(int)blocks, TPB>>>(a, b, n, (double)S);
+}

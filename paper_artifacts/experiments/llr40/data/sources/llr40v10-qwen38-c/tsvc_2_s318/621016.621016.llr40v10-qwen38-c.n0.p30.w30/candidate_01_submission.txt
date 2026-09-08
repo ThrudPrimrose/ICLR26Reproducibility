@@ -1,0 +1,133 @@
+/* tsvc_2 s318: result[0] = max_i fabs(a[i*inc]) + (first index attaining the max).
+ * Optimized: OpenMP parallel chunks + AVX-512 (8-wide) fabs/max with exact
+ * first-occurrence tie-break. Strided fallback for inc != 1. */
+#define _GNU_SOURCE
+#include <math.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <immintrin.h>
+#include <omp.h>
+
+/* Scan a contiguous range [lo, hi) of a; returns local max and first local index. */
+static __attribute__((target("avx512f"))) void
+avx512_scan(const double *__restrict a, int64_t lo, int64_t hi,
+            double *lmax, int64_t *lidx) {
+  const __m512d fabs_mask = _mm512_castsi512_pd(_mm512_set1_epi64(0x7FFFFFFFFFFFFFFFll));
+  double l = -HUGE_VAL;
+  int64_t idx = lo;
+  const double *p = a + lo;
+  int64_t n = hi - lo;
+  int64_t i = 0;
+  for (; i + 8 <= n; i += 8) {
+    __m512d v = _mm512_loadu_pd(p + i);
+    v = _mm512_and_pd(v, fabs_mask);
+    __m256d vl = _mm512_extractf64x4_pd(v, 0);
+    __m256d vh = _mm512_extractf64x4_pd(v, 1);
+    __m256d m0 = _mm256_max_pd(vl, vh);
+    __m256d m1 = _mm256_max_pd(m0, _mm256_permute4x64_pd(m0, 0x4E));
+    __m256d m2 = _mm256_max_pd(m1, _mm256_permute4x64_pd(m1, 0x39));
+    double vm = _mm_cvtsd_f64(_mm256_castpd256_pd128(m2));
+    if (vm > l) {
+      __mmask8 m = _mm512_cmp_pd_mask(v, _mm512_set1_pd(vm), _CMP_EQ_OQ);
+      idx = lo + i + __builtin_ctz((unsigned)m);
+      l = vm;
+    }
+  }
+  for (; i < n; ++i) {
+    double v = p[i] < 0.0 ? -p[i] : p[i];
+    if (v > l) { idx = lo + i; l = v; }
+  }
+  *lmax = l; *lidx = idx;
+}
+
+/* Strided scan for inc != 1: elements a[i*inc], i in [lo, hi). */
+static void strided_scan(const double *__restrict a, int64_t lo, int64_t hi,
+                         int64_t inc, double *lmax, int64_t *lidx) {
+  double l = -HUGE_VAL;
+  int64_t idx = lo;
+  int64_t k = lo * inc;
+  for (int64_t i2 = lo; i2 < hi; ++i2, k += inc) {
+    double v = a[k] < 0.0 ? -a[k] : a[k];
+    if (v > l) { idx = i2; l = v; }
+  }
+  *lmax = l; *lidx = idx;
+}
+
+void tsvc_2_s318_fp64(const double *restrict a, double *restrict result,
+                      const int64_t LEN_1D, const int64_t inc) {
+  if (LEN_1D <= 0) { result[0] = 0.0; return; }
+  /* exact reference semantics: maxv initialized from a[0]; if it is NaN it
+     can never be beaten, so the result is NaN + 0. */
+  double f0 = a[0] < 0.0 ? -a[0] : a[0];
+  if (f0 != f0) { result[0] = f0 + 0.0; return; }
+
+  const int64_t n = LEN_1D;
+  double gmax;
+  int64_t gidx;
+
+  if (inc != 1) {
+    int nt = omp_get_max_threads();
+    int64_t cap = n / 1024;
+    if (nt > (int)cap) nt = (int)cap;
+    if (nt < 1) nt = 1;
+    int64_t per = (n + nt - 1) / nt;
+    double *tmax = (double *)malloc((size_t)nt * sizeof(double));
+    int64_t *tidx = (int64_t *)malloc((size_t)nt * sizeof(int64_t));
+    #pragma omp parallel num_threads(nt)
+    {
+      int tid = omp_get_thread_num();
+      int64_t lo = (int64_t)tid * per;
+      int64_t hi = lo + per;
+      if (hi > n) hi = n;
+      if (lo < n) {
+        strided_scan(a, lo, hi, inc, &tmax[tid], &tidx[tid]);
+      } else {
+        tmax[tid] = -HUGE_VAL;
+        tidx[tid] = lo;
+      }
+    }
+    gmax = -HUGE_VAL;
+    gidx = 0;
+    for (int t = 0; t < nt; ++t) {
+      if (tmax[t] > gmax) { gmax = tmax[t]; gidx = tidx[t]; }
+    }
+    free(tmax);
+    free(tidx);
+    result[0] = gmax + (double)gidx;
+    return;
+  }
+
+  if (n >= 4096) {
+    int nt = omp_get_max_threads();
+    int64_t cap = n / 1024;
+    if (nt > (int)cap) nt = (int)cap;
+    if (nt < 1) nt = 1;
+    int64_t per = (n + nt - 1) / nt;
+    per = (per + 7) & ~7ll;
+    double *tmax = (double *)malloc((size_t)nt * sizeof(double));
+    int64_t *tidx = (int64_t *)malloc((size_t)nt * sizeof(int64_t));
+    #pragma omp parallel num_threads(nt)
+    {
+      int tid = omp_get_thread_num();
+      int64_t lo = (int64_t)tid * per;
+      int64_t hi = lo + per;
+      if (hi > n) hi = n;
+      if (lo < n) {
+        avx512_scan(a, lo, hi, &tmax[tid], &tidx[tid]);
+      } else {
+        tmax[tid] = -HUGE_VAL;
+        tidx[tid] = lo;
+      }
+    }
+    gmax = -HUGE_VAL;
+    gidx = 0;
+    for (int t = 0; t < nt; ++t) {
+      if (tmax[t] > gmax) { gmax = tmax[t]; gidx = tidx[t]; }
+    }
+    free(tmax);
+    free(tidx);
+  } else {
+    avx512_scan(a, 0, n, &gmax, &gidx);
+  }
+  result[0] = gmax + (double)gidx;
+}

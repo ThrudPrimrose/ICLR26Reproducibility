@@ -1,0 +1,37 @@
+#include <stdint.h>
+#include <omp.h>
+#include <immintrin.h>
+
+void ext_war_unit_fp64(double *restrict a, const double *restrict b, const int64_t LEN_1D) {
+  int64_t N = LEN_1D;
+  if (N <= 1) return;
+  int64_t M = N - 1;                 /* compute a[i] for i in [0, M-1] */
+  int nt = omp_get_max_threads();
+  if (nt < 1) nt = 1;
+  int64_t c = (M + nt - 1) / nt;     /* block size (elements) */
+  if (c < 1) c = 1;
+  int nb = (int)((M + c - 1) / c);   /* number of blocks (<= nt) */
+  double bd[2048];
+  if (nb + 1 > 2048) nb = 2047;      /* safety cap */
+  c = (M + nb - 1) / nb;
+  /* bd[k] = original a[lo[k]]; bd[nb] = a[N-1] (last, never overwritten) */
+  for (int k = 0; k < nb; ++k) bd[k] = a[(int64_t)k * c];
+  bd[nb] = a[N-1];
+  #pragma omp parallel for schedule(static)
+  for (int k = 0; k < nb; ++k) {
+    int64_t lo = (int64_t)k * c;
+    int64_t hi = lo + c; if (hi > M) hi = M;   /* output indices i in [lo, hi-1]; hi-1 uses bd */
+    double bound = bd[k+1];
+    int64_t j = lo;
+    double *ap = a;
+    const double *bp = b;
+    /* SIMD: process a[j..j+3] using a_in[j+1..j+4] (in-block while j+4 <= hi-1+1 = hi) */
+    for (; j + 4 <= hi - 1; j += 4) {
+      __m256d va = _mm256_loadu_pd(ap + j + 1);
+      __m256d vb = _mm256_loadu_pd(bp + j);
+      _mm256_storeu_pd(ap + j, _mm256_add_pd(va, vb));
+    }
+    for (; j < hi - 1; ++j) ap[j] = ap[j+1] + bp[j];
+    ap[hi-1] = bound + bp[hi-1];
+  }
+}

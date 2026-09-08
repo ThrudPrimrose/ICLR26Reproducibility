@@ -1,0 +1,29 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void tsvc_2_s119_fp64_kernel(double * __restrict__ aa,
+                                                    const double * __restrict__ bb,
+                                                    const int64_t LEN_2D) {
+    const int64_t total_diags = 2 * LEN_2D - 1;
+    int64_t diag = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (diag >= total_diags) return;
+    int64_t d = diag - (LEN_2D - 1);
+    int64_t absd = d >= 0 ? d : -d;
+    int64_t length = LEN_2D - absd;
+    if (length <= 1) return;
+    int64_t base_idx;
+    if (d >= 0) {
+        base_idx = d * LEN_2D;
+    } else {
+        base_idx = -d;
+    }
+    double sum = aa[base_idx];
+    const int64_t stride = LEN_2D + 1;
+    int64_t idx = base_idx + stride;
+    int64_t interior = length - 1;
+    for (int64_t step = 0; step < interior; ++step) {
+        sum += bb[idx];
+        aa[idx] = sum;
+        idx += stride;
+    }
+}

@@ -1,0 +1,81 @@
+#include <hip/hip_runtime.h>
+
+// ---- small-N fast path: one thread per column ----
+__global__ void s231_small(double *aa, const double *bb, const int64_t N) {
+    int64_t i = blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+    if (i >= N) return;
+    double acc = aa[i];
+    for (int64_t j = 1; j < N; ++j) { acc += bb[j * N + i]; aa[j * N + i] = acc; }
+}
+
+// ---- hierarchical (large N) ----
+// rows j in [1, N-1] split into S segments
+__global__ void seg_total_k(const double *bb, const int64_t N, int S, const int64_t base, const int64_t rem, double *seg_total) {
+    int64_t i = blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+    int64_t s = blockIdx.y;
+    if (i >= N) return;
+    int64_t j0 = s*base + (s < rem ? s : rem) + 1;
+    int64_t j1 = (s+1)*base + ((s+1) < rem ? (s+1) : rem) + 1;
+    double acc = 0.0;
+    #pragma unroll 4
+    for (int64_t j = j0; j < j1; ++j) acc += bb[j*N + i];
+    seg_total[i*S + s] = acc;
+}
+
+__global__ void carry_k(const double *seg_total, double *carry, const int64_t N, int S) {
+    int64_t i = blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+    if (i >= N) return;
+    double acc = 0.0;
+    for (int s = 0; s < S; ++s) { carry[i*S + s] = acc; acc += seg_total[i*S + s]; }
+}
+
+__global__ void final_k(const double *bb, double *aa, const double *carry, const int64_t N, int S, const int64_t base, const int64_t rem) {
+    int64_t i = blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+    int64_t s = blockIdx.y;
+    if (i >= N) return;
+    int64_t j0 = s*base + (s < rem ? s : rem) + 1;
+    int64_t j1 = (s+1)*base + ((s+1) < rem ? (s+1) : rem) + 1;
+    double seed = aa[i];
+    double car  = carry[i*S + s];
+    double acc = 0.0;
+    #pragma unroll 4
+    for (int64_t j = j0; j < j1; ++j) { acc += bb[j*N + i]; aa[j*N + i] = seed + car + acc; }
+}
+
+static double *g_buf = nullptr;
+static int64_t g_cap = 0;
+
+extern "C" void tsvc_2_s231_fp64(double *aa, const double *bb, const int64_t LEN_2D) {
+    const int64_t N = LEN_2D;
+    if (N <= 1) return;
+
+    if (N <= 1024) {
+        const int th = 256;
+        int64_t blocks = (N + th - 1) / th;
+        s231_small<<<blocks, th>>>(aa, bb, N);
+        hipDeviceSynchronize();
+        return;
+    }
+
+    const int COLS = 256;
+    const int64_t nCG = (N + COLS - 1) / COLS;
+    int S = (int)((3*304 + nCG - 1) / nCG);   // ~3 blocks per CU
+    if (S < 1) S = 1;
+    if (S > 64) S = 64;
+    const int64_t L = N - 1;
+    if (S > (int)L) S = (int)L;
+    const int64_t base = L / S;
+    const int64_t rem  = L % S;
+
+    int64_t need = 2 * (int64_t)S * N;
+    if (need > g_cap) { if (g_buf) hipFree(g_buf); hipError_t e = hipMalloc(&g_buf, need*8); (void)e; g_cap = need; }
+    double *seg_total = g_buf;
+    double *carry = g_buf + (int64_t)S*N;
+
+    dim3 grid((unsigned)nCG, (unsigned)S);
+    seg_total_k<<<grid, COLS>>>(bb, N, S, base, rem, seg_total);
+    const int bt = 256;
+    carry_k<<<(N + bt - 1)/bt, bt>>>(seg_total, carry, N, S);
+    final_k<<<grid, COLS>>>(bb, aa, carry, N, S, base, rem);
+    hipDeviceSynchronize();
+}

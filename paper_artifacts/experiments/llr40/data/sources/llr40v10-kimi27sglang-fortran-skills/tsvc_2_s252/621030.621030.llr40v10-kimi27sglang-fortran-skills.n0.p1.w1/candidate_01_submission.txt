@@ -1,0 +1,18 @@
+subroutine tsvc_2_s252_fp64(a, b, c, LEN_1D, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D
+  integer(c_int64_t), value, intent(in) :: workspace_size
+  real(c_double), intent(out) :: a(LEN_1D)
+  real(c_double), intent(in) :: b(LEN_1D), c(LEN_1D)
+  integer(c_int8_t), intent(inout) :: workspace(workspace_size)
+  integer(c_int64_t) :: i
+  real(c_double) :: t, s
+
+  t = 0.0d0
+  do i = 1, LEN_1D
+    s = b(i) * c(i)
+    a(i) = s + t
+    t = s
+  end do
+end subroutine tsvc_2_s252_fp64

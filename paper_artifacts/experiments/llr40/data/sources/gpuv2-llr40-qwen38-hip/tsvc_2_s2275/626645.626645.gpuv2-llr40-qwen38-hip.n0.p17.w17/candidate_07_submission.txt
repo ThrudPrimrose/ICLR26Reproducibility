@@ -1,0 +1,51 @@
+// Device half: elementwise FMA aa += bb*cc over LEN_2D^2 elements + 1D part a = b + c*d.
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+namespace {
+
+constexpr int kThreads = 256;
+constexpr int kMaxBlocks = 16384;
+
+// Each thread does one double4 (4 contiguous doubles). Groups = N2/4.
+__global__ void __launch_bounds__(kThreads) fma2d(
+    double *aa, const double *bb, const double *cc,
+    int64_t ng4, int64_t nrem,
+    double *a, const double *b, const double *c, const double *d,
+    int64_t len1d) {
+  const double4 *vaa = (const double4 *)aa;
+  const double4 *vbb = (const double4 *)bb;
+  const double4 *vcc = (const double4 *)cc;
+  double4 *waa = (double4 *)aa;
+  int64_t gstride = (int64_t)gridDim.x * (int64_t)blockDim.x;
+  int64_t t0 = (int64_t)blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+  for (int64_t t = t0; t < ng4; t += gstride) {
+    double4 x = vaa[t];
+    double4 u = vbb[t];
+    double4 v = vcc[t];
+    x.x = fma(u.x, v.x, x.x);
+    x.y = fma(u.y, v.y, x.y);
+    x.z = fma(u.z, v.z, x.z);
+    x.w = fma(u.w, v.w, x.w);
+    waa[t] = x;
+  }
+  // tail: last nrem scalar elements (nrem = N2 & 3)
+  int64_t base = ng4 << 2;
+  for (int64_t e = t0; e < nrem; e += gstride) aa[base + e] += bb[base + e] * cc[base + e];
+  for (int64_t i = t0; i < len1d; i += gstride) a[i] = b[i] + c[i] * d[i];
+}
+
+} // namespace
+
+extern "C" void tsvc2275_launch(double *a, double *aa, const double *b, const double *bb,
+                                const double *c, const double *cc, const double *d,
+                                int64_t len2d) {
+  int64_t n2 = len2d * len2d;
+  int64_t ng4 = n2 >> 2;
+  int64_t nrem = n2 & 3;
+  int64_t groups = (ng4 + kThreads - 1) / kThreads;
+  int blocks = groups < kMaxBlocks ? (int)groups : kMaxBlocks;
+  if (blocks < 1) blocks = 1;
+  fma2d<<<blocks, kThreads>>>(aa, bb, cc, ng4, nrem, a, b, c, d, len2d);
+  hipDeviceSynchronize();
+}

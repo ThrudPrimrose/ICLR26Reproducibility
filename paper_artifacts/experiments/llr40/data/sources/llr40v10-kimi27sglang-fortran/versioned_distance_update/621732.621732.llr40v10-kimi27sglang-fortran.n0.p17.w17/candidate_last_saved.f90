@@ -1,0 +1,143 @@
+subroutine versioned_distance_update_fp64(a, b, c, K, LEN_1D) bind(C, name="versioned_distance_update_fp64")
+    use, intrinsic :: iso_c_binding
+    implicit none
+    integer(c_int64_t), value, intent(in) :: K
+    integer(c_int64_t), value, intent(in) :: LEN_1D
+    real(c_double), intent(inout) :: a(LEN_1D)
+    real(c_double), intent(in) :: b(LEN_1D)
+    real(c_double), intent(in) :: c(LEN_1D)
+
+    integer(c_int64_t) :: i, r, m, q, rem
+    integer(c_int64_t), parameter :: BLOCK = 8192_c_int64_t
+    integer(c_int64_t) :: nb, ib, lo, hi
+    real(c_double) :: loc, powfac, cur
+    real(c_double), allocatable :: powblk(:), carry(:), seed(:)
+
+    if (LEN_1D <= K) return
+
+    select case (K)
+    case (1_c_int64_t)
+        ! K = 1: a(i) depends on a(i-1).  Use a blocked parallel scan for large sizes.
+        if (LEN_1D > 100000_c_int64_t) then
+            nb = (LEN_1D - 1_c_int64_t + BLOCK - 1_c_int64_t) / BLOCK
+            allocate(powblk(nb), carry(nb), seed(nb))
+
+            ! Pass 1: each block computes its carry factor and zero-seed carry value.
+            !$omp parallel do schedule(static)
+            do ib = 1_c_int64_t, nb
+                lo = (ib - 1_c_int64_t) * BLOCK + 2_c_int64_t
+                hi = min(lo + BLOCK - 1_c_int64_t, LEN_1D)
+                loc = 0.0_c_double
+                powfac = 1.0_c_double
+                do i = lo, hi
+                    powfac = powfac * 0.75_c_double
+                    loc = 0.75_c_double * loc + b(i) * c(i)
+                end do
+                powblk(ib) = powfac
+                carry(ib) = loc
+            end do
+            !$omp end parallel do
+
+            ! Pass 2: serial scan over block seeds.
+            seed(1) = a(1)
+            do ib = 2_c_int64_t, nb
+                seed(ib) = powblk(ib - 1_c_int64_t) * seed(ib - 1_c_int64_t) + carry(ib - 1_c_int64_t)
+            end do
+
+            ! Pass 3: write each block independently starting from its seed.
+            !$omp parallel do schedule(static)
+            do ib = 1_c_int64_t, nb
+                lo = (ib - 1_c_int64_t) * BLOCK + 2_c_int64_t
+                hi = min(lo + BLOCK - 1_c_int64_t, LEN_1D)
+                cur = seed(ib)
+                do i = lo, hi
+                    cur = 0.75_c_double * cur + b(i) * c(i)
+                    a(i) = cur
+                end do
+            end do
+            !$omp end parallel do
+
+            deallocate(powblk, carry, seed)
+        else
+            do i = 2_c_int64_t, LEN_1D
+                a(i) = 0.75_c_double * a(i - 1_c_int64_t) + b(i) * c(i)
+            end do
+        end if
+
+    case (5_c_int64_t)
+        q   = (LEN_1D - 5_c_int64_t) / 5_c_int64_t
+        rem = mod(LEN_1D - 5_c_int64_t, 5_c_int64_t)
+        !$omp simd
+        do r = 1_c_int64_t, 5_c_int64_t
+            do m = 0_c_int64_t, q - 1_c_int64_t
+                a(5_c_int64_t * (m + 1_c_int64_t) + r) = &
+                    0.75_c_double * a(5_c_int64_t * m + r) &
+                  + b(5_c_int64_t * (m + 1_c_int64_t) + r) * c(5_c_int64_t * (m + 1_c_int64_t) + r)
+            end do
+        end do
+        !$omp end simd
+        if (rem > 0_c_int64_t) then
+            !$omp simd
+            do r = 1_c_int64_t, rem
+                a(5_c_int64_t * q + 5_c_int64_t + r) = &
+                    0.75_c_double * a(5_c_int64_t * q + r) &
+                  + b(5_c_int64_t * q + 5_c_int64_t + r) * c(5_c_int64_t * q + 5_c_int64_t + r)
+            end do
+            !$omp end simd
+        end if
+
+    case (64_c_int64_t)
+        q   = (LEN_1D - 64_c_int64_t) / 64_c_int64_t
+        rem = mod(LEN_1D - 64_c_int64_t, 64_c_int64_t)
+        !$omp parallel do simd schedule(static, 8)
+        do r = 1_c_int64_t, 64_c_int64_t
+            do m = 0_c_int64_t, q - 1_c_int64_t
+                a(64_c_int64_t * (m + 1_c_int64_t) + r) = &
+                    0.75_c_double * a(64_c_int64_t * m + r) &
+                  + b(64_c_int64_t * (m + 1_c_int64_t) + r) * c(64_c_int64_t * (m + 1_c_int64_t) + r)
+            end do
+        end do
+        !$omp end parallel do simd
+        if (rem > 0_c_int64_t) then
+            !$omp parallel do simd schedule(static, 8)
+            do r = 1_c_int64_t, rem
+                a(64_c_int64_t * q + 64_c_int64_t + r) = &
+                    0.75_c_double * a(64_c_int64_t * q + r) &
+                  + b(64_c_int64_t * q + 64_c_int64_t + r) * c(64_c_int64_t * q + 64_c_int64_t + r)
+            end do
+            !$omp end parallel do simd
+        end if
+
+    case (251_c_int64_t)
+        q   = (LEN_1D - 251_c_int64_t) / 251_c_int64_t
+        rem = mod(LEN_1D - 251_c_int64_t, 251_c_int64_t)
+        !$omp parallel do simd schedule(static, 8)
+        do r = 1_c_int64_t, 251_c_int64_t
+            do m = 0_c_int64_t, q - 1_c_int64_t
+                a(251_c_int64_t * (m + 1_c_int64_t) + r) = &
+                    0.75_c_double * a(251_c_int64_t * m + r) &
+                  + b(251_c_int64_t * (m + 1_c_int64_t) + r) * c(251_c_int64_t * (m + 1_c_int64_t) + r)
+            end do
+        end do
+        !$omp end parallel do simd
+        if (rem > 0_c_int64_t) then
+            !$omp parallel do simd schedule(static, 8)
+            do r = 1_c_int64_t, rem
+                a(251_c_int64_t * q + 251_c_int64_t + r) = &
+                    0.75_c_double * a(251_c_int64_t * q + r) &
+                  + b(251_c_int64_t * q + 251_c_int64_t + r) * c(251_c_int64_t * q + 251_c_int64_t + r)
+            end do
+            !$omp end parallel do simd
+        end if
+
+    case default
+        ! Fallback for any other runtime K: simple serial recurrence over chains
+        do r = 1_c_int64_t, K
+            do m = 0_c_int64_t, (LEN_1D - K - r) / K
+                a(K + r + m * K) = 0.75_c_double * a(r + m * K) &
+                                 + b(K + r + m * K) * c(K + r + m * K)
+            end do
+        end do
+    end select
+
+end subroutine versioned_distance_update_fp64

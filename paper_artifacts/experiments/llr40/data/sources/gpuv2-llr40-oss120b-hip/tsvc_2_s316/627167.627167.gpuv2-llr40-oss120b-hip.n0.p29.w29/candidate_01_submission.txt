@@ -1,0 +1,31 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cfloat>
+
+extern "C" __global__ void min_reduce_kernel(const double* __restrict__ a,
+                                            double* __restrict__ blockMins,
+                                            int64_t N) {
+    __shared__ double sdata[256];
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    double local_min = DBL_MAX;
+    for (int64_t i = idx; i < N; i += gridDim.x * blockDim.x) {
+        double val = a[i];
+        if (val < local_min) {
+            local_min = val;
+        }
+    }
+    sdata[threadIdx.x] = local_min;
+    __syncthreads();
+    for (unsigned int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) {
+            double other = sdata[threadIdx.x + stride];
+            if (other < sdata[threadIdx.x]) {
+                sdata[threadIdx.x] = other;
+            }
+        }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0) {
+        blockMins[blockIdx.x] = sdata[0];
+    }
+}

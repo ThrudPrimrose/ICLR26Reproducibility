@@ -1,0 +1,71 @@
+subroutine versioned_distance_update_fp64(a, b, c, K, LEN_1D, workspace, workspace_bytes) bind(c, name="versioned_distance_update_fp64")
+    use iso_c_binding
+    implicit none
+    integer(c_int64_t), value, intent(in) :: LEN_1D, K, workspace_bytes
+    type(c_ptr), value, intent(in) :: workspace
+    real(c_double), intent(inout) :: a(LEN_1D)
+    real(c_double), intent(in) :: b(LEN_1D), c(LEN_1D)
+    integer(c_int64_t) :: i, j, m, num_blocks, rem, base, j_start, j_end
+    integer(c_int64_t) :: chunk_size, num_chunks, chunk
+    real(c_double) :: d
+    real(c_double), parameter :: coeff = 0.75_c_double
+
+    d = coeff
+
+    if (LEN_1D <= K) return
+
+    if (K == 1_c_int64_t) then
+        ! scalar recurrence, unroll by 4 to reduce loop overhead
+        i = 2_c_int64_t
+        do while (i + 3_c_int64_t <= LEN_1D)
+            a(i)             = d * a(i - 1_c_int64_t) + b(i)             * c(i)
+            a(i + 1_c_int64_t) = d * a(i)             + b(i + 1_c_int64_t) * c(i + 1_c_int64_t)
+            a(i + 2_c_int64_t) = d * a(i + 1_c_int64_t) + b(i + 2_c_int64_t) * c(i + 2_c_int64_t)
+            a(i + 3_c_int64_t) = d * a(i + 2_c_int64_t) + b(i + 3_c_int64_t) * c(i + 3_c_int64_t)
+            i = i + 4_c_int64_t
+        end do
+        do while (i <= LEN_1D)
+            a(i) = d * a(i - 1_c_int64_t) + b(i) * c(i)
+            i = i + 1_c_int64_t
+        end do
+        return
+    end if
+
+    num_blocks = (LEN_1D - K) / K
+    rem = LEN_1D - K - num_blocks * K
+
+    ! Determine chunk_size for block-based processing.
+    ! For small K, process all chains together; for larger K, split chains into
+    ! chunks sized for SIMD width and core count.
+    if (K <= 8_c_int64_t) then
+        chunk_size = K
+    else
+        chunk_size = max(4_c_int64_t, K / 64_c_int64_t)
+        ! round up to a multiple of 4
+        chunk_size = ((chunk_size + 3_c_int64_t) / 4_c_int64_t) * 4_c_int64_t
+        if (chunk_size > K) chunk_size = K
+    end if
+    num_chunks = (K + chunk_size - 1_c_int64_t) / chunk_size
+
+    !$omp parallel do schedule(static) private(chunk, j_start, j_end, m, base, j, i)
+    do chunk = 1_c_int64_t, num_chunks
+        j_start = (chunk - 1_c_int64_t) * chunk_size + 1_c_int64_t
+        j_end = min(j_start + chunk_size - 1_c_int64_t, K)
+        do m = 0_c_int64_t, num_blocks - 1_c_int64_t
+            base = K + m * K
+            !$omp simd
+            do j = j_start, j_end
+                i = base + j
+                a(i) = d * a(i - K) + b(i) * c(i)
+            end do
+        end do
+    end do
+    !$omp end parallel do
+
+    ! remainder elements after the last full block
+    if (rem > 0_c_int64_t) then
+        do i = K + num_blocks * K + 1_c_int64_t, LEN_1D
+            a(i) = d * a(i - K) + b(i) * c(i)
+        end do
+    end if
+end subroutine versioned_distance_update_fp64

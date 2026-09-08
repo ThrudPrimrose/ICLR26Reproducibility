@@ -1,0 +1,59 @@
+// Device half: 3-point stencil with wraparound, 2 doubles per thread.
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define HIP_CHECK(x)                                                        \
+  do {                                                                      \
+    hipError_t e_ = (x);                                                    \
+    if (e_ != hipSuccess) {                                                 \
+      printf("HIP error %s:%d: %s\n", __FILE__, __LINE__,                   \
+             hipGetErrorString(e_));                                        \
+      abort();                                                              \
+    }                                                                       \
+  } while (0)
+
+struct alignas(16) d2 {
+  double x, y;
+};
+
+__global__ void __launch_bounds__(256) s255_kernel(const d2* __restrict__ b2,
+                                                   const double* __restrict__ bs,
+                                                   d2* __restrict__ a2,
+                                                   double* __restrict__ as,
+                                                   const int64_t n,
+                                                   const int64_t n2) {
+  const int64_t i = (int64_t)blockIdx.x * (int64_t)blockDim.x + (int64_t)threadIdx.x;
+  if (i >= n2) return;
+  const d2 cur = b2[i];
+  d2 prev;
+  if (i == 0) {
+    if (n & 1) {
+      prev.x = b2[n2 - 1].y;   // b[n-2]
+      prev.y = bs[n - 1];      // b[n-1]
+    } else {
+      prev = b2[n2 - 1];       // (b[n-2], b[n-1])
+    }
+  } else {
+    prev = b2[i - 1];
+  }
+  d2 out;
+  out.x = (cur.x + prev.y + prev.x) * 0.333;
+  out.y = (cur.y + cur.x + prev.y) * 0.333;
+  a2[i] = out;
+  if (i == 0 && (n & 1)) {
+    as[n - 1] = (bs[n - 1] + bs[n - 2] + bs[n - 3]) * 0.333;
+  }
+}
+
+void s255_launch(double* a, const double* b, int64_t n) {
+  if (n < 2) return;
+  const int threads = 256;
+  const int64_t n2 = n >> 1;
+  int64_t blocks64 = (n2 + threads - 1) / threads;
+  if (blocks64 < 1) blocks64 = 1;
+  s255_kernel<<<dim3((unsigned)blocks64), dim3(threads)>>>(
+      reinterpret_cast<const d2*>(b), b, reinterpret_cast<d2*>(a), a, n, n2);
+  HIP_CHECK(hipGetLastError());
+}

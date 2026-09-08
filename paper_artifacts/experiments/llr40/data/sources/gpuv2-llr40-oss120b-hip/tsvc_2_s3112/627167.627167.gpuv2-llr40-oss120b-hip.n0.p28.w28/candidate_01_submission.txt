@@ -1,0 +1,24 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+extern "C" __global__ void block_sum_kernel(const double * __restrict__ a, double * __restrict__ block_sums, int64_t N, int64_t BLOCK_SIZE) {
+    int64_t blockId = blockIdx.x;
+    int64_t start = blockId * BLOCK_SIZE;
+    int64_t end = start + BLOCK_SIZE;
+    if (end > N) end = N;
+    double sum = 0.0;
+    for (int64_t i = start; i < end; ++i) {
+        sum += a[i];
+    }
+    block_sums[blockId] = sum;
+}
+extern "C" __global__ void block_scan_kernel(const double * __restrict__ a, double * __restrict__ b, const double * __restrict__ offsets, int64_t N, int64_t BLOCK_SIZE) {
+    int64_t blockId = blockIdx.x;
+    int64_t start = blockId * BLOCK_SIZE;
+    int64_t end = start + BLOCK_SIZE;
+    if (end > N) end = N;
+    double sum = offsets[blockId];
+    for (int64_t i = start; i < end; ++i) {
+        sum += a[i];
+        b[i] = sum;
+    }
+}

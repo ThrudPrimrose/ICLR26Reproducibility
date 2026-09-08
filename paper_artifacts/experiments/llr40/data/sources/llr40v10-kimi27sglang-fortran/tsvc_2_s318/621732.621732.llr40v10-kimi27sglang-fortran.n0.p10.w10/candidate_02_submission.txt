@@ -1,0 +1,30 @@
+subroutine tsvc_2_s318_fp64(a, result, LEN_1D, inc) bind(C, name="tsvc_2_s318_fp64")
+  use iso_c_binding
+  implicit none
+
+  type :: maxloc_t
+    real(c_double) :: val
+    integer(c_int64_t) :: idx
+  end type maxloc_t
+
+  integer(c_int64_t), value :: LEN_1D, inc
+  real(c_double), intent(in) :: a(0:*)
+  real(c_double), intent(inout) :: result(0:*)
+  integer(c_int64_t) :: i
+  type(maxloc_t) :: p
+
+  !$omp declare reduction(maxloc: maxloc_t: &
+  !$omp   omp_out = merge(omp_in, omp_out, &
+  !$omp     omp_in%val > omp_out%val .or. &
+  !$omp     (omp_in%val == omp_out%val .and. omp_in%idx < omp_out%idx))) &
+  !$omp   initializer(omp_priv = maxloc_t(-huge(1.0_c_double), huge(1_c_int64_t)))
+
+  p = maxloc_t(abs(a(0_c_int64_t)), 0_c_int64_t)
+
+  !$omp parallel do reduction(maxloc: p) schedule(static)
+  do i = 1_c_int64_t, LEN_1D - 1_c_int64_t
+    p = merge(maxloc_t(abs(a(i * inc)), i), p, abs(a(i * inc)) > p%val)
+  end do
+
+  result(0_c_int64_t) = p%val + real(p%idx, c_double)
+end subroutine tsvc_2_s318_fp64

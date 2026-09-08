@@ -1,0 +1,19 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void s4112_naive(double* __restrict__ a, const double* __restrict__ b,
+                            const int32_t* __restrict__ ip, const long long n) {
+  long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+  long long stride = (long long)gridDim.x * blockDim.x;
+  for (; i < n; i += stride) {
+    a[i] += b[ip[i]] * 2.0;
+  }
+}
+
+void s4112_launch(double* a, const double* b, const int32_t* ip, long long n) {
+  const int block = 256;
+  long long grid = (n + block - 1) / block;
+  const long long maxgrid = 304LL * 8;
+  if (grid > maxgrid) grid = maxgrid;
+  s4112_naive<<<(unsigned)grid, block>>>(a, b, ip, n);
+}

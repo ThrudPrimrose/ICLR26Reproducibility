@@ -1,0 +1,78 @@
+#include <stdint.h>
+#include <immintrin.h>
+#include <omp.h>
+
+void ext_break_capture_fp64(const double *restrict a, int64_t *restrict out_index,
+                            double *restrict out_value, const int64_t LEN_1D) {
+    const double k = 1.0;
+    const __m512d vk = _mm512_set1_pd(k);
+
+    if (LEN_1D < 65536) {
+        int64_t i = 0;
+        for (; i + 8 <= LEN_1D; i += 8) {
+            __m512d va = _mm512_loadu_pd(a + i);
+            __mmask8 mask = _mm512_cmp_pd_mask(va, vk, _CMP_GT_OQ);
+            if (__builtin_expect(mask != 0, 0)) {
+                int j = __builtin_ctz((unsigned)mask);
+                out_index[0] = i + j;
+                out_value[0] = a[i + j];
+                return;
+            }
+        }
+        for (; i < LEN_1D; ++i) {
+            if (a[i] > k) {
+                out_index[0] = i;
+                out_value[0] = a[i];
+                return;
+            }
+        }
+        out_index[0] = -1;
+        out_value[0] = -1.0;
+        return;
+    }
+
+    const int64_t C = 65536;
+    const int64_t nchunks = (LEN_1D + C - 1) / C;
+
+    int maxt = omp_get_max_threads();
+    int nthreads = (maxt < 32) ? maxt : 32;
+
+    int64_t best_idx = LEN_1D;
+
+    #pragma omp parallel for reduction(min:best_idx) schedule(dynamic, 1) num_threads(nthreads)
+    for (int64_t c = 0; c < nchunks; ++c) {
+        int64_t start = c * C;
+        if (start >= best_idx) continue;
+
+        int64_t end = start + C;
+        if (end > LEN_1D) end = LEN_1D;
+
+        int64_t i = start;
+        for (; i + 8 <= end; i += 8) {
+            __m512d va = _mm512_loadu_pd(a + i);
+            __mmask8 mask = _mm512_cmp_pd_mask(va, vk, _CMP_GT_OQ);
+            if (__builtin_expect(mask != 0, 0)) {
+                int j = __builtin_ctz((unsigned)mask);
+                int64_t fidx = i + j;
+                if (fidx < best_idx) best_idx = fidx;
+                break;
+            }
+        }
+        if (i < end && i < best_idx) {
+            for (; i < end; ++i) {
+                if (a[i] > k) {
+                    if (i < best_idx) best_idx = i;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (best_idx < LEN_1D) {
+        out_index[0] = best_idx;
+        out_value[0] = a[best_idx];
+    } else {
+        out_index[0] = -1;
+        out_value[0] = -1.0;
+    }
+}

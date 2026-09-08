@@ -1,0 +1,22 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void k_tsvc_2_s275(double *__restrict aa, const double *__restrict bb,
+                                         const double *__restrict cc, const int64_t n) {
+  const int64_t i = (int64_t)blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+  if (i >= n) return;
+  const double a0 = aa[i];
+  if (a0 > 0.0) {
+    double acc = a0;
+    for (int64_t j = 1; j < n; ++j) {
+      acc += bb[j * n + i] * cc[j * n + i];
+      aa[j * n + i] = acc;
+    }
+  }
+}
+
+extern "C" void launch_tsvc_2_s275(double *aa, const double *bb, const double *cc, const int64_t n) {
+  const int bs = 256;
+  const int64_t grid = (n + bs - 1) / bs;
+  k_tsvc_2_s275<<<(unsigned)grid, bs>>>(aa, bb, cc, n);
+}

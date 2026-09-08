@@ -1,0 +1,101 @@
+module amod
+  implicit none
+  real(kind=8), allocatable :: blkmax_buf(:)
+end module amod
+
+subroutine argmax_with_index_fp64(a, out_index, out_value, len_1d) bind(C)
+  use iso_c_binding
+  use omp_lib
+  use amod
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_1d
+  real(c_double), intent(in) :: a(len_1d)
+  integer(c_int64_t), intent(out) :: out_index(1)
+  real(c_double), intent(out) :: out_value(1)
+
+  integer, parameter :: BS = 8192
+  integer :: nt, t
+  integer(c_int64_t) :: n, lo, hi, i, j, b0, b1, p_c, idx, nblk, per, base, total, chunk_max
+  real(c_double) :: m_c, m_b, tm(1024), bmax
+  integer(c_int64_t) :: ti(1024)
+
+  n = len_1d
+  if (n <= 0) then
+    out_value(1) = 0.0d0
+    out_index(1) = 0
+    return
+  end if
+  if (n == 1) then
+    out_value(1) = a(1)
+    out_index(1) = 1
+    return
+  end if
+
+  nt = omp_get_max_threads()
+  nt = min(nt, 1024)
+  if (int(n) < nt) nt = int(n)
+
+  chunk_max = (n + nt - 1) / nt
+  per = (chunk_max + BS - 1) / BS + 2
+  total = nt * per
+  if (.not. allocated(blkmax_buf) .or. size(blkmax_buf) < total) then
+    if (allocated(blkmax_buf)) deallocate(blkmax_buf)
+    allocate(blkmax_buf(total))
+  end if
+
+  !$omp parallel num_threads(nt)
+  t = omp_get_thread_num()
+  lo = (n * t) / nt + 1
+  hi = (n * (t + 1)) / nt
+  nblk = (hi - lo + BS) / BS
+  if (nblk < 1) nblk = 1
+  base = t * per
+
+  do j = 0, nblk - 1
+    b0 = lo + j * BS
+    b1 = min(lo + (j + 1) * BS - 1, hi)
+    m_b = -HUGE(1.0d0)
+    !$omp simd reduction(max:m_b)
+    do i = b0, b1
+      m_b = max(m_b, a(i))
+    end do
+    blkmax_buf(base + j + 1) = m_b
+  end do
+
+  m_c = -HUGE(1.0d0)
+  do j = 0, nblk - 1
+    bmax = blkmax_buf(base + j + 1)
+    if (bmax > m_c) m_c = bmax
+  end do
+
+  p_c = n + 1
+  do j = 0, nblk - 1
+    if (blkmax_buf(base + j + 1) == m_c) then
+      b0 = lo + j * BS
+      b1 = min(lo + (j + 1) * BS - 1, hi)
+      !$omp simd reduction(min:p_c)
+      do i = b0, b1
+        if (a(i) == m_c) p_c = min(p_c, i)
+      end do
+      exit
+    end if
+  end do
+
+  tm(t + 1) = m_c
+  ti(t + 1) = p_c
+
+  !$omp barrier
+  !$omp single
+  m_c = -HUGE(1.0d0)
+  idx = n + 1
+  do t = 0, nt - 1
+    if (tm(t + 1) > m_c) then
+      m_c = tm(t + 1)
+      idx = ti(t + 1)
+    end if
+  end do
+  !$omp end single
+  out_value(1) = m_c
+  out_index(1) = idx
+  !$omp end parallel
+end subroutine argmax_with_index_fp64

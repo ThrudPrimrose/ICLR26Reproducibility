@@ -1,0 +1,29 @@
+subroutine tsvc_2_s3110_fp64(aa, bb, LEN_2D) bind(C, name="tsvc_2_s3110_fp64")
+  use iso_c_binding
+  implicit none
+  integer(C_INT64_T), value, intent(in) :: LEN_2D
+  real(C_DOUBLE), intent(in) :: aa(LEN_2D * LEN_2D)
+  real(C_DOUBLE), intent(out) :: bb(2, 2)
+
+  integer(C_INT64_T) :: i, n2, pos
+  real(C_DOUBLE) :: maxv, chksum
+
+  n2 = LEN_2D * LEN_2D
+
+  ! Pass 1: find the maximum value (vectorizable reduction)
+  maxv = aa(1)
+  !$omp parallel do reduction(max:maxv)
+  do i = 2, n2
+    if (aa(i) > maxv) maxv = aa(i)
+  end do
+
+  ! Pass 2: find first linear position with the maximum value
+  pos = n2
+  !$omp parallel do reduction(min:pos)
+  do i = 1, n2
+    if (aa(i) == maxv) pos = min(pos, i - 1_C_INT64_T)
+  end do
+
+  chksum = maxv + dble(pos / LEN_2D) + dble(mod(pos, LEN_2D))
+  bb(1, 1) = chksum
+end subroutine tsvc_2_s3110_fp64

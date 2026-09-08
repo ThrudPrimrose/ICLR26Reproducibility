@@ -1,0 +1,40 @@
+"""s252 v2: same shift rewrite, parallelized across threads (numba prange)."""
+import numpy as np
+import numba
+from numba import prange
+
+
+@numba.njit(parallel=True)
+def _s252(a, b, c):
+    n = a.shape[0]
+    if n > 0:
+        a[0] = b[0] * c[0]
+    for i in prange(1, n):
+        a[i] = b[i] * c[i] + b[i - 1] * c[i - 1]
+
+
+def _s252_np(a, b, c):
+    s = b * c
+    if a.shape[0] > 0:
+        a[1:] = s[1:] + s[:-1]
+        a[0] = s[0]
+
+
+def s252(a, b, c, LEN_1D):
+    try:
+        _s252(a, b, c)
+    except Exception:
+        _s252_np(a, b, c)
+    return None
+
+
+def _warm():
+    d64 = np.arange(32, dtype=np.float64)
+    d32 = np.arange(32, dtype=np.float32)
+    di64 = np.arange(32, dtype=np.int64)
+    _s252(d64, d64, d64)
+    _s252(d32, d32, d32)
+    _s252(di64, di64, di64)
+
+
+_warm()

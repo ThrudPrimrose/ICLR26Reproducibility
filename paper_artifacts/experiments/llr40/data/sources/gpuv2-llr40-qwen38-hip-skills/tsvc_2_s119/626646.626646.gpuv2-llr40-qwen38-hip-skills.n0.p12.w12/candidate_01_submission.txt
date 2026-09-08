@@ -1,0 +1,50 @@
+// Device half: diagonal-scan kernel for s119 (one wavefront per diagonal).
+// aa[i,j] = aa[i-1,j-1] + bb[i,j]  for i,j in [1, L-1].
+// For each diagonal d = i - j, this is a prefix sum seeded by the boundary
+// cell (row 0 or col 0). One thread per diagonal carries the running sum in a
+// register (no read-back), walking the diagonal (memory stride L+1).
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+#define BLOCK 64
+
+__global__ void __launch_bounds__(BLOCK) s119_diag_kernel(
+    double* __restrict__ aa, const double* __restrict__ bb, int64_t L) {
+    const int64_t numDiag = 2 * L - 1;
+    const int64_t tid = blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+    if (tid >= numDiag) return;
+
+    const int64_t d = tid - (L - 1);          // d = i - j, in [-(L-1), L-1]
+    int64_t i_s, j_s;
+    if (d >= 0) { i_s = d; j_s = 0; }
+    else        { i_s = 0; j_s = -d; }
+
+    double acc = aa[i_s * L + j_s];           // boundary seed (never overwritten)
+    int64_t idx = (i_s + 1) * L + (j_s + 1);  // first computed cell
+    const int64_t stride = L + 1;
+    int64_t count = L - 1 - (d >= 0 ? d : -d);
+
+    int64_t k = 0;
+    for (; k + 8 <= count; k += 8) {
+        double b[8];
+        #pragma unroll
+        for (int u = 0; u < 8; ++u) b[u] = bb[idx + (int64_t)u * stride];
+        #pragma unroll
+        for (int u = 0; u < 8; ++u) {
+            acc += b[u];
+            aa[idx + (int64_t)u * stride] = acc;
+        }
+        idx += 8 * stride;
+    }
+    for (; k < count; ++k) {
+        acc += bb[idx];
+        aa[idx] = acc;
+        idx += stride;
+    }
+}
+
+extern "C" void s119_launch(double* aa, const double* bb, int64_t L) {
+    const int64_t numDiag = 2 * L - 1;
+    const int grid = (int)((numDiag + BLOCK - 1) / BLOCK);
+    s119_diag_kernel<<<grid, BLOCK>>>(aa, bb, L);
+}

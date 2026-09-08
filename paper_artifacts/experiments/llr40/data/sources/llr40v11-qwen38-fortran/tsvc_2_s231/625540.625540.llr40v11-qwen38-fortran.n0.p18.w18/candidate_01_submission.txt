@@ -1,0 +1,26 @@
+subroutine tsvc_2_s231_fp64(aa, bb, n) bind(C, name="tsvc_2_s231_fp64")
+  use iso_c_binding
+  implicit none
+  real(c_double), intent(inout) :: aa(*)
+  real(c_double), intent(in)    :: bb(*)
+  integer(c_int64_t), value     :: n
+  integer(c_int64_t) :: b, j, k, c0, nblk
+  integer, parameter :: BLKSZ = 16
+
+  nblk = n / BLKSZ
+  !$omp parallel do schedule(static)
+  do b = 0, nblk - 1
+    c0 = b*BLKSZ
+    do j = 1, n - 1
+      do k = 0, BLKSZ - 1
+        aa(j*n + c0 + k + 1) = aa((j-1)*n + c0 + k + 1) + bb(j*n + c0 + k + 1)
+      end do
+    end do
+  end do
+  !$omp end parallel do
+  do b = nblk*BLKSZ, n - 1
+    do j = 1, n - 1
+      aa(j*n + b + 1) = aa((j-1)*n + b + 1) + bb(j*n + b + 1)
+    end do
+  end do
+end subroutine tsvc_2_s231_fp64

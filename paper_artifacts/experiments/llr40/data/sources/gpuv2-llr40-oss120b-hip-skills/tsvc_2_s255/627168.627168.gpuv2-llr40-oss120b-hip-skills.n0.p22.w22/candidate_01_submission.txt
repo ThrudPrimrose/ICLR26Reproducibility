@@ -1,0 +1,21 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void tsvc_2_s255_fp64_kernel(double* __restrict__ a,
+                                                   const double* __restrict__ b,
+                                                   const int64_t LEN_1D) {
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (i < LEN_1D) {
+        int64_t im1 = (i == 0) ? (LEN_1D - 1) : (i - 1);
+        int64_t im2;
+        if (i == 0) {
+            im2 = LEN_1D - 2;
+        } else if (i == 1) {
+            im2 = LEN_1D - 1;
+        } else {
+            im2 = i - 2;
+        }
+        double sum = b[i] + b[im1] + b[im2];
+        a[i] = sum * 0.333;
+    }
+}

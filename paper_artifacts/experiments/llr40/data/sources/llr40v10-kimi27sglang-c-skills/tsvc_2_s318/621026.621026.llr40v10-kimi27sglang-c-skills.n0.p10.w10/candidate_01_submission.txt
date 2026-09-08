@@ -1,0 +1,51 @@
+#include <math.h>
+#include <stdint.h>
+#include <omp.h>
+
+typedef struct {
+    double value;
+    int64_t index;
+} maxloc_t;
+
+void tsvc_2_s318_fp64(const double *restrict a, double *restrict result,
+                      const int64_t LEN_1D, const int64_t inc) {
+    const int max_threads = 256;
+    int nthreads_used = 1;
+    maxloc_t partials[max_threads];
+
+    #pragma omp parallel
+    {
+        const int tid = omp_get_thread_num();
+        const int nthreads = omp_get_num_threads();
+        #pragma omp single
+        nthreads_used = nthreads;
+
+        const int64_t chunk = LEN_1D / nthreads;
+        const int64_t rem = LEN_1D % nthreads;
+        const int64_t start = tid * chunk + (tid < rem ? tid : rem);
+        const int64_t count = chunk + (tid < rem ? 1 : 0);
+        const int64_t end = start + count;
+
+        double maxv = -HUGE_VAL;
+        int64_t idx = INT64_MAX;
+        for (int64_t i = start; i < end; ++i) {
+            const double v = fabs(a[i * inc]);
+            if (v > maxv) {
+                maxv = v;
+                idx = i;
+            }
+        }
+        partials[tid].value = maxv;
+        partials[tid].index = idx;
+    }
+
+    maxloc_t best = {-HUGE_VAL, INT64_MAX};
+    for (int t = 0; t < nthreads_used; ++t) {
+        if (partials[t].value > best.value ||
+            (partials[t].value == best.value && partials[t].index < best.index)) {
+            best = partials[t];
+        }
+    }
+
+    result[0] = best.value + (double)best.index;
+}

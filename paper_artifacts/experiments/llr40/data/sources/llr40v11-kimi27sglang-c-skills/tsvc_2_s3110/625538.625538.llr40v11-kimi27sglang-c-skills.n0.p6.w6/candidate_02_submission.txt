@@ -1,0 +1,69 @@
+#include <stdint.h>
+#include <math.h>
+#include <omp.h>
+#include <immintrin.h>
+
+typedef struct {
+    double v;
+    int64_t i;
+    int64_t j;
+} maxloc_t;
+
+static inline maxloc_t combine_maxloc(maxloc_t a, maxloc_t b) {
+    if (a.v > b.v) return a;
+    if (b.v > a.v) return b;
+    if (a.i < b.i) return a;
+    if (b.i < a.i) return b;
+    if (a.j <= b.j) return a;
+    return b;
+}
+
+#pragma omp declare reduction(maxloc : maxloc_t : omp_out = combine_maxloc(omp_out, omp_in)) \
+    initializer(omp_priv = {-INFINITY, 0, 0})
+
+static inline maxloc_t row_best(const double *restrict row, int64_t i, int64_t n) {
+    __m256d vmax = _mm256_set1_pd(-INFINITY);
+    __m256i jmax = _mm256_setzero_si256();
+
+    int64_t j = 0;
+    for (; j + 4 <= n; j += 4) {
+        __m256d v = _mm256_loadu_pd(row + j);
+        __m256d gt = _mm256_cmp_pd(v, vmax, _CMP_GT_OQ);
+        vmax = _mm256_blendv_pd(vmax, v, gt);
+        __m256i idxv = _mm256_set_epi64x(j + 3, j + 2, j + 1, j + 0);
+        __m256i mask = _mm256_castpd_si256(gt);
+        jmax = _mm256_blendv_epi8(jmax, idxv, mask);
+    }
+
+    // horizontal reduction of the 4 lanes
+    double vals[4];
+    int64_t idxs[4];
+    _mm256_storeu_pd(vals, vmax);
+    _mm256_storeu_si256((__m256i *)idxs, jmax);
+
+    maxloc_t best = {vals[0], i, idxs[0]};
+    for (int k = 1; k < 4; ++k) {
+        best = combine_maxloc(best, (maxloc_t){vals[k], i, idxs[k]});
+    }
+
+    for (; j < n; ++j) {
+        double v = row[j];
+        if (v > best.v) {
+            best.v = v;
+            best.j = j;
+        }
+    }
+    return best;
+}
+
+void tsvc_2_s3110_fp64(const double *restrict aa, double *restrict bb, const int64_t LEN_2D) {
+    maxloc_t m = {-INFINITY, 0, 0};
+
+    #pragma omp parallel for reduction(maxloc : m) schedule(static)
+    for (int64_t i = 0; i < LEN_2D; ++i) {
+        maxloc_t rowm = row_best(aa + i * LEN_2D, i, LEN_2D);
+        m = combine_maxloc(m, rowm);
+    }
+
+    bb[0] = m.v + (double)m.i + (double)m.j;
+}

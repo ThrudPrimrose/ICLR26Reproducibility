@@ -1,0 +1,41 @@
+#include <math.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <omp.h>
+#include <limits.h>
+
+typedef struct { double val; long long idx; } TRes;
+
+void tsvc_2_s318_fp64(const double *restrict a, double *restrict result, const int64_t LEN_1D, const int64_t inc) {
+    if (LEN_1D <= 0) { result[0] = 0.0; return; }
+    const int nt = omp_get_max_threads();
+    char *mem = (char *)malloc((size_t)nt * 128);
+    TRes *tres = (TRes *)mem;
+#pragma omp parallel
+    {
+        const int nt2 = omp_get_num_threads();
+        const int tid = omp_get_thread_num();
+        const int64_t chunk = LEN_1D / nt2, rem = LEN_1D % nt2;
+        const int64_t lo = tid * chunk + (tid < rem ? tid : rem);
+        const int64_t hi = lo + chunk + (tid < rem ? 1 : 0);
+        double bv = -INFINITY;
+        long long bi = LLONG_MAX;
+        for (int64_t i = lo; i < hi; i++) {
+            double v = fabs(a[i * inc]);
+            if (v > bv) { bv = v; bi = i; }
+        }
+        tres[tid].val = bv;
+        tres[tid].idx = bi;
+#pragma omp barrier
+        if (tid == 0) {
+            double bestv = -INFINITY;
+            long long besti = LLONG_MAX;
+            for (int t = 0; t < nt2; t++) {
+                if (tres[t].val > bestv) { bestv = tres[t].val; besti = tres[t].idx; }
+                else if (tres[t].val == bestv && tres[t].idx < besti) { besti = tres[t].idx; }
+            }
+            result[0] = bestv + (double)besti;
+        }
+    }
+    free(mem);
+}

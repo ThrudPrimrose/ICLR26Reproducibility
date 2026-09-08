@@ -1,0 +1,21 @@
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+#include <cstdio>
+#include <cstdlib>
+
+#define HIP_CHECK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { \
+  fprintf(stderr, "HIP error %s at %s:%d\n", hipGetErrorString(e_), __FILE__, __LINE__); abort(); } } while (0)
+
+__global__ void gather1(const double* __restrict__ b, const int32_t* __restrict__ ip,
+                        double* __restrict__ a, int64_t n) {
+    int64_t i = (int64_t)blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+    if (i < n) a[i] = b[ip[i]];
+}
+
+void tsvc2_vag_launch(double* a, const double* b, const int32_t* ip, int64_t n) {
+    const int block = 256;
+    int64_t grid = (n + block - 1) / block;
+    if (grid < 1) grid = 1;
+    gather1<<<(unsigned)grid, block>>>(b, ip, a, n);
+    HIP_CHECK(hipGetLastError());
+}

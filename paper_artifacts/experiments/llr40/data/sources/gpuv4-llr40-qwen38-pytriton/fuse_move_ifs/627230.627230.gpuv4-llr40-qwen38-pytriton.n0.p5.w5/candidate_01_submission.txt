@@ -1,0 +1,67 @@
+import os
+
+os.environ.setdefault("NUMBA_NUM_THREADS", "96")
+
+import numpy as np
+import numba
+from numba import njit, prange
+
+
+@njit(fastmath=True, cache=True)
+def _seq(a, b, src, cond, n, do_k):
+    for i in range(n):
+        if cond[i] > 0.0:
+            for j in range(n):
+                a[i, j] = src[i, j] * 2.0
+    if do_k:
+        for i in range(n):
+            for j in range(n):
+                b[i, j] = src[i, j] + 1.0
+
+
+@njit(parallel=True, fastmath=True, cache=True)
+def _parf(a, b, src, cond, n, do_k):
+    for i in prange(n):
+        if cond[i] > 0.0:
+            for j in range(n):
+                a[i, j] = src[i, j] * 2.0
+        if do_k:
+            for j in range(n):
+                b[i, j] = src[i, j] + 1.0
+
+
+@njit(parallel=True, fastmath=True, cache=True)
+def _par2(a, b, src, cond, n, do_k):
+    for i in prange(n):
+        if cond[i] > 0.0:
+            for j in range(n):
+                a[i, j] = src[i, j] * 2.0
+    if do_k:
+        for i in prange(n):
+            for j in range(n):
+                b[i, j] = src[i, j] + 1.0
+
+
+def _warm():
+    for n in (64, 256):
+        a = np.empty((n, n)); b = np.empty((n, n))
+        s = np.empty((n, n)); c = np.ones(n)
+        for dk in (0, 1):
+            _seq(a, b, s, c, n, dk)
+            _parf(a, b, s, c, n, dk)
+            _par2(a, b, s, c, n, dk)
+
+
+_warm()
+
+_PAR_MIN = 512
+_USE_FUSED = True
+PAR = _parf if _USE_FUSED else _par2
+
+
+def fuse_move_ifs(a, b, src, cond, LEN_2D, K):
+    if LEN_2D >= _PAR_MIN:
+        PAR(a, b, src, cond, LEN_2D, 1 if K > 0 else 0)
+    else:
+        _seq(a, b, src, cond, LEN_2D, 1 if K > 0 else 0)
+    return None

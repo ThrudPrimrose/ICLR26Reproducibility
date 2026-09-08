@@ -1,0 +1,27 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__
+void tsvc2_s2275_mat_kernel(double* __restrict aa,
+                            const double* __restrict bb,
+                            const double* __restrict cc,
+                            int64_t N) {
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x; // row
+    int64_t j = static_cast<int64_t>(blockIdx.y) * blockDim.y + threadIdx.y; // col
+    if (i < N && j < N) {
+        int64_t idx = j * N + i;
+        aa[idx] = aa[idx] + bb[idx] * cc[idx];
+    }
+}
+
+extern "C" __global__
+void tsvc2_s2275_vec_kernel(double* __restrict a,
+                            const double* __restrict b,
+                            const double* __restrict c,
+                            const double* __restrict d,
+                            int64_t N) {
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (i < N) {
+        a[i] = b[i] + c[i] * d[i];
+    }
+}

@@ -1,0 +1,376 @@
+module pinmod
+  implicit none
+  integer, parameter :: MAXN = 16
+  integer, parameter :: MAXC = 4096
+  integer, save :: cached_node = -1
+  integer, save :: ncpu = 0
+  integer, save :: cpus(MAXC)
+  integer, save :: node_ncpu(0:MAXN - 1)
+  integer, save :: node_cpus(0:MAXN - 1, MAXC)
+  logical, save :: node_loaded(0:MAXN - 1)
+contains
+
+  subroutine setup()
+    use, intrinsic :: iso_c_binding
+    implicit none
+    interface
+      function c_sched_getcpu() bind(C, name="sched_getcpu")
+        import
+        integer(c_int) :: c_sched_getcpu
+      end function
+      function c_fopen(name, mode) bind(C, name="fopen")
+        import
+        character(kind=c_char), dimension(*), intent(in) :: name, mode
+        type(c_ptr) :: c_fopen
+      end function
+      subroutine c_fclose(stream) bind(C, name="fclose")
+        import
+        type(c_ptr), value, intent(in) :: stream
+      end subroutine
+      function c_fgets(buf, size, stream) bind(C, name="fgets")
+        import
+        character(kind=c_char), dimension(*), intent(out) :: buf
+        integer(c_int), value, intent(in) :: size
+        type(c_ptr), value, intent(in) :: stream
+        type(c_ptr) :: c_fgets
+      end function
+    end interface
+    type(c_ptr) :: stream, res
+    character(kind=c_char) :: buf(1024)
+    integer :: node, mcpu, node2
+
+    if (cached_node >= 0) return
+    node = -1
+    call scan_numa_maps(node)
+    if (node < 0) then
+      mcpu = c_sched_getcpu()
+      if (mcpu >= 0) then
+        do node2 = 0, MAXN - 1
+          if (.not. node_loaded(node2)) call load_node(node2, buf, stream, res)
+          if (node_ncpu(node2) > 0 .and. in_list(node2, mcpu)) then
+            node = node2
+            exit
+          end if
+        end do
+      end if
+    end if
+    if (node < 0) return
+    if (.not. node_loaded(node)) call load_node(node, buf, stream, res)
+    if (node_ncpu(node) <= 0) return
+    cached_node = node
+    ncpu = node_ncpu(node)
+    cpus = node_cpus(node, :)
+  end subroutine setup
+
+  subroutine scan_numa_maps(node_out)
+    use, intrinsic :: iso_c_binding
+    implicit none
+    integer, intent(out) :: node_out
+    interface
+      function c_fopen(name, mode) bind(C, name="fopen")
+        import
+        character(kind=c_char), dimension(*), intent(in) :: name, mode
+        type(c_ptr) :: c_fopen
+      end function
+      subroutine c_fclose(stream) bind(C, name="fclose")
+        import
+        type(c_ptr), value, intent(in) :: stream
+      end subroutine
+      function c_fgets(buf, size, stream) bind(C, name="fgets")
+        import
+        character(kind=c_char), dimension(*), intent(out) :: buf
+        integer(c_int), value, intent(in) :: size
+        type(c_ptr), value, intent(in) :: stream
+        type(c_ptr) :: c_fgets
+      end function
+    end interface
+    type(c_ptr) :: stream, res
+    character(kind=c_char) :: linebuf(1024)
+    integer :: total(0:MAXN - 1), vline(0:MAXN - 1), anon, best, i
+    logical :: havebest
+    integer :: maxlines
+
+    node_out = -1
+    total = 0
+    maxlines = 0
+    stream = c_fopen("/proc/self/numa_maps" // c_null_char, "r" // c_null_char)
+    if (.not. c_associated(stream)) return
+    do
+      res = c_fgets(linebuf, 1024, stream)
+      maxlines = maxlines + 1
+      if (.not. c_associated(res)) exit
+      if (maxlines > 16384) exit
+      call parse_maps_line(linebuf, anon, vline)
+      if (anon >= 8192) total = total + vline
+    end do
+    call c_fclose(stream)
+    best = -1
+    havebest = .false.
+    do i = 0, MAXN - 1
+      if (total(i) > 0) then
+        if (.not. havebest .or. total(i) > total(best)) then
+          best = i
+          havebest = .true.
+        end if
+      end if
+    end do
+    if (havebest) node_out = best
+  end subroutine scan_numa_maps
+
+  subroutine parse_maps_line(line, anon, vline)
+    use, intrinsic :: iso_c_binding
+    implicit none
+    character(kind=c_char), dimension(1024) :: line
+    integer, intent(out) :: anon
+    integer, intent(inout) :: vline(0:MAXN - 1)
+    integer :: i, j, len, k, v
+    character(kind=c_char) :: ch, ch2
+
+    anon = 0
+    vline = 0
+    len = 0
+    do i = 1, 1024
+      if (line(i) == c_null_char) exit
+      len = i
+    end do
+    i = 1
+    do while (i <= len)
+      ch = line(i)
+      if (ch == 'N') then
+        k = -1
+        j = i + 1
+        if (j <= len) then
+          ch2 = line(j)
+          if (ch2 >= '0' .and. ch2 <= '9') then
+            k = ichar(ch2) - 48
+            j = j + 1
+            if (j <= len) then
+              ch2 = line(j)
+              if (ch2 >= '0' .and. ch2 <= '9') then
+                k = k * 10 + (ichar(ch2) - 48)
+                j = j + 1
+              end if
+            end if
+            if (j <= len .and. line(j) == '=') then
+              j = j + 1
+              v = 0
+              do while (j <= len)
+                ch = line(j)
+                if (ch >= '0' .and. ch <= '9') then
+                  v = v * 10 + (ichar(ch) - 48)
+                  j = j + 1
+                else
+                  exit
+                end if
+              end do
+              if (k < MAXN) vline(k) = v
+              i = j - 1
+            else
+              i = j - 1
+            end if
+          end if
+        end if
+        if (k < 0) i = i + 1
+        cycle
+      else if (ch == 'a') then
+        if (i + 4 <= len .and. line(i + 1) == 'n' .and. line(i + 2) == 'o' &
+             .and. line(i + 3) == 'n' .and. line(i + 4) == '=') then
+          v = 0
+          do i = i + 5, len
+            ch = line(i)
+            if (ch >= '0' .and. ch <= '9') then
+              v = v * 10 + (ichar(ch) - 48)
+            else
+              exit
+            end if
+          end do
+          i = i - 1
+          anon = v
+          cycle
+        end if
+      end if
+      i = i + 1
+    end do
+  end subroutine parse_maps_line
+
+  subroutine load_node(nd, buf, stream, res)
+    use, intrinsic :: iso_c_binding
+    implicit none
+    integer, intent(in) :: nd
+    character(kind=c_char), dimension(1024), intent(out) :: buf
+    type(c_ptr), intent(out) :: stream, res
+    interface
+      function c_fopen(name, mode) bind(C, name="fopen")
+        import
+        character(kind=c_char), dimension(*), intent(in) :: name, mode
+        type(c_ptr) :: c_fopen
+      end function
+      subroutine c_fclose(stream) bind(C, name="fclose")
+        import
+        type(c_ptr), value, intent(in) :: stream
+      end subroutine
+      function c_fgets(buf, size, stream) bind(C, name="fgets")
+        import
+        character(kind=c_char), dimension(*), intent(out) :: buf
+        integer(c_int), value, intent(in) :: size
+        type(c_ptr), value, intent(in) :: stream
+        type(c_ptr) :: c_fgets
+      end function
+    end interface
+    character(len=64) :: path
+
+    node_loaded(nd) = .true.
+    node_ncpu(nd) = 0
+    write(path, '(A, I0, A)') "/sys/devices/system/node/node", nd, "/cpulist"
+    stream = c_fopen(trim(adjustl(path)) // c_null_char, "r" // c_null_char)
+    if (.not. c_associated(stream)) return
+    res = c_fgets(buf, 1024, stream)
+    call c_fclose(stream)
+    if (.not. c_associated(res)) return
+    call parse_cpulist(buf, node_ncpu(nd), node_cpus(nd, :))
+  end subroutine load_node
+
+  function in_list(nd, c) result(f)
+    integer, intent(in) :: nd, c
+    logical :: f
+    integer :: i
+    f = .false.
+    do i = 1, node_ncpu(nd)
+      if (node_cpus(nd, i) == c) then
+        f = .true.
+        return
+      end if
+    end do
+  end function in_list
+
+  subroutine pin_self(t)
+    use, intrinsic :: iso_c_binding
+    implicit none
+    integer, intent(in) :: t
+    interface
+      subroutine c_sched_setaffinity(pid, cpusetsize, mask) bind(C, name="sched_setaffinity")
+        import
+        integer(c_int), value, intent(in) :: pid
+        integer(c_size_t), value, intent(in) :: cpusetsize
+        type(c_ptr), value, intent(in) :: mask
+      end subroutine
+    end interface
+    integer, target :: maskmem(32)
+    integer :: cpuid
+    if (ncpu <= 0) return
+    cpuid = cpus(mod(t, ncpu) + 1) + 1
+    maskmem = 0
+    maskmem((cpuid - 1) / 32 + 1) = ishft(1, mod(cpuid - 1, 32))
+    call c_sched_setaffinity(0, 128_8, c_loc(maskmem))
+  end subroutine pin_self
+
+  subroutine parse_cpulist(s, nout, out)
+    use, intrinsic :: iso_c_binding
+    implicit none
+    character(kind=c_char), dimension(1024) :: s
+    integer, intent(out) :: nout
+    integer, dimension(MAXC) :: out
+    integer :: i, c, val, hi, lensz
+    character(kind=c_char) :: ch
+
+    nout = 0
+    lensz = 0
+    do i = 1, 1024
+      if (s(i) == c_null_char) exit
+      lensz = i
+    end do
+    i = 1
+    do while (i <= lensz)
+      ch = s(i)
+      if (ch == ' ' .or. ch == c_new_line .or. ch == ',') then
+        i = i + 1
+        cycle
+      end if
+      val = 0
+      do while (i <= lensz)
+        ch = s(i)
+        if (ch >= '0' .and. ch <= '9') then
+          val = val * 10 + (ichar(ch) - 48)
+          i = i + 1
+        else
+          exit
+        end if
+      end do
+      hi = val
+      if (i <= lensz .and. s(i) == '-') then
+        i = i + 1
+        hi = 0
+        do while (i <= lensz)
+          ch = s(i)
+          if (ch >= '0' .and. ch <= '9') then
+            hi = hi * 10 + (ichar(ch) - 48)
+            i = i + 1
+          else
+            exit
+          end if
+        end do
+      end if
+      do c = val, hi
+        if (nout < MAXC) then
+          nout = nout + 1
+          out(nout) = c
+        end if
+      end do
+    end do
+  end subroutine parse_cpulist
+end module pinmod
+
+subroutine tsvc_2_s3112_fp64(a, b, len_1d) bind(C)
+  use, intrinsic :: iso_c_binding
+  use, intrinsic :: omp_lib
+  use pinmod
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_1d
+  real(c_double), intent(in)    :: a(len_1d)
+  real(c_double), intent(out)   :: b(len_1d)
+  real(c_double), save, allocatable :: part(:)
+  integer :: nt, t, lo, hi, i, n
+  real(c_double) :: run, offset
+
+  n = int(len_1d, kind=4)
+  if (n <= 0) return
+
+  nt = omp_get_max_threads()
+  if (nt < 1) nt = 1
+  if (nt > 4096) nt = 4096
+  if (.not. allocated(part)) then
+    allocate(part(nt + 2))
+  else if (size(part) < nt + 1) then
+    deallocate(part)
+    allocate(part(nt + 2))
+  end if
+
+  call setup()
+
+  !$omp parallel num_threads(nt) private(t, lo, hi, i, run, offset)
+  t = omp_get_thread_num()
+  call pin_self(t)
+  lo = int((int(n, 8) * int(t, 8)) / int(nt, 8), 4) + 1
+  hi = int((int(n, 8) * int(t + 1, 8)) / int(nt, 8), 4)
+  run = 0.0d0
+  !$omp simd reduction(+:run)
+  do i = lo, hi
+    run = run + a(i)
+  end do
+  part(t + 1) = run
+  !$omp barrier
+  !$omp single
+  do i = 2, nt
+    part(i) = part(i) + part(i - 1)
+  end do
+  !$omp end single
+  offset = part(t + 1) - run
+  run = offset
+  !$omp simd reduction(inscan,+:run)
+  do i = lo, hi
+    run = run + a(i)
+    !$omp scan inclusive(run)
+    b(i) = run
+  end do
+  !$omp end parallel
+end subroutine tsvc_2_s3112_fp64

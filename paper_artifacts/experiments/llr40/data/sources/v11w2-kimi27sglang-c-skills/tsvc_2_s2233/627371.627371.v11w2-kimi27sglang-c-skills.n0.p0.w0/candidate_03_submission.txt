@@ -1,0 +1,31 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb,
+                       const double *restrict cc, const int64_t LEN_2D) {
+    /* Interchange the first nest so the unit-stride axis is inner, then fuse
+     * the two serial outer loops.  Tile the sequential k dimension so that each
+     * thread processes a contiguous chunk of indices through a whole tile,
+     * reducing the number of parallel barriers. */
+    constexpr int64_t K = 128;
+    constexpr int64_t CHUNK = 48;
+
+    #pragma omp parallel
+    {
+        for (int64_t k0 = 8; k0 < LEN_2D; k0 += K) {
+            const int64_t k1 = (k0 + K < LEN_2D) ? k0 + K : LEN_2D;
+            #pragma omp for schedule(static)
+            for (int64_t idx0 = 8; idx0 < LEN_2D; idx0 += CHUNK) {
+                const int64_t idx1 = (idx0 + CHUNK < LEN_2D) ? idx0 + CHUNK : LEN_2D;
+                for (int64_t k = k0; k < k1; ++k) {
+                    #pragma omp simd
+                    for (int64_t idx = idx0; idx < idx1; ++idx) {
+                        const double c = cc[k * LEN_2D + idx];
+                        aa[k * LEN_2D + idx] = aa[(k - 1) * LEN_2D + idx] + c;
+                        bb[k * LEN_2D + idx] = bb[(k - 1) * LEN_2D + idx] + c;
+                    }
+                }
+            }
+        }
+    }
+}

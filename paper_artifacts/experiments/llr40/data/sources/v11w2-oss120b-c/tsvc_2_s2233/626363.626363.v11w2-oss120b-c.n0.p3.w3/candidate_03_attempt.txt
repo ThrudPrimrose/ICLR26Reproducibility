@@ -1,0 +1,55 @@
+/* Optimized TSVC tsvc_2 s2233 microkernel.
+ *
+ * Original kernel:
+ *   for i = 8..N-1:
+ *       for j = 8..N-1:
+ *           aa[j,i] = aa[j-1,i] + cc[j,i]
+ *       for j = 8..N-1:
+ *           bb[i,j] = bb[i-1,j] + cc[i,j]
+ *
+ * Observation:
+ *   Both updates are exactly a vertical prefix sum across rows for the same
+ *   column. By processing the data row‑wise we obtain contiguous memory accesses
+ *   (row major layout) and enable the compiler to generate SIMD vector code.
+ *   The recurrence across rows is still respected because each row depends on
+ *   the previous row, which we read from memory.
+ *
+ *   For each row r >= 8 we compute, for all columns c >= 8:
+ *       aa[r,c] = aa[r-1,c] + cc[r,c]
+ *       bb[r,c] = bb[r-1,c] + cc[r,c]
+ *   This is equivalent to the original nested loops but has far better cache
+ *   locality and allows automatic vectorisation.
+ *
+ *   The outer loop over rows is inherently serial (data dependence), but the
+ *   inner column loop is vectorised. The code is thread‑safe because each row
+ *   works on distinct memory locations.
+ */
+
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa,
+                       double *restrict bb,
+                       const double *restrict cc,
+                       const int64_t LEN_2D) {
+    const int64_t start = 8; // lower bound for both dimensions
+    // Process rows sequentially due to the row‑wise dependence.
+    for (int64_t r = start; r < LEN_2D; ++r) {
+        const double *restrict cc_row = &cc[r * LEN_2D];
+        const double *restrict aa_prev = &aa[(r - 1) * LEN_2D];
+        double *restrict aa_cur = &aa[r * LEN_2D];
+        const double *restrict bb_prev = &bb[(r - 1) * LEN_2D];
+        double *restrict bb_cur = &bb[r * LEN_2D];
+        /*
+         * Vectorise the column loop. The loop body has no loop‑carried
+         * dependencies, only a read‑modify‑write on distinct array elements.
+         */
+        #pragma omp simd
+        for (int64_t c = start; c < LEN_2D; ++c) {
+            double val = cc_row[c];
+            aa_cur[c] = aa_prev[c] + val;
+            bb_cur[c] = bb_prev[c] + val;
+        }
+    }
+}
+

@@ -1,0 +1,26 @@
+#include <hip/hip_runtime.h>
+
+// Compute per-index term t[i] = c[i] * (d[i] + e[i]) for i >= 1, t[0] = 0.
+__global__ void compute_terms_kernel(const double *c, const double *d, const double *e,
+                                     double *t, const int64_t N) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i == 0 && i < N) {
+        t[0] = 0.0;
+    } else if (i >= 1 && i < N) {
+        t[i] = c[i] * (d[i] + e[i]);
+    }
+}
+
+// Update a and b using the inclusive scan of t.
+// After scan, t_scan[i] = sum_{j=1..i} c[j]*(d[j]+e[j]).
+// Then b[i] = b[0] + t_scan[i]; a[i] = b[i] - c[i]*e[i].
+__global__ void update_ab_kernel(double *a, double *b, const double *c, const double *e,
+                                 const double *t_scan, const int64_t N) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= 1 && i < N) {
+        double b0 = b[0];
+        double bi = b0 + t_scan[i];
+        b[i] = bi;
+        a[i] = bi - c[i] * e[i];
+    }
+}

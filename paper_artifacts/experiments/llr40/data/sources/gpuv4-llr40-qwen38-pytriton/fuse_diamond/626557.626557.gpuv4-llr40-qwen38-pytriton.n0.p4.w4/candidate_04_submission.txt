@@ -1,0 +1,65 @@
+"""TSVC fuse_diamond -- fused single pass (warm numba, prange for large n).
+
+out[i] = (a[i]*a[i] + 1.0) * (a[i]*a[i] - 1.0)
+
+The reference spends 4 separate passes over 3 temporary arrays (10 memory
+passes total); this version does one fused pass (1 read + 1 write).  For
+large n a numba prange kernel streams at the node's memory-bandwidth
+ceiling; for small n the serial kernel avoids parallel-dispatch overhead.
+All JIT compilation is done at import time, so no timed call pays for it.
+"""
+import numpy as np
+from numba import njit, prange
+
+
+@njit(nogil=True)
+def _fuse_ser(a, out, n, c):
+    for i in range(n):
+        t = a[i] * a[i]
+        out[i] = (t + c) * (t - c)
+
+
+@njit(parallel=True, nogil=True)
+def _fuse_par(a, out, n, c):
+    for i in prange(n):
+        t = a[i] * a[i]
+        out[i] = (t + c) * (t - c)
+
+
+_C32 = np.float32(1.0)
+_C64 = 1.0
+
+
+def _warm():
+    w32 = np.ones(1 << 20, dtype=np.float32)
+    ww32 = np.empty(1 << 20, dtype=np.float32)
+    _fuse_ser(w32, ww32, 1 << 20, _C32)
+    _fuse_par(w32, ww32, 1 << 20, _C32)
+    w64 = np.ones(1 << 20, dtype=np.float64)
+    ww64 = np.empty(1 << 20, dtype=np.float64)
+    _fuse_ser(w64, ww64, 1 << 20, _C64)
+    _fuse_par(w64, ww64, 1 << 20, _C64)
+
+
+_warm()
+
+_THRESHOLD = 1 << 21  # 2M elements: measured crossover where prange beats serial
+
+
+def _c(a):
+    return _C32 if a.dtype == np.float32 else _C64
+
+
+def fuse_diamond(out, a, LEN_1D):
+    n = int(LEN_1D)
+    if a.ndim == 1 and a.flags.c_contiguous and out.flags.c_contiguous:
+        c = _c(a)
+        if n >= _THRESHOLD:
+            _fuse_par(a, out, n, c)
+        else:
+            _fuse_ser(a, out, n, c)
+    else:
+        ac = np.ascontiguousarray(a)
+        oc = np.empty_like(ac)
+        _fuse_ser(ac, oc, n, _c(ac))
+        out[...] = oc

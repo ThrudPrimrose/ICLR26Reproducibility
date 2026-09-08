@@ -1,0 +1,26 @@
+#include <stdint.h>
+#include <stddef.h>
+#include <omp.h>
+
+void ext_war_unit_fp64(double *restrict a, const double *restrict b, const int64_t LEN_1D) {
+    if (LEN_1D <= 1) return;
+    // Allocate temporary buffer directly on the target device to avoid host memory overhead.
+    int device = omp_get_default_device();
+    double *temp = (double *)omp_target_alloc((size_t)LEN_1D * sizeof(double), device);
+    if (!temp) return; // allocation failure, abort.
+    // Map input array 'a' (read/write) and 'b' (read-only) to the device.
+    #pragma omp target data map(tofrom: a[0:LEN_1D]) map(to: b[0:LEN_1D])
+    {
+        // Copy original 'a' into the temporary buffer on the device.
+        #pragma omp target teams distribute parallel for simd is_device_ptr(temp)
+        for (int64_t i = 0; i < LEN_1D; ++i) {
+            temp[i] = a[i];
+        }
+        // Compute using the temporary buffer to avoid data races.
+        #pragma omp target teams distribute parallel for simd is_device_ptr(temp)
+        for (int64_t i = 0; i < LEN_1D - 1; ++i) {
+            a[i] = temp[i + 1] + b[i];
+        }
+    }
+    omp_target_free(temp, device);
+}

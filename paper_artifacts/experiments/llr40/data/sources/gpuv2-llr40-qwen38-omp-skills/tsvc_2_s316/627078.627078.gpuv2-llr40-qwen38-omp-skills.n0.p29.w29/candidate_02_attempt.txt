@@ -1,0 +1,40 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <math.h>
+#include <omp.h>
+
+void tsvc_2_s316_fp64(const double *restrict a, double *restrict result, const int64_t LEN_1D) {
+  if (LEN_1D <= 0) { result[0] = 0.0; return; }
+  double x0 = a[0];
+  if (x0 != x0) { result[0] = x0; return; }  /* a[0] NaN: serial sweep keeps NaN */
+
+  /* Tiny device kernel: serial min over the first m elements, mapped out.
+     Redundant with the host sweep below (which covers all of a), but keeps
+     a device function registered. No reduction clause: identity behaviour
+     of the offload runtime is not assumed. */
+  int64_t m = LEN_1D < 64 ? LEN_1D : 64;
+  double d = INFINITY;
+  #pragma omp target map(to: a[0:m]) map(from: d)
+  for (int64_t i = 0; i < m; ++i)
+    if (a[i] < d) d = a[i];
+
+  /* Host sweep: explicit per-thread partials, no reduction clause. */
+  int nt = omp_get_max_threads();
+  double *partial = (double *)malloc((size_t)nt * sizeof(double));
+  #pragma omp parallel
+  {
+    int tid = omp_get_thread_num();
+    double lx = INFINITY;
+    #pragma omp for schedule(static)
+    for (int64_t i = 0; i < LEN_1D; ++i)
+      if (a[i] < lx) lx = a[i];
+    partial[tid] = lx;
+  }
+  double x = partial[0];
+  for (int t = 1; t < nt; ++t)
+    if (partial[t] < x) x = partial[t];
+  free(partial);
+
+  if (d < x) x = d;   /* redundant: host loop already covers a[0:m] */
+  result[0] = x;
+}

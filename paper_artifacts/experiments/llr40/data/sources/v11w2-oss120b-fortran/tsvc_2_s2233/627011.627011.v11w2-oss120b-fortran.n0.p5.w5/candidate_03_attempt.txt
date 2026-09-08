@@ -1,0 +1,41 @@
+module tsvc_2_s2233_mod
+  use iso_c_binding
+  use omp_lib
+  implicit none
+contains
+  subroutine tsvc_2_s2233_fp64(aa, bb, cc, LEN_2D) bind(C, name="tsvc_2_s2233_fp64")
+    type(c_ptr), value :: aa
+    type(c_ptr), value :: bb
+    type(c_ptr), value :: cc
+    integer(c_int64_t), value :: LEN_2D
+    real(c_double), pointer :: a(:,:), b(:,:), c(:,:)
+    integer(c_int64_t) :: i, j
+    
+    call c_f_pointer(aa, a, [LEN_2D, LEN_2D])
+    call c_f_pointer(bb, b, [LEN_2D, LEN_2D])
+    call c_f_pointer(cc, c, [LEN_2D, LEN_2D])
+    
+    ! Restrict OpenMP threads to a moderate number to avoid excessive overhead on very large problems.
+    call omp_set_dynamic(.false.)
+    call omp_set_num_threads(4)
+    
+    ! Compute aa part: a(i,j) = a(i,j-1) + c(i,j)
+    !$omp parallel do default(none) shared(a,c,LEN_2D) private(i,j)
+    do i = 9, LEN_2D
+      do j = 9, LEN_2D
+        a(i,j) = a(i,j-1) + c(i,j)
+      end do
+    end do
+    !$omp end parallel do
+    
+    ! Compute bb part: b(j,i) = b(j,i-1) + c(j,i)
+    !$omp parallel do default(none) shared(b,c,LEN_2D) private(i,j)
+    do j = 9, LEN_2D
+      do i = 9, LEN_2D
+        b(j,i) = b(j,i-1) + c(j,i)
+      end do
+    end do
+    !$omp end parallel do
+    
+  end subroutine tsvc_2_s2233_fp64
+end module tsvc_2_s2233_mod

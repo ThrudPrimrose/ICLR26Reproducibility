@@ -1,0 +1,69 @@
+/* Hand port of the TSVC tsvc_2 C++ microkernel ``s1232`` (s1232_d_single.cpp), fp64
+ * single-invocation variant, to C23 under the v2 C-ABI.
+ *
+ * Reference semantics (iteration space, part of the spec):
+ *   for j in [0, LEN_2D): for i in [j*VLEN, LEN_2D): aa[i*L+j] = bb[i*L+j] + cc[i*L+j]
+ * i.e. element (i, j) is written iff j*VLEN <= i.  With VLEN > 0 that is
+ *   row i: columns j in [0, i/VLEN].
+ * No read-after-write: aa is write-only, bb/cc read-only (restrict) -> fully parallel.
+ */
+
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s1232_fp64(double *restrict aa, const double *restrict bb, const double *restrict cc, const int64_t LEN_2D,
+                       const int64_t VLEN) {
+  const int64_t L = LEN_2D;
+  if (L <= 0) return;
+
+  if (VLEN <= 0) {
+    /* VLEN == 0: j*VLEN == 0 for every j -> the whole matrix is written. */
+    const int64_t n = L * L;
+    #pragma omp parallel for schedule(static)
+    for (int64_t k = 0; k < n; ++k) aa[k] = bb[k] + cc[k];
+    return;
+  }
+
+  /* Row i writes columns 0..i/VLEN: len(i) = i/VLEN + 1 (i < L <= VLEN*i/VLEN+1).
+     Row-major layout => unit stride, each element written exactly once. */
+
+  const int64_t T = omp_get_max_threads();
+  if (T < 1) return;
+
+  /* Total work W = sum_{i=0}^{L-1} (i/V + 1), with q = L/V, r = L%V:
+     sum floor(i/V) = V*q*(q-1)/2 + q*r */
+  const int64_t V = VLEN;
+  const int64_t q = L / V, r = L % V;
+  int64_t W = L + V * q * (q - 1) / 2 + q * r;
+
+  /* P(i) = work of rows [0, i) = i + V*Q*(Q-1)/2 + Q*R, Q=i/V, R=i%V (monotone).
+     Partition rows into T contiguous spans of near-equal work by binary search:
+     span t covers rows [cut[t], cut[t+1]). */
+  int64_t cut[512];
+  int64_t nt = T > 512 ? 512 : T;
+  for (int64_t t = 0; t < nt; ++t) {
+    int64_t target = (t + 1) * W / nt;
+    int64_t lo = 0, hi = L;
+    while (lo < hi) {
+      int64_t mid = (lo + hi) / 2;
+      int64_t Q = mid / V, R = mid % V;
+      int64_t P = mid + V * Q * (Q - 1) / 2 + Q * R;
+      if (P >= target) hi = mid; else lo = mid + 1;
+    }
+    cut[t] = lo;
+  }
+
+  #pragma omp parallel num_threads(nt)
+  {
+    const int64_t me = omp_get_thread_num();
+    const int64_t i0 = (me == 0) ? 0 : cut[me - 1];
+    const int64_t i1 = cut[me];
+    for (int64_t i = i0; i < i1; ++i) {
+      int64_t jmax = i / V;
+      double *a = aa + i * L;
+      const double *b = bb + i * L;
+      const double *c = cc + i * L;
+      for (int64_t j = 0; j <= jmax; ++j) a[j] = b[j] + c[j];
+    }
+  }
+}

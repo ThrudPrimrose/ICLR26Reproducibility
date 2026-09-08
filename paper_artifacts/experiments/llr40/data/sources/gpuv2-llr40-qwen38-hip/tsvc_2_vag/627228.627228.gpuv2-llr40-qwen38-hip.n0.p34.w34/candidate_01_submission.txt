@@ -1,0 +1,17 @@
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+extern "C" __global__ void tsvc_2_vag_kernel(double *a, const double *b, const int32_t *ip, int64_t n) {
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    int64_t stride = (int64_t)gridDim.x * blockDim.x;
+    for (; i < n; i += stride) {
+        a[i] = b[ip[i]];
+    }
+}
+
+extern "C" void tsvc_2_vag_launch(double *a, const double *b, const int32_t *ip, int64_t n) {
+    if (n <= 0) return;
+    const int threads = 256;
+    int64_t blocks = (n + threads - 1) / threads;
+    tsvc_2_vag_kernel<<<(unsigned)blocks, threads>>>(a, b, ip, n);
+}

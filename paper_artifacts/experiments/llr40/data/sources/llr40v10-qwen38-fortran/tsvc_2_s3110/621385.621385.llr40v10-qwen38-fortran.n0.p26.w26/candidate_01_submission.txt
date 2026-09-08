@@ -1,0 +1,33 @@
+subroutine tsvc_2_s3110_fp64(aa, bb, LEN_2D) bind(C, name="tsvc_2_s3110_fp64")
+  use iso_c_binding
+  implicit none
+  real(c_double), intent(in)       :: aa(*)
+  real(c_double), intent(out)       :: bb(*)
+  integer(c_int64_t), intent(in), value :: LEN_2D
+
+  integer(c_int64_t) :: N, k
+  real(c_double) :: maxv, chksum
+  integer(c_int64_t) :: idx, k0, i0, j0
+
+  N = LEN_2D * LEN_2D
+
+  maxv = -huge(0.0)
+  !$omp parallel do reduction(max:maxv) schedule(static)
+  do k = 1, N
+     maxv = max(maxv, aa(k))
+  end do
+  !$omp end parallel do
+
+  idx = N + 1
+  !$omp parallel do reduction(min:idx) schedule(static)
+  do k = 1, N
+     if (aa(k) == maxv) idx = min(idx, k)
+  end do
+  !$omp end parallel do
+
+  k0 = idx - 1
+  i0 = k0 / LEN_2D
+  j0 = k0 - i0 * LEN_2D
+  chksum = maxv + dble(i0) + dble(j0)
+  bb(1) = chksum
+end subroutine tsvc_2_s3110_fp64

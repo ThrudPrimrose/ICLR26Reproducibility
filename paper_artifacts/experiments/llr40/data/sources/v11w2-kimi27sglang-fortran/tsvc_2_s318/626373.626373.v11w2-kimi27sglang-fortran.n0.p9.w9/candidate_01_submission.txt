@@ -1,0 +1,53 @@
+module tsvc_2_s318_m
+  use iso_c_binding, only: c_double, c_int64_t
+  implicit none
+contains
+  subroutine tsvc_2_s318_fp64(a, result, LEN_1D, inc) bind(c, name="tsvc_2_s318_fp64")
+    real(c_double), intent(in) :: a(*)
+    real(c_double), intent(out) :: result
+    integer(c_int64_t), value, intent(in) :: LEN_1D, inc
+    integer(c_int64_t) :: i, k, idx
+    real(c_double) :: maxv
+
+    if (LEN_1D <= 0_c_int64_t) then
+      result = 0.0_c_double
+      return
+    end if
+
+    maxv = 0.0_c_double
+
+    if (inc == 1_c_int64_t) then
+      !$omp parallel do reduction(max:maxv) schedule(static) if(LEN_1D > 65536_c_int64_t)
+      do i = 1_c_int64_t, LEN_1D
+        maxv = max(maxv, abs(a(i)))
+      end do
+      !$omp end parallel do
+
+      idx = 0_c_int64_t
+      do i = 1_c_int64_t, LEN_1D
+        if (abs(a(i)) == maxv) then
+          idx = i - 1_c_int64_t
+          exit
+        end if
+      end do
+    else
+      !$omp parallel do reduction(max:maxv) schedule(static) if(LEN_1D > 65536_c_int64_t)
+      do i = 0_c_int64_t, LEN_1D - 1_c_int64_t
+        maxv = max(maxv, abs(a(1_c_int64_t + i * inc)))
+      end do
+      !$omp end parallel do
+
+      idx = 0_c_int64_t
+      k = 0_c_int64_t
+      do i = 0_c_int64_t, LEN_1D - 1_c_int64_t
+        if (abs(a(1_c_int64_t + k)) == maxv) then
+          idx = i
+          exit
+        end if
+        k = k + inc
+      end do
+    end if
+
+    result = maxv + real(idx, c_double)
+  end subroutine tsvc_2_s318_fp64
+end module tsvc_2_s318_m

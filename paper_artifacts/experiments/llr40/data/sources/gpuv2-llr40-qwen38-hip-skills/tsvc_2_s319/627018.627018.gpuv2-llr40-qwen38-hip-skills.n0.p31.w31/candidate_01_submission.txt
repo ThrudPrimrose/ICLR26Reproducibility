@@ -1,0 +1,122 @@
+// tsvc_2_s319 device half: elementwise a=c+d, b=c+e, global sum -> b[0].
+#include <hip/hip_runtime.h>
+
+#define TPB 256
+#define MAX_BLOCKS 2048
+
+#define HIP_CHECK(x)                                                        \
+  do {                                                                      \
+    hipError_t e_ = (x);                                                    \
+    if (e_ != hipSuccess) {                                                 \
+      std::fprintf(stderr, "HIP error %s at %s:%d\n", hipGetErrorString(e_),\
+                   __FILE__, __LINE__);                                     \
+      std::abort();                                                         \
+    }                                                                       \
+  } while (0)
+
+namespace {
+
+__device__ __forceinline__ double block_reduce(double s, double* lds) {
+  lds[threadIdx.x] = s;
+  __syncthreads();
+  #pragma unroll
+  for (int off = TPB / 2; off > 0; off >>= 1) {
+    if (threadIdx.x < off) lds[threadIdx.x] += lds[threadIdx.x + off];
+    __syncthreads();
+  }
+  return lds[0];
+}
+
+template <bool VEC>
+__global__ void __launch_bounds__(TPB) s319_main(double* __restrict__ a, double* __restrict__ b,
+                                                 const double* __restrict__ c,
+                                                 const double* __restrict__ d,
+                                                 const double* __restrict__ e, const long long n,
+                                                 double* __restrict__ partials) {
+  __shared__ double lds[TPB];
+  const long long stride = (long long)gridDim.x * TPB;
+  const long long i0 = (long long)blockIdx.x * TPB + threadIdx.x;
+  double s = 0.0;
+  if (VEC) {
+    const long long nvec = n >> 2;
+    for (long long g = i0; g < nvec; g += stride) {
+      const long long p = g << 2;
+      const double4 cv = *reinterpret_cast<const double4*>(c + p);
+      const double4 dv = *reinterpret_cast<const double4*>(d + p);
+      const double4 ev = *reinterpret_cast<const double4*>(e + p);
+      double4 av, bv;
+      av.x = cv.x + dv.x;
+      av.y = cv.y + dv.y;
+      av.z = cv.z + dv.z;
+      av.w = cv.w + dv.w;
+      bv.x = cv.x + ev.x;
+      bv.y = cv.y + ev.y;
+      bv.z = cv.z + ev.z;
+      bv.w = cv.w + ev.w;
+      *reinterpret_cast<double4*>(a + p) = av;
+      *reinterpret_cast<double4*>(b + p) = bv;
+      s += (av.x + av.y) + (av.z + av.w);
+      s += (bv.x + bv.y) + (bv.z + bv.w);
+    }
+    // tail: at most 3 elements, done by block 0
+    if (blockIdx.x == 0) {
+      const long long t0 = n & ~3LL;
+      for (long long t = threadIdx.x; t < n - t0; t += TPB) {
+        const long long idx = t0 + t;
+        const double av = c[idx] + d[idx];
+        const double bv = c[idx] + e[idx];
+        a[idx] = av;
+        b[idx] = bv;
+        s += av + bv;
+      }
+    }
+  } else {
+    for (long long i = i0; i < n; i += stride) {
+      const double av = c[i] + d[i];
+      const double bv = c[i] + e[i];
+      a[i] = av;
+      b[i] = bv;
+      s += av + bv;
+    }
+  }
+  const double bs = block_reduce(s, lds);
+  if (threadIdx.x == 0) partials[blockIdx.x] = bs;
+}
+
+__global__ void __launch_bounds__(TPB) s319_final(double* __restrict__ b,
+                                                  const double* __restrict__ partials,
+                                                  const int nb) {
+  __shared__ double lds[TPB];
+  double s = 0.0;
+  for (int j = threadIdx.x; j < nb; j += TPB) s += partials[j];
+  const double bs = block_reduce(s, lds);
+  if (threadIdx.x == 0) b[0] = bs;
+}
+
+double* d_partials = nullptr;
+
+}  // namespace
+
+extern "C" void tsvc2_s319_run(double* a, double* b, const double* c, const double* d,
+                               const double* e, long long n) {
+  if (n <= 0) return;
+  if (!d_partials) HIP_CHECK(hipMalloc(&d_partials, MAX_BLOCKS * sizeof(double)));
+  int nb = (int)((n + TPB - 1) / TPB);
+  if (nb > MAX_BLOCKS) nb = MAX_BLOCKS;
+  const unsigned long long mask = 15ull;
+  const bool vec = (n >= 4) &&
+                   (((reinterpret_cast<unsigned long long>(a) |
+                       reinterpret_cast<unsigned long long>(b) |
+                       reinterpret_cast<unsigned long long>(c) |
+                       reinterpret_cast<unsigned long long>(d) |
+                       reinterpret_cast<unsigned long long>(e)) & mask) == 0);
+  if (vec) {
+    s319_main<true><<<nb, TPB>>>(a, b, c, d, e, n, d_partials);
+  } else {
+    s319_main<false><<<nb, TPB>>>(a, b, c, d, e, n, d_partials);
+  }
+  HIP_CHECK(hipGetLastError());
+  s319_final<<<1, TPB>>>(b, d_partials, nb);
+  HIP_CHECK(hipGetLastError());
+  HIP_CHECK(hipDeviceSynchronize());
+}

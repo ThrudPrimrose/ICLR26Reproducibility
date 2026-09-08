@@ -1,0 +1,85 @@
+"""TSVC tsvc_2_5 kernel ``fuse_move_ifs`` -- optimized Python (numba, prange).
+
+Reference semantics (in-place):
+    for i in range(LEN_2D):
+        if cond[i] > 0.0:
+            for j in range(LEN_2D):
+                a[i, j] = src[i, j] * 2.0
+    if K > 0:
+        for i in range(LEN_2D):
+            for j in range(LEN_2D):
+                b[i, j] = src[i, j] + 1.0
+
+Optimization: one parallel prange over rows doing both updates (memory-bound;
+the src row stays in L1 between the two passes).  Numba compilation and thread
+tuning happen at import time, outside the timed section.
+"""
+import os
+
+import numpy as np
+
+import numba
+from numba import njit, prange
+
+
+@njit(parallel=True, fastmath=True)
+def _kern(a, b, src, cond, K, N):
+    for i in prange(N):
+        if K > 0:
+            for j in range(N):
+                b[i, j] = src[i, j] + 1.0
+        if cond[i] > 0.0:
+            for j in range(N):
+                a[i, j] = src[i, j] * 2.0
+
+
+# --------------------- one-time setup (runs before the clock starts) ----------
+def _tune_threads():
+    try:
+        nt = len(os.sched_getaffinity(0))
+    except Exception:
+        nt = os.cpu_count() or 1
+    nt = max(1, min(24, nt))
+    try:
+        numba.set_num_threads(nt)
+    except Exception:
+        pass
+    return nt
+
+
+_NT = _tune_threads()
+
+# Pre-compile the exact typed signature (and a float-K hedge) on a tiny array.
+_d = 16
+_d_a = np.zeros((_d, _d), dtype=np.float64)
+_d_b = np.zeros((_d, _d), dtype=np.float64)
+_d_s = np.zeros((_d, _d), dtype=np.float64)
+_d_c = np.zeros(_d, dtype=np.float64)
+_kern(_d_a, _d_b, _d_s, _d_c, 1, _d)
+_kern(_d_a, _d_b, _d_s, _d_c, 1.0, _d)
+_kern(_d_a, _d_b, _d_s, _d_c, np.int32(1), _d)
+del _d_a, _d_b, _d_s, _d_c
+
+
+def fuse_move_ifs(a, b, src, cond, LEN_2D, K):
+    N = LEN_2D
+    if N <= 0:
+        return None
+    if (
+        a.dtype == np.float64
+        and b.dtype == np.float64
+        and src.dtype == np.float64
+        and cond.dtype == np.float64
+        and a.flags["C_CONTIGUOUS"]
+        and b.flags["C_CONTIGUOUS"]
+        and src.flags["C_CONTIGUOUS"]
+        and cond.flags["C_CONTIGUOUS"]
+    ):
+        _kern(a, b, src, cond, K, N)
+    else:
+        # Generic fallback (non-contiguous / other dtypes): correct, slower.
+        m = cond > 0.0
+        a[m] = src[m] * 2.0
+        if K > 0:
+            b[...] = src + 1.0
+    return None

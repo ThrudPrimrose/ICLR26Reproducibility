@@ -1,0 +1,24 @@
+#include <stdint.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+    // Compute aa with row-major contiguous accesses (outer loop over rows).
+    for (int64_t j = 8; j < LEN_2D; ++j) {
+        const double *prev_aa = aa + (j - 1) * LEN_2D;
+        const double *curr_cc = cc + j * LEN_2D;
+        double *curr_aa = aa + j * LEN_2D;
+        #pragma omp simd
+        for (int64_t i = 8; i < LEN_2D; ++i) {
+            curr_aa[i] = prev_aa[i] + curr_cc[i];
+        }
+    }
+    // Compute bb similarly with contiguous inner loop.
+    for (int64_t i = 8; i < LEN_2D; ++i) {
+        const double *prev_bb = bb + (i - 1) * LEN_2D;
+        const double *curr_cc = cc + i * LEN_2D;
+        double *curr_bb = bb + i * LEN_2D;
+        #pragma omp simd
+        for (int64_t j = 8; j < LEN_2D; ++j) {
+            curr_bb[j] = prev_bb[j] + curr_cc[j];
+        }
+    }
+}

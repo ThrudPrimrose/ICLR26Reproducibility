@@ -1,0 +1,41 @@
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cinttypes>
+
+#define HIP_CHECK(x) do { hipError_t e__ = (x); if (e__ != hipSuccess) { \
+  const char* s__ = hipGetErrorString(e__); \
+  fprintf(stderr, "HIP error %s at %s:%d\n", s__ ? s__ : "?", __FILE__, __LINE__); abort(); } } while (0)
+
+// Kernel 1: c[i] = a[i+1]  for i in [0, m). Pure shift, read-only source -> race free.
+__global__ void k_shift(double* __restrict__ c, const double* __restrict__ a, long long m) {
+  long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+  long long stride = (long long)gridDim.x * blockDim.x;
+  for (; i < m; i += stride) c[i] = a[i + 1];
+}
+
+// Kernel 2: a[i] = c[i] + b[i]  for i in [0, m).
+__global__ void k_add(double* __restrict__ a, const double* __restrict__ c, const double* __restrict__ b, long long m) {
+  long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+  long long stride = (long long)gridDim.x * blockDim.x;
+  for (; i < m; i += stride) a[i] = c[i] + b[i];
+}
+
+static double* g_tmp = nullptr;
+static long long g_tmp_n = 0;
+
+void ext_war_unit_gpu(const double* b, double* a, long long n) {
+  long long m = n - 1;
+  if (m > g_tmp_n) {
+    if (g_tmp) { HIP_CHECK(hipFree(g_tmp)); g_tmp = nullptr; }
+    HIP_CHECK(hipMalloc((void**)&g_tmp, (size_t)m * sizeof(double)));
+    g_tmp_n = m;
+  }
+  const int block = 256;
+  long long grid_ll = (m + block - 1) / block;
+  int grid = (int)(grid_ll > 2432 ? 2432 : grid_ll);
+  k_shift<<<grid, block, 0, 0>>>(g_tmp, a, m);
+  HIP_CHECK(hipGetLastError());
+  k_add<<<grid, block, 0, 0>>>(a, g_tmp, b, m);
+  HIP_CHECK(hipGetLastError());
+}

@@ -1,0 +1,30 @@
+#include <stdint.h>
+#include <omp.h>
+
+#define G 8
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+  if (LEN_2D <= 8) return;
+  #pragma omp parallel for schedule(static)
+  for (int64_t k = 8; k < LEN_2D; k += G) {
+    const int64_t cnt = (LEN_2D - k < G) ? (LEN_2D - k) : G;
+    {
+      double s[G];
+      for (int g = 0; g < cnt; ++g) s[g] = aa[7 * LEN_2D + k + g];
+      for (int64_t j = 8; j < LEN_2D; ++j) {
+        const double *c = cc + j * LEN_2D + k;
+        double *a = aa + j * LEN_2D + k;
+        for (int g = 0; g < cnt; ++g) { s[g] += c[g]; a[g] = s[g]; }
+      }
+    }
+    {
+      double s[G];
+      for (int g = 0; g < cnt; ++g) s[g] = bb[7 * LEN_2D + k + g];
+      for (int64_t i = 8; i < LEN_2D; ++i) {
+        double *b = bb + i * LEN_2D + k;
+        const double *c = cc + i * LEN_2D + k;
+        for (int g = 0; g < cnt; ++g) { s[g] += c[g]; b[g] = s[g]; }
+      }
+    }
+  }
+}

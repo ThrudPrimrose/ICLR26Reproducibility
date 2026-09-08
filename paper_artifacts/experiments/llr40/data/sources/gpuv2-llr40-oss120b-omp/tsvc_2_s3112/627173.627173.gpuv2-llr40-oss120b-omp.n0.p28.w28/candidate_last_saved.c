@@ -1,0 +1,63 @@
+#include <omp.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+/*
+ * Parallel prefix sum (inclusive scan) offloaded to GPU via OpenMP target.
+ * Implements: b[i] = sum_{j=0..i} a[j]
+ *
+ * Algorithm:
+ * 1. Partition the input into blocks of size BLOCK_SIZE.
+ * 2. In the first target kernel, each block computes a local inclusive scan
+ *    sequentially and writes its final block sum into a temporary array.
+ * 3. The block sums are copied back to the host, where an exclusive scan yields
+ *    per‑block offsets.
+ * 4. In the second target kernel, each block adds its offset to all elements
+ *    of the previously computed local scan.
+ *
+ * This approach registers a device kernel (required by the offload arm) and
+ * provides O(N) work with O(N/BLOCK_SIZE) extra work for the offsets. The
+ * kernel runs efficiently on GPUs, where each block is processed by a single
+ * thread (or a small warp) and the second kernel adds a constant offset to the
+ * block, which can be vectorised by the device compiler.
+ */
+
+void tsvc_2_s3112_fp64(const double *restrict a, double *restrict b, const int64_t LEN_1D) {
+    if (LEN_1D <= 0) return;
+
+    const int64_t BLOCK_SIZE = 1024; // tune for target hardware
+    const int64_t nblocks = (LEN_1D + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    // Temporary array holding the sum of each block (host side).
+    double *block_sums = (double *)malloc((size_t)nblocks * sizeof(double));
+    if (!block_sums) return; // out‑of‑memory guard
+
+    /* First kernel: compute per‑block inclusive scan and store block sums */
+    #pragma omp target parallel for schedule(static) map(to: a[0:LEN_1D]) map(to: b[0:LEN_1D]) map(tofrom: block_sums[0:nblocks])
+        for (int64_t blk = 0; blk < nblocks; ++blk) {
+            int64_t start = blk * BLOCK_SIZE;
+            int64_t end = start + BLOCK_SIZE;
+            if (end > LEN_1D) end = LEN_1D;
+            double sum = 0.0;
+            for (int64_t i = start; i < end; ++i) {
+                sum += a[i];
+                b[i] = sum;
+            }
+            block_sums[blk] = sum; // total sum of this block
+        }
+
+    /* Compute per‑block offsets on host and add them to b */
+    double offset = 0.0;
+    for (int64_t blk = 0; blk < nblocks; ++blk) {
+        double cur = block_sums[blk];
+        int64_t start = blk * BLOCK_SIZE;
+        int64_t end = start + BLOCK_SIZE;
+        if (end > LEN_1D) end = LEN_1D;
+        for (int64_t i = start; i < end; ++i) {
+            b[i] += offset;
+        }
+        offset += cur;
+    }
+
+free(block_sums);
+}

@@ -1,0 +1,32 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void tsvc_2_s319_kernel(double* __restrict__ a,
+                                   double* __restrict__ b,
+                                   const double* __restrict__ c,
+                                   const double* __restrict__ d,
+                                   const double* __restrict__ e,
+                                   int64_t LEN_1D,
+                                   double* __restrict__ block_sums) {
+    int64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int64_t stride = static_cast<int64_t>(gridDim.x) * blockDim.x;
+    double local_sum = 0.0;
+    for (int64_t i = idx; i < LEN_1D; i += stride) {
+        a[i] = c[i] + d[i];
+        local_sum += a[i];
+        b[i] = c[i] + e[i];
+        local_sum += b[i];
+    }
+    __shared__ double shmem[256];
+    shmem[threadIdx.x] = local_sum;
+    __syncthreads();
+    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (threadIdx.x < s) {
+            shmem[threadIdx.x] += shmem[threadIdx.x + s];
+        }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0) {
+        block_sums[blockIdx.x] = shmem[0];
+    }
+}

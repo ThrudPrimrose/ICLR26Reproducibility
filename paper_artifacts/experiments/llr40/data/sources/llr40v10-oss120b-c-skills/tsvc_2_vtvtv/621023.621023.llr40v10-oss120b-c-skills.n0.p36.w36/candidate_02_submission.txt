@@ -1,0 +1,16 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_vtvtv_fp64(double *restrict a, const double *restrict b, const double *restrict c, const int64_t LEN_1D) {
+    int64_t limit = LEN_1D - (LEN_1D % 4);
+    #pragma omp parallel for schedule(static)
+    for (int64_t i = 0; i < limit; i += 4) {
+        a[i] = a[i] * b[i] * c[i];
+        a[i+1] = a[i+1] * b[i+1] * c[i+1];
+        a[i+2] = a[i+2] * b[i+2] * c[i+2];
+        a[i+3] = a[i+3] * b[i+3] * c[i+3];
+    }
+    for (int64_t i = limit; i < LEN_1D; ++i) {
+        a[i] = a[i] * b[i] * c[i];
+    }
+}

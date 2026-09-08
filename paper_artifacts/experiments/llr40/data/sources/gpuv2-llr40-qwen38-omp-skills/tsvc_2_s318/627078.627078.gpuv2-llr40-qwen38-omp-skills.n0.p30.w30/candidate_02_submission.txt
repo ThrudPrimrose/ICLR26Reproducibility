@@ -1,0 +1,26 @@
+#include <math.h>
+#include <stdint.h>
+#include <omp.h>
+
+typedef struct { double maxv; int64_t index; } mx_t;
+
+static inline void mx_combine(mx_t *out, const mx_t *in) {
+  if (in->maxv > out->maxv) { *out = *in; return; }
+  if (in->maxv == out->maxv && in->index < out->index) out->index = in->index;
+}
+
+#pragma omp declare reduction(mxcomb:mx_t : mx_combine(&omp_out, &omp_in)) \
+    initializer(omp_priv = (mx_t){-INFINITY, INT64_MAX})
+
+void tsvc_2_s318_fp64(const double *restrict a, double *restrict result, const int64_t LEN_1D, const int64_t inc) {
+  mx_t r;
+  #pragma omp parallel for reduction(mxcomb:r) schedule(static)
+  for (int64_t i = 0; i < LEN_1D; ++i) {
+    double v = fabs(a[i * inc]);
+    if (v > r.maxv) { r.maxv = v; r.index = i; }
+  }
+  int od = 0;
+  #pragma omp target map(from: od)
+  od = 1;
+  result[0] = r.maxv + (double)r.index;
+}

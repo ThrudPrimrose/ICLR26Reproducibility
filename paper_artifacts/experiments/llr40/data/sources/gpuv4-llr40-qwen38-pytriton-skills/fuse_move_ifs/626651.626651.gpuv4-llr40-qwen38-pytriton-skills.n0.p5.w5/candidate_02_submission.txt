@@ -1,0 +1,54 @@
+import os
+os.environ["NUMBA_ENABLE_AVX"] = "1"
+os.environ["NUMBA_ENABLE_AVX512"] = "1"
+import numpy as np
+import numba
+
+
+def _pick_threads():
+    for cand in (24, 20, 16, 8, 4, 2, 1):
+        try:
+            numba.set_num_threads(cand)
+            return cand
+        except ValueError:
+            continue
+    return 1
+
+
+_NT = _pick_threads()
+
+
+@numba.njit(parallel=True)
+def _fused(a, b, src, cond, L, K):
+    do_b = K > 0
+    for i in numba.prange(L):
+        srow = src[i]
+        arow = a[i]
+        brow = b[i]
+        if cond[i] > 0.0:
+            if do_b:
+                for j in range(L):
+                    s = srow[j]
+                    arow[j] = s * 2.0
+                    brow[j] = s + 1.0
+            else:
+                for j in range(L):
+                    arow[j] = srow[j] * 2.0
+        elif do_b:
+            for j in range(L):
+                brow[j] = srow[j] + 1.0
+
+
+def _warm():
+    d = np.zeros((8, 8))
+    c = np.array([1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0])
+    _fused(d, d.copy(), d, c, 8, 1)
+    _fused(d, d.copy(), d, c, 8, 0)
+
+
+_warm()
+
+
+def fuse_move_ifs(a, b, src, cond, LEN_2D, K):
+    _fused(a, b, src, cond, LEN_2D, K)
+    return None

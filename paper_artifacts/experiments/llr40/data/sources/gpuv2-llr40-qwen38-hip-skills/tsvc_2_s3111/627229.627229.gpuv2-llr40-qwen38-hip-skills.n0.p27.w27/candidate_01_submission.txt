@@ -1,0 +1,66 @@
+// device half: kernels + launcher
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#define HIP_CHECK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { \
+  fprintf(stderr, "HIP error %s at %s:%d\n", hipGetErrorString(e_), __FILE__, __LINE__); \
+  abort(); } } while (0)
+
+#define KBLOCK 256
+#define KMAXB  2048
+
+__global__ void __launch_bounds__(KBLOCK) reduce_pos(
+    const double* __restrict__ a, double* __restrict__ ws,
+    double* __restrict__ out, unsigned int* __restrict__ counter,
+    int64_t n) {
+  const unsigned int tid = threadIdx.x;
+  const int64_t gsz = (int64_t)blockDim.x * gridDim.x;
+  const int64_t gtid = (int64_t)blockIdx.x * blockDim.x + tid;
+  double local = 0.0;
+  for (int64_t i = gtid; i < n; i += gsz) {
+    double v = a[i];
+    if (v > 0.0) local += v;
+  }
+  __shared__ double sh[KBLOCK];
+  sh[tid] = local;
+  __syncthreads();
+  for (int s = blockDim.x >> 1; s > 0; s >>= 1) {
+    if (tid < s) sh[tid] += sh[tid + s];
+    __syncthreads();
+  }
+  ws[blockIdx.x] = sh[0];
+  __threadfence();
+  if (tid == 0) {
+    unsigned int done = atomicInc(counter, gridDim.x - 1);
+    if (done == gridDim.x - 1) {
+      double s = 0.0;
+      for (int i = 0; i < (int)gridDim.x; ++i) s += ws[i];
+      *out = s;
+      *counter = 0;
+    }
+  }
+}
+
+static double* g_ws = nullptr;
+static unsigned int* g_ctr = nullptr;
+
+extern "C" void tsvc_2_s3111_launch(const double* a, double* b, int64_t n) {
+  if (!g_ws) {
+    HIP_CHECK(hipMalloc((void**)&g_ws, (size_t)KMAXB * sizeof(double)));
+    HIP_CHECK(hipMalloc((void**)&g_ctr, sizeof(unsigned int)));
+    HIP_CHECK(hipMemset(g_ctr, 0, sizeof(unsigned int)));
+  }
+  unsigned int blocks;
+  if (n <= 0) blocks = 1;
+  else {
+    int64_t want = (n + (KBLOCK * 4) - 1) / (KBLOCK * 4);
+    if (want > KMAXB) want = KMAXB;
+    if (want < 1) want = 1;
+    blocks = (unsigned int)want;
+  }
+  reduce_pos<<<blocks, KBLOCK>>>(a, g_ws, b, g_ctr, n);
+  HIP_CHECK(hipGetLastError());
+  HIP_CHECK(hipDeviceSynchronize());
+}

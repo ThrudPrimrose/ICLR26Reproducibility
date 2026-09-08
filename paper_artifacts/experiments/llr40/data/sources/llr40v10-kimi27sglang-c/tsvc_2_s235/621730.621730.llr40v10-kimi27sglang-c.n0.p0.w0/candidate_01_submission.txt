@@ -1,0 +1,35 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s235_fp64(double *restrict a, double *restrict aa,
+                      const double *restrict b, const double *restrict bb,
+                      const double *restrict c, const int64_t LEN_2D) {
+    const int64_t n = LEN_2D;
+
+#pragma omp parallel
+{
+    const int nthreads = omp_get_num_threads();
+    const int tid = omp_get_thread_num();
+    const int64_t chunk = (n + nthreads - 1) / nthreads;
+    const int64_t i0 = tid * chunk;
+    const int64_t i1 = (i0 + chunk < n) ? i0 + chunk : n;
+
+    if (i0 < n) {
+        /* Update the one-dimensional array for this thread's columns. */
+        for (int64_t i = i0; i < i1; ++i) {
+            a[i] += b[i] * c[i];
+        }
+
+        /* Walk the recurrence down rows, keeping the inner loop over the
+           thread's contiguous column range so that aa and bb are accessed
+           in cache-line-friendly order. */
+        for (int64_t j = 1; j < n; ++j) {
+            const int64_t row = j * n;
+            const int64_t prev = row - n;
+            for (int64_t i = i0; i < i1; ++i) {
+                aa[row + i] = aa[prev + i] + bb[row + i] * a[i];
+            }
+        }
+    }
+}
+}

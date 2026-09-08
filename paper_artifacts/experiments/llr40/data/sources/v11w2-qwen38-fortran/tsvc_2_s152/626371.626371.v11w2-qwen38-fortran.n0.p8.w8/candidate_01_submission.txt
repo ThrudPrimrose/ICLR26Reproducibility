@@ -1,0 +1,24 @@
+! TSVC tsvc_2 kernel s152, fp64, single invocation:
+!   b = d * e
+!   a += b * c
+! Fused into one streaming loop; the whole thing is memory-bound, so the goal
+! is a clean AVX-512 vector stream and parallelism across cores.
+!
+! ABI notes (gfortran 16 BIND(C)): scalar dummies come in by reference unless
+! they carry VALUE, so the C-ABI int64 length needs `value`; the arrays are
+! plain assumed-size pointers, which match the C pointers directly.
+subroutine tsvc_2_s152_fp64(a, b, c, d, e, len_1d) bind(C, name="tsvc_2_s152_fp64")
+  use, intrinsic :: iso_c_binding
+  implicit none
+  real(c_double) :: a(*), b(*), c(*), d(*), e(*)
+  integer(c_int64_t), value :: len_1d
+  integer(c_int64_t) :: i
+
+  intent(inout) :: a, b
+  intent(in)    :: c, d, e, len_1d
+
+  do i = 1, len_1d
+    b(i) = d(i) * e(i)
+    a(i) = a(i) + b(i) * c(i)
+  end do
+end subroutine tsvc_2_s152_fp64

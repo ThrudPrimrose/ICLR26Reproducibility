@@ -1,0 +1,13 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+__global__ void kaxpy2(double2* __restrict__ a, const double2* __restrict__ b,
+                       const long n2, const long tail, const double S){
+  const long i=(long)blockIdx.x*blockDim.x+threadIdx.x;
+  if(i<n2){ double2 bv=b[i], av=a[i]; av.x+=bv.x*S; av.y+=bv.y*S; a[i]=av; }
+  if(blockIdx.x==0 && threadIdx.x<tail){ double* a2=(double*)a; const double* b2=(const double*)b; long t=n2*2+threadIdx.x; a2[t]+=b2[t]*S; }
+}
+void vpvts_launch(double* a, const double* b, long n, double S){
+  const long n2=n/2, tail=n-n2*2; const int T=256;
+  long blocks=(n2+T-1)/T; if(blocks<1)blocks=1;
+  kaxpy2<<<dim3((unsigned)blocks),T>>>((double2*)a,(const double2*)b,n2,tail,S);
+}

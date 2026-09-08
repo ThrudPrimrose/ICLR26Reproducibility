@@ -1,0 +1,31 @@
+#include <stdint.h>
+#include <omp.h>
+#include <immintrin.h>
+
+void fuse_diamond_fp64(const double *restrict a, double *restrict out, const int64_t LEN_1D) {
+  int64_t i0 = ((4 - (int64_t)((uintptr_t)out % 32) / 8) % 4);
+  if (i0 > LEN_1D) i0 = LEN_1D;
+  for (int64_t i = 0; i < i0; ++i) {
+    double t = a[i] * a[i];
+    out[i] = (t + 1.0) * (t - 1.0);
+  }
+  const int64_t nvec = (LEN_1D - i0) >> 2;
+  const __m256d one = _mm256_set1_pd(1.0);
+  #pragma omp parallel
+  {
+  #pragma omp for schedule(static)
+  for (int64_t b = 0; b < nvec; ++b) {
+    const int64_t i = i0 + (b << 2);
+    __m256d va = _mm256_loadu_pd(a + i);
+    __m256d t = _mm256_mul_pd(va, va);
+    __m256d r = _mm256_mul_pd(_mm256_add_pd(t, one), _mm256_sub_pd(t, one));
+    _mm256_stream_pd(out + i, r);
+  }
+  _mm_sfence();
+  }
+  for (int64_t i = i0 + (nvec << 2); i < LEN_1D; ++i) {
+    double t = a[i] * a[i];
+    out[i] = (t + 1.0) * (t - 1.0);
+  }
+  _mm_sfence();
+}

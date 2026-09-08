@@ -1,0 +1,38 @@
+#include <stdint.h>
+#include <omp.h>
+
+void fuse_move_ifs_fp64(double *restrict a, double *restrict b, const double *restrict cond, const double *restrict src,
+                        const int64_t K, const int64_t LEN_2D) {
+    if (K > 0) {
+        #pragma omp parallel for schedule(static)
+        for (int64_t i = 0; i < LEN_2D; ++i) {
+            const double *restrict s = src + i * LEN_2D;
+            double *restrict pa = a + i * LEN_2D;
+            double *restrict pb = b + i * LEN_2D;
+            if (cond[i] > 0.0) {
+                #pragma omp simd
+                for (int64_t j = 0; j < LEN_2D; ++j) {
+                    pa[j] = s[j] * 2.0;
+                    pb[j] = s[j] + 1.0;
+                }
+            } else {
+                #pragma omp simd
+                for (int64_t j = 0; j < LEN_2D; ++j) {
+                    pb[j] = s[j] + 1.0;
+                }
+            }
+        }
+    } else {
+        #pragma omp parallel for schedule(static)
+        for (int64_t i = 0; i < LEN_2D; ++i) {
+            if (cond[i] > 0.0) {
+                const double *restrict s = src + i * LEN_2D;
+                double *restrict pa = a + i * LEN_2D;
+                #pragma omp simd
+                for (int64_t j = 0; j < LEN_2D; ++j) {
+                    pa[j] = s[j] * 2.0;
+                }
+            }
+        }
+    }
+}

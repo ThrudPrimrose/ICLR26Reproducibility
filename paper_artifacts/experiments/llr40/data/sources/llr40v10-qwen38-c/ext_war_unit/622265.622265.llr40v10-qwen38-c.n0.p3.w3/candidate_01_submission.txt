@@ -1,0 +1,51 @@
+#include <stdint.h>
+#include <omp.h>
+
+/*
+ * TSVC tsvc_2_5 kernel `ext_war_unit`:  a[i] = a[i+1] + b[i],  i in [0, LEN_1D-2].
+ *
+ * The loop carries a unit-distance WAR anti-dependence: element a[j] is READ by the
+ * iteration computing a[j-1] and WRITTEN by the iteration computing a[j]. There is no
+ * true dependency -- the read always wants the ORIGINAL a[j+1] -- so the fix is to
+ * read the original.
+ *
+ * For large arrays we parallelize without any temporary array (3N bytes of traffic,
+ * the minimum): every thread first captures the one element to its right (the only
+ * element another thread will overwrite), a barrier, then each thread runs the plain
+ * shift-add on its chunk (auto-vectorized to AVX-512) and finishes its last element
+ * with the captured value.
+ *
+ * For small arrays the OpenMP fork/join is not worth it; the serial loop is
+ * auto-vectorized and faster.
+ */
+void ext_war_unit_fp64(double *restrict a, const double *restrict b, const int64_t LEN_1D) {
+  if (LEN_1D < 2) return;
+
+  if (LEN_1D < 1000000) {
+    /* serial, auto-vectorized */
+    for (int64_t i = 0; i < LEN_1D - 1; ++i)
+      a[i] = a[i + 1] + b[i];
+    return;
+  }
+
+  const int64_t n = LEN_1D - 1;  /* number of outputs: a[0..n-1] */
+  #pragma omp parallel
+  {
+    const int t = omp_get_thread_num();
+    const int m = omp_get_num_threads();
+    const int64_t base = n / m, rem = n % m;
+    const int64_t L = t * base + (t < rem ? t : rem);
+    const int64_t R = (t + 1) * base + (t + 1 < rem ? t + 1 : rem);
+    /* Phase 0: capture the right boundary a[R] (written by the next thread). */
+    const double save = a[R];
+    #pragma omp barrier
+    if (L < R) {
+      /* Phase 1: plain shift-add over [L, R-1), auto-vectorized. */
+      int64_t i;
+      for (i = L; i < R - 1; ++i)
+        a[i] = a[i + 1] + b[i];
+      /* Last element of the chunk uses the captured boundary. */
+      a[R - 1] = save + b[R - 1];
+    }
+  }
+}

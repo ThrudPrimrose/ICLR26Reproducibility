@@ -1,0 +1,42 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void vdu_win(double* __restrict__ a, const double* __restrict__ b,
+                        const double* __restrict__ c, int N, int K,
+                        int B, int W, int total_segs) {
+    int seg = blockIdx.x * blockDim.x + threadIdx.x;
+    if (seg >= total_segs) return;
+    int j = seg % K;                 // chain
+    int m = seg / K;                 // block within chain
+    int Sj = (N - 1 - j) / K + 1;    // chain length
+    int t_out_start = m * B;
+    if (t_out_start >= Sj) return;   // padding segment
+    int t_out_end = t_out_start + B;
+    if (t_out_end > Sj) t_out_end = Sj;
+
+    double x;
+    int t_lo;
+    if (m == 0) {
+        x = a[j];                    // exact seed
+        t_lo = 0;
+    } else {
+        x = 0.0;                     // assumed boundary; decays over W warm-up steps
+        t_lo = t_out_start - W;
+    }
+    for (int t = t_lo + 1; t < t_out_end; t++) {
+        int i = j + t * K;
+        if (i >= N) break;
+        x = 0.75 * x + b[i] * c[i];
+        if (t >= t_out_start) a[i] = x;
+    }
+}
+
+void vdu_launch(double* a, double* b, double* c, int64_t Kll, int64_t Nll, int B, int W) {
+    int K = (int)Kll; int N = (int)Nll;
+    int S_max = (int)((N + K - 1) / K);
+    int nseg = (S_max + B - 1) / B;
+    int total_segs = K * nseg;
+    int T = 256;
+    int blocks = (total_segs + T - 1) / T;
+    vdu_win<<<blocks, T>>>(a, b, c, N, K, B, W, total_segs);
+}

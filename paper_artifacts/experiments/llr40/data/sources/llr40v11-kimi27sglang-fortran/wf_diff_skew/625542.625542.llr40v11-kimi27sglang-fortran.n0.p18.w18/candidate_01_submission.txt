@@ -1,0 +1,25 @@
+module wf_diff_skew_mod
+  use, intrinsic :: iso_c_binding, only: c_double, c_int64_t
+  implicit none
+contains
+  subroutine wf_diff_skew_fp64(a, LEN_2D) bind(c, name="wf_diff_skew_fp64")
+    real(c_double), intent(inout) :: a(*)
+    integer(c_int64_t), value, intent(in) :: LEN_2D
+    integer(c_int64_t) :: n, i, j, base_cur, base_prev, jp1
+    n = LEN_2D
+    !$omp parallel default(none) shared(a, n) private(i, j, base_cur, base_prev, jp1)
+    do i = 1_c_int64_t, n - 1_c_int64_t
+      base_prev = (i - 1_c_int64_t) * n
+      base_cur = i * n
+      !$omp do simd schedule(static)
+      do j = 0_c_int64_t, n - 2_c_int64_t
+        jp1 = j + 1_c_int64_t
+        a(base_cur + j + 1_c_int64_t) = a(base_cur + j + 1_c_int64_t) &
+                                      + a(base_prev + j + 1_c_int64_t) &
+                                      + a(base_prev + jp1 + 1_c_int64_t)
+      end do
+      !$omp end do simd
+    end do
+    !$omp end parallel
+  end subroutine wf_diff_skew_fp64
+end module wf_diff_skew_mod

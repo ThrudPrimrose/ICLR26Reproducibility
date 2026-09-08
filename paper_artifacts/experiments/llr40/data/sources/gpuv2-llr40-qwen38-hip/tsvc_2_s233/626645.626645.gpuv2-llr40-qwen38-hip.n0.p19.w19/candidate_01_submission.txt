@@ -1,0 +1,35 @@
+// TSVC s233 closed forms:
+//   aa[j,i] = aa0[7,i] + sum_{k=8..j} cc[k,i]   (j,i in [8,N))  -- column scan
+//   bb[j,i] = bb0[j,7] + sum_{k=8..i} cc[j,k]   (j,i in [8,N))  -- row scan
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+__global__ void aa_colscan(double* __restrict__ aa, const double* __restrict__ cc, int64_t N) {
+  int64_t i = 8 + (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= N) return;
+  double run = aa[7 * N + i];
+  for (int64_t j = 8; j < N; ++j) {
+    run += cc[j * N + i];
+    aa[j * N + i] = run;
+  }
+}
+
+__global__ void bb_rowscan(double* __restrict__ bb, const double* __restrict__ cc, int64_t N) {
+  int64_t j = 8 + (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+  if (j >= N) return;
+  double run = bb[j * N + 7];
+  for (int64_t i = 8; i < N; ++i) {
+    run += cc[j * N + i];
+    bb[j * N + i] = run;
+  }
+}
+
+void launch_tsvc_2_s233(double* aa, double* bb, const double* cc, int64_t N) {
+  if (N <= 8) return;
+  int64_t n = N - 8;
+  int threads = 256;
+  int64_t blocks = (n + threads - 1) / threads;
+  aa_colscan<<<(int)blocks, threads, 0, nullptr>>>(aa, cc, N);
+  bb_rowscan<<<(int)blocks, threads, 0, nullptr>>>(bb, cc, N);
+  hipDeviceSynchronize();
+}

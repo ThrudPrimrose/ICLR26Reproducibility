@@ -1,0 +1,40 @@
+#include <stdint.h>
+
+void tsvc_2_s2275_fp64(double *restrict a, double *restrict aa, const double *restrict b, const double *restrict bb,
+                       const double *restrict c, const double *restrict cc, const double *restrict d,
+                       const int64_t LEN_2D) {
+    const int64_t n = LEN_2D;
+
+    /* For tiny problems the OpenMP fork cost dominates; use a serial,
+     * cache-friendly path and fuse the 1-D update with the first row. */
+    if (n <= 64) {
+        for (int64_t i = 0; i < n; ++i) {
+            aa[i] = aa[i] + bb[i] * cc[i];
+            a[i] = b[i] + c[i] * d[i];
+        }
+        for (int64_t j = 1; j < n; ++j) {
+            const int64_t base = j * n;
+            for (int64_t i = 0; i < n; ++i) {
+                const int64_t idx = base + i;
+                aa[idx] = aa[idx] + bb[idx] * cc[idx];
+            }
+        }
+        return;
+    }
+
+    /* Interchange loops so that the inner loop walks contiguous memory.
+     * The 2-D update is embarrassingly parallel over rows. */
+#pragma omp parallel for schedule(static)
+    for (int64_t j = 0; j < n; ++j) {
+        const int64_t base = j * n;
+        for (int64_t i = 0; i < n; ++i) {
+            const int64_t idx = base + i;
+            aa[idx] = aa[idx] + bb[idx] * cc[idx];
+        }
+    }
+
+#pragma omp parallel for schedule(static)
+    for (int64_t i = 0; i < n; ++i) {
+        a[i] = b[i] + c[i] * d[i];
+    }
+}

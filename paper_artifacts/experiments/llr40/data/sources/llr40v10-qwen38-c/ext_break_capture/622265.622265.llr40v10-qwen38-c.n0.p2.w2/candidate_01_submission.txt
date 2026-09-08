@@ -1,0 +1,72 @@
+/* ext_break_capture: find first i with a[i] > 1.0, capture i and a[i].
+ * AVX-512 / AVX2 vectorized first-crossing scan. */
+#include <stdint.h>
+
+#if defined(__AVX512F__)
+#include <immintrin.h>
+#endif
+
+void ext_break_capture_fp64(const double *restrict a, int64_t *restrict out_index, double *restrict out_value,
+                            const int64_t LEN_1D) {
+  const double k = 1.0;
+
+  out_index[0] = -1;
+  out_value[0] = -1.0;
+  if (LEN_1D <= 0) return;
+
+  const double *p = a;
+  const int64_t n = LEN_1D;
+  int64_t i = 0;
+
+#if defined(__AVX512F__)
+  const __m512d vk = _mm512_set1_pd(k);
+  int64_t pre = ((16 - ((uintptr_t)p & 15)) & 15) >> 3; /* doubles to first 64B alignment */
+  if (pre > n) pre = n;
+  for (; i < pre; ++i) {
+    if (p[i] > k) { out_index[0] = i; out_value[0] = p[i]; return; }
+  }
+  for (; i + 32 <= n; i += 32) {
+    const __m512d v0 = _mm512_load_pd(p + i);
+    const __m512d v1 = _mm512_load_pd(p + i + 8);
+    const __m512d v2 = _mm512_load_pd(p + i + 16);
+    const __m512d v3 = _mm512_load_pd(p + i + 24);
+    uint64_t m = _mm512_cmp_pd_mask(v0, vk, _CMP_GT_OQ);
+    if (m) { int l = __builtin_ctzll(m); out_index[0] = i + l; out_value[0] = p[i + l]; return; }
+    m = _mm512_cmp_pd_mask(v1, vk, _CMP_GT_OQ);
+    if (m) { int l = __builtin_ctzll(m); out_index[0] = i + 8 + l; out_value[0] = p[i + 8 + l]; return; }
+    m = _mm512_cmp_pd_mask(v2, vk, _CMP_GT_OQ);
+    if (m) { int l = __builtin_ctzll(m); out_index[0] = i + 16 + l; out_value[0] = p[i + 16 + l]; return; }
+    m = _mm512_cmp_pd_mask(v3, vk, _CMP_GT_OQ);
+    if (m) { int l = __builtin_ctzll(m); out_index[0] = i + 24 + l; out_value[0] = p[i + 24 + l]; return; }
+  }
+  for (; i + 8 <= n; ++i) {
+    const __m512d v = _mm512_load_pd(p + i);
+    uint64_t m = _mm512_cmp_pd_mask(v, vk, _CMP_GT_OQ);
+    if (m) { int l = __builtin_ctzll(m); out_index[0] = i + l; out_value[0] = p[i + l]; return; }
+  }
+#elif defined(__AVX2__)
+  const __m256d vk = _mm256_set1_pd(k);
+  for (; i + 16 <= n; i += 16) {
+    const __m256d v0 = _mm256_loadu_pd(p + i);
+    const __m256d v1 = _mm256_loadu_pd(p + i + 4);
+    const __m256d v2 = _mm256_loadu_pd(p + i + 8);
+    const __m256d v3 = _mm256_loadu_pd(p + i + 12);
+    uint32_t m = _mm256_cmp_pd_mask(v0, vk, _CMP_GT_OQ);
+    if (m) { int l = __builtin_ctz(m); out_index[0] = i + l; out_value[0] = p[i + l]; return; }
+    m = _mm256_cmp_pd_mask(v1, vk, _CMP_GT_OQ);
+    if (m) { int l = __builtin_ctz(m); out_index[0] = i + 4 + l; out_value[0] = p[i + 4 + l]; return; }
+    m = _mm256_cmp_pd_mask(v2, vk, _CMP_GT_OQ);
+    if (m) { int l = __builtin_ctz(m); out_index[0] = i + 8 + l; out_value[0] = p[i + 8 + l]; return; }
+    m = _mm256_cmp_pd_mask(v3, vk, _CMP_GT_OQ);
+    if (m) { int l = __builtin_ctz(m); out_index[0] = i + 12 + l; out_value[0] = p[i + 12 + l]; return; }
+  }
+  for (; i + 4 <= n; ++i) {
+    const __m256d v = _mm256_loadu_pd(p + i);
+    uint32_t m = _mm256_cmp_pd_mask(v, vk, _CMP_GT_OQ);
+    if (m) { int l = __builtin_ctz(m); out_index[0] = i + l; out_value[0] = p[i + l]; return; }
+  }
+#endif
+  for (; i < n; ++i) {
+    if (p[i] > k) { out_index[0] = i; out_value[0] = p[i]; return; }
+  }
+}

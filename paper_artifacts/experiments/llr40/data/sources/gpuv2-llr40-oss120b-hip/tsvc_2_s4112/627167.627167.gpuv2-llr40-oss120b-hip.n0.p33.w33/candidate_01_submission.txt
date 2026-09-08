@@ -1,0 +1,14 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void tsvc_2_s4112_kernel(double* __restrict__ a,
+                                   const double* __restrict__ b,
+                                   const int32_t* __restrict__ ip,
+                                   const int64_t LEN_1D) {
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (idx < LEN_1D) {
+        int64_t srcIdx = static_cast<int64_t>(ip[idx]);
+        double bv = __ldg(&b[srcIdx]);
+        a[idx] = a[idx] + bv * 2.0;
+    }
+}

@@ -1,0 +1,73 @@
+subroutine argmax_with_index_fp64(a, out_index, out_value, len_1d) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_1d
+  real(c_double), intent(in) :: a(len_1d)
+  integer(c_int64_t), intent(out) :: out_index(1)
+  real(c_double), intent(out) :: out_value(1)
+
+  integer, parameter :: BS = 8192
+  integer :: nt, t
+  integer(c_int64_t) :: n, lo, hi, i, b, be, p_c, p_b, idx
+  real(c_double) :: m_c, m_b, tm(1024)
+  integer(c_int64_t) :: ti(1024)
+
+  n = len_1d
+  if (n <= 0) then
+    out_value(1) = 0.0d0
+    out_index(1) = 0
+    return
+  end if
+  if (n == 1) then
+    out_value(1) = a(1)
+    out_index(1) = 1
+    return
+  end if
+
+  nt = omp_get_max_threads()
+  nt = min(nt, 1024)
+  if (int(n) < nt) nt = int(n)
+
+  !$omp parallel num_threads(nt)
+  t = omp_get_thread_num()
+  lo = (n * t) / nt + 1
+  hi = (n * (t + 1)) / nt
+
+  m_c = -HUGE(1.0d0)
+  p_c = n + 1
+  do b = lo, hi, BS
+    be = min(b + BS - 1, hi)
+    m_b = -HUGE(1.0d0)
+    !$omp simd reduction(max:m_b)
+    do i = b, be
+      m_b = max(m_b, a(i))
+    end do
+    if (m_b > m_c) then
+      m_c = m_b
+      p_b = be + 1
+      !$omp simd reduction(min:p_b)
+      do i = b, be
+        if (a(i) == m_b) p_b = min(p_b, i)
+      end do
+      p_c = p_b
+    end if
+  end do
+  tm(t + 1) = m_c
+  ti(t + 1) = p_c
+
+  !$omp barrier
+  !$omp single
+  m_c = -HUGE(1.0d0)
+  idx = n + 1
+  do t = 0, nt - 1
+    if (tm(t + 1) > m_c) then
+      m_c = tm(t + 1)
+      idx = ti(t + 1)
+    end if
+  end do
+  !$omp end single
+  out_value(1) = m_c
+  out_index(1) = idx
+  !$omp end parallel
+end subroutine argmax_with_index_fp64

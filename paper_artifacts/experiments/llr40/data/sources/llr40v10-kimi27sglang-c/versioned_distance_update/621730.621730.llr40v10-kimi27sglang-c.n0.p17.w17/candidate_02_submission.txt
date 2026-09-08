@@ -1,0 +1,99 @@
+#include <stdint.h>
+#include <omp.h>
+
+void versioned_distance_update_fp64(double *restrict a,
+                                    const double *restrict b,
+                                    const double *restrict c,
+                                    const int64_t K,
+                                    const int64_t LEN_1D) {
+    if (K <= 0 || K >= LEN_1D) {
+        return;
+    }
+
+    if (K == 1) {
+        int64_t N = LEN_1D;
+        int nthreads = omp_get_max_threads();
+        if (N <= 4096 || nthreads <= 1) {
+            double x = a[0];
+            for (int64_t i = 1; i < N; ++i) {
+                x = 0.75 * x + b[i] * c[i];
+                a[i] = x;
+            }
+            return;
+        }
+
+        const double p = 0.75;
+        const int64_t MIN_CHUNK = 512;
+        int64_t C = nthreads;
+        int64_t L = (N + C - 1) / C;
+        if (L < MIN_CHUNK) {
+            L = MIN_CHUNK;
+            C = (N + L - 1) / L;
+        }
+
+        double add[C];
+
+        /* Pass 1: leave value of each chunk assuming a zero start.  The 0.75
+           decay makes the real start irrelevant after >=512 steps in double. */
+        #pragma omp parallel for schedule(static)
+        for (int64_t m = 0; m < C; ++m) {
+            int64_t s = m * L;
+            int64_t e = s + L;
+            if (e > N) e = N;
+            double x = 0.0;
+            for (int64_t i = s + 1; i < e; ++i) {
+                x = p * x + b[i] * c[i];
+            }
+            add[m] = x;
+        }
+
+        /* Pass 2: serial prefix scan over chunk boundaries.  Work backwards so
+           the Pass-1 leave values used as inputs are still intact. */
+        for (int64_t m = C - 1; m >= 1; --m) {
+            int64_t idx = m * L;
+            add[m] = p * add[m - 1] + b[idx] * c[idx];
+        }
+        add[0] = a[0];
+
+        /* Pass 3: write every element using the exact chunk-start value. */
+        #pragma omp parallel for schedule(static)
+        for (int64_t m = 0; m < C; ++m) {
+            int64_t s = m * L;
+            int64_t e = s + L;
+            if (e > N) e = N;
+            double x = add[m];
+            a[s] = x;
+            for (int64_t i = s + 1; i < e; ++i) {
+                x = p * x + b[i] * c[i];
+                a[i] = x;
+            }
+        }
+        return;
+    }
+
+    /* Small/medium K > 1: independent blocks of size K. */
+    if (K <= 512) {
+        for (int64_t base = K; base < LEN_1D; base += K) {
+            int64_t end = base + K;
+            if (end > LEN_1D) end = LEN_1D;
+            #pragma omp simd
+            for (int64_t i = base; i < end; ++i) {
+                a[i] = 0.75 * a[i - K] + b[i] * c[i];
+            }
+        }
+        return;
+    }
+
+    /* Large K: persistent parallel region with synchronisation between blocks. */
+    #pragma omp parallel
+    {
+        for (int64_t base = K; base < LEN_1D; base += K) {
+            int64_t end = base + K;
+            if (end > LEN_1D) end = LEN_1D;
+            #pragma omp for simd schedule(static)
+            for (int64_t i = base; i < end; ++i) {
+                a[i] = 0.75 * a[i - K] + b[i] * c[i];
+            }
+        }
+    }
+}

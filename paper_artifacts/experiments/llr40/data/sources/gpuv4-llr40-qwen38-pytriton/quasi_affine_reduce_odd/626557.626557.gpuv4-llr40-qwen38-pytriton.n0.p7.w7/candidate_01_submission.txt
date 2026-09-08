@@ -1,0 +1,4 @@
+import numpy as np
+
+def quasi_affine_reduce_odd(a, out, LEN_1D):
+    out[0] = a[1:LEN_1D:2].sum()

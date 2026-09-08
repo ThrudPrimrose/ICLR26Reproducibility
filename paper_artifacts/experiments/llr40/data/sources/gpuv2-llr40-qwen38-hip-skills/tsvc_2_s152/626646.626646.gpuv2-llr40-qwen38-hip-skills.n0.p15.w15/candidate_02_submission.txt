@@ -1,0 +1,74 @@
+#include <cstdint>
+#include <hip/hip_runtime.h>
+
+#define HIP_CHECK(call)                                                                  \
+  do {                                                                                   \
+    hipError_t err__ = (call);                                                           \
+    if (err__ != hipSuccess) {                                                           \
+      fprintf(stderr, "HIP error %s at %s:%d\n", hipGetErrorString(err__), __FILE__,     \
+              __LINE__);                                                                 \
+      abort();                                                                           \
+    }                                                                                    \
+  } while (0)
+
+// 4 doubles per thread via 16-byte vector loads/stores; scalar tail for n % 4.
+__global__ void tsvc_2_s152_vec4(double *__restrict__ a, double *__restrict__ b,
+                                 const double *__restrict__ c, const double *__restrict__ d,
+                                 const double *__restrict__ e, const int64_t n) {
+  int64_t i = (int64_t)blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+  int64_t i0 = i << 2;
+  if (i0 + 4 <= n) {
+    double4 *__restrict__ av = (double4 *__restrict__)a;
+    double4 *__restrict__ bv = (double4 *__restrict__)b;
+    const double4 *__restrict__ cv = (const double4 *__restrict__)c;
+    const double4 *__restrict__ dv = (const double4 *__restrict__)d;
+    const double4 *__restrict__ ev = (const double4 *__restrict__)e;
+    double4 da = av[i];
+    double4 dc = cv[i];
+    double4 dd = dv[i];
+    double4 de = ev[i];
+    double4 db;
+    db.x = dd.x * de.x;
+    db.y = dd.y * de.y;
+    db.z = dd.z * de.z;
+    db.w = dd.w * de.w;
+    bv[i] = db;
+    da.x = fma(db.x, dc.x, da.x);
+    da.y = fma(db.y, dc.y, da.y);
+    da.z = fma(db.z, dc.z, da.z);
+    da.w = fma(db.w, dc.w, da.w);
+    av[i] = da;
+  } else if (i0 < n) {
+    for (int k = 0; k < (int)(n - i0); ++k) {
+      double de = d[i0 + k] * e[i0 + k];
+      b[i0 + k] = de;
+      a[i0 + k] = fma(de, c[i0 + k], a[i0 + k]);
+    }
+  }
+}
+
+__global__ void tsvc_2_s152_scalar(double *__restrict__ a, double *__restrict__ b,
+                                   const double *__restrict__ c, const double *__restrict__ d,
+                                   const double *__restrict__ e, const int64_t n) {
+  int64_t i = (int64_t)blockIdx.x * (int64_t)blockDim.x + threadIdx.x;
+  if (i < n) {
+    double de = d[i] * e[i];
+    b[i] = de;
+    a[i] = fma(de, c[i], a[i]);
+  }
+}
+
+void tsvc_2_s152_launch(double *a, double *b, const double *c, const double *d,
+                        const double *e, const int64_t n) {
+  if (n <= 0) return;
+  const int64_t block = 256;
+  const int64_t g = (int64_t)(uintptr_t)a | (uintptr_t)b | (uintptr_t)c | (uintptr_t)d |
+                    (uintptr_t)e;
+  if ((g & 31) == 0) {
+    const int64_t n4 = (n + 3) >> 2;
+    tsvc_2_s152_vec4<<<(unsigned)((n4 + block - 1) / block), (unsigned)block>>>(a, b, c, d, e, n);
+  } else {
+    tsvc_2_s152_scalar<<<(unsigned)((n + block - 1) / block), (unsigned)block>>>(a, b, c, d, e, n);
+  }
+  HIP_CHECK(hipGetLastError());
+}

@@ -1,0 +1,39 @@
+subroutine tsvc_2_s115_fp64(a, aa, LEN_2D, workspace, workspace_size) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_2D, workspace_size
+  real(c_double), intent(inout) :: a(LEN_2D)
+  real(c_double), intent(in) :: aa(LEN_2D, LEN_2D)
+  integer(c_int8_t), intent(inout) :: workspace(workspace_size)
+  integer(c_int64_t) :: i, j, jb, je
+  integer(c_int64_t), parameter :: b = 64
+  real(c_double) :: aj
+
+  !$omp parallel private(i, j, jb, je, aj)
+  do jb = 1, LEN_2D, b
+    je = min(jb + b - 1, LEN_2D)
+
+    ! Solve diagonal block serially
+    !$omp single
+    do j = jb, je
+      aj = a(j)
+      do i = j + 1, je
+        a(i) = a(i) - aa(i, j) * aj
+      end do
+    end do
+    !$omp end single
+
+    ! Update trailing rows in parallel
+    if (je < LEN_2D) then
+      !$omp do
+      do i = je + 1, LEN_2D
+        do j = jb, je
+          a(i) = a(i) - aa(i, j) * a(j)
+        end do
+      end do
+      !$omp end do
+    end if
+  end do
+  !$omp end parallel
+end subroutine tsvc_2_s115_fp64

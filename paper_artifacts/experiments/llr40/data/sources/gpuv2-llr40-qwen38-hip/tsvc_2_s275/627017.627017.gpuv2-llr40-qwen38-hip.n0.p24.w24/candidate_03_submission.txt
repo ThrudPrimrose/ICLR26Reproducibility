@@ -1,0 +1,87 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+#define TCOLS 4
+#define TTHR  256
+
+template <int WL, int CROWS>
+__global__ void __launch_bounds__(TTHR) tsvc_s275_scan_t(
+    double* __restrict__ aa, const double* __restrict__ bb, const double* __restrict__ cc,
+    const int64_t N)
+{
+    constexpr int RPL = CROWS / WL;   // rows per lane: contiguous
+    const int tid  = threadIdx.x;
+    const int warp = tid / WL;
+    const int lane = tid % WL;
+    const int c0 = blockIdx.x * TCOLS;
+    const int ci = c0 + warp;
+    const bool gated = (ci < N) && (aa[ci] > 0.0);
+
+    __shared__ double sb[CROWS][TCOLS];
+    __shared__ double sc[CROWS][TCOLS];
+    __shared__ double so[CROWS][TCOLS];
+
+    const double aa0 = gated ? aa[ci] : 0.0;
+    double carry = 0.0;
+
+    for (int64_t r0 = 0; r0 < N; r0 += CROWS) {
+        const int nr = (int)min((int64_t)CROWS, N - r0);
+        // coalesced load of tile rows [r0, r0+nr) x cols [c0, c0+TCOLS)
+        for (int e = tid; e < nr * TCOLS; e += TTHR) {
+            const int row  = e / TCOLS;
+            const int colt = e % TCOLS;
+            if (c0 + colt < N) {
+                const size_t idx = (size_t)(r0 + row) * (size_t)N + (size_t)(c0 + colt);
+                sb[row][colt] = bb[idx];
+                sc[row][colt] = cc[idx];
+            }
+        }
+        __syncthreads();
+        if (gated) {
+            const int rowA = lane * RPL;
+            double p[RPL + 1];
+            #pragma unroll
+            for (int q = 0; q < RPL; q++) {
+                const int r = rowA + q;
+                p[q + 1] = (r < nr) ? (((r0 + r) == 0) ? 0.0 : sb[r][warp] * sc[r][warp]) : 0.0;
+            }
+            #pragma unroll
+            for (int q = 1; q <= RPL; q++) p[q] += p[q - 1];
+            double s = p[RPL];                       // lane partial sum
+            #pragma unroll
+            for (int k = 1; k < WL; k <<= 1) {
+                const double o = __shfl_up(s, k, WL);
+                if (lane >= k) s += o;
+            }
+            const double excl = s - p[RPL];
+            #pragma unroll
+            for (int q = 0; q < RPL; q++) {
+                const int r = rowA + q;
+                if (r < nr) so[r][warp] = aa0 + carry + excl + p[q + 1];
+            }
+            carry += __shfl(s, WL - 1, WL);           // full chunk sum (uniform)
+        }
+        __syncthreads();
+        // coalesced store, skip global row 0 and ungated cols
+        for (int e = tid; e < nr * TCOLS; e += TTHR) {
+            const int row  = e / TCOLS;
+            const int colt = e % TCOLS;
+            const int64_t gr = r0 + row;
+            if (c0 + colt < N && gr > 0 && aa[c0 + colt] > 0.0) {
+                const size_t idx = (size_t)gr * (size_t)N + (size_t)(c0 + colt);
+                aa[idx] = so[row][colt];
+            }
+        }
+    }
+}
+
+template __global__ void tsvc_s275_scan_t<64, 128>(double*, const double*, const double*, const int64_t);
+template __global__ void tsvc_s275_scan_t<32, 64>(double*, const double*, const double*, const int64_t);
+
+void tsvc275_launch(const int warpSize, double* aa, const double* bb, const double* cc, const int64_t N) {
+    const int blocks = (int)((N + TCOLS - 1) / TCOLS);
+    if (warpSize >= 64)
+        tsvc_s275_scan_t<64, 128><<<blocks, TTHR>>>(aa, bb, cc, N);
+    else
+        tsvc_s275_scan_t<32, 64><<<blocks, TTHR>>>(aa, bb, cc, N);
+}

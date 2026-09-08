@@ -1,0 +1,79 @@
+// Device half: kernels + host-side launcher for tsvc_2_s316 (parallel min, fp64)
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cfloat>
+
+#define HIP_CHECK(expr) do { \
+    hipError_t e_ = (expr); \
+    if (e_ != hipSuccess) { \
+        const char* s_ = hipGetErrorString(e_); \
+        std::fprintf(stderr, "HIP error '%s' at %s:%d\n", s_ ? s_ : "?", __FILE__, __LINE__); \
+        std::abort(); \
+    } \
+} while (0)
+
+#define KB 256
+
+__global__ void __launch_bounds__(KB)
+kmin_part(const double* __restrict__ a, int64_t n, double* __restrict__ partial) {
+    __shared__ double sm[KB];
+    const int tid = threadIdx.x;
+    const int64_t stride = (int64_t)gridDim.x * KB;
+    double m = INFINITY;
+    for (int64_t i = (int64_t)blockIdx.x * KB + tid; i < n; i += stride) {
+        const double v = a[i];
+        if (v < m) m = v;
+    }
+    sm[tid] = m;
+    __syncthreads();
+    for (int s = KB / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            const double v = sm[tid + s];
+            if (v < sm[tid]) sm[tid] = v;
+        }
+        __syncthreads();
+    }
+    if (tid == 0) partial[blockIdx.x] = sm[0];
+}
+
+__global__ void __launch_bounds__(KB)
+kmin_final(const double* __restrict__ partial, int np, double* __restrict__ result) {
+    __shared__ double sm[KB];
+    const int tid = threadIdx.x;
+    double m = INFINITY;
+    for (int i = tid; i < np; i += KB) {
+        const double v = partial[i];
+        if (v < m) m = v;
+    }
+    sm[tid] = m;
+    for (int s = KB / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            const double v = sm[tid + s];
+            if (v < sm[tid]) sm[tid] = v;
+        }
+        __syncthreads();
+    }
+    if (tid == 0) *result = sm[0];
+}
+
+static double* g_partial = nullptr;
+static int64_t g_cap = 0;
+
+extern "C" void tsvc2_launch(const double* a, double* result, int64_t n) {
+    int64_t want = (n + (int64_t)KB * 8 - 1) / ((int64_t)KB * 8);
+    if (want < 1) want = 1;
+    const int64_t CAP = 8192;
+    if (want > CAP) want = CAP;
+    if (g_cap < want) {
+        if (g_partial) { HIP_CHECK(hipFree(g_partial)); g_partial = nullptr; g_cap = 0; }
+        HIP_CHECK(hipMalloc(&g_partial, (size_t)want * sizeof(double)));
+        g_cap = want;
+    }
+    const int nb = (int)want;
+    kmin_part<<<nb, KB>>>(a, n, g_partial);
+    HIP_CHECK(hipGetLastError());
+    kmin_final<<<1, KB>>>(g_partial, nb, result);
+    HIP_CHECK(hipGetLastError());
+}

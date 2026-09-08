@@ -1,0 +1,202 @@
+/* argmax_with_index (TSVC tsvc_2_5) - SIMD multi-core version.
+ *
+ * Reference semantics: left-to-right scan with strict '>', so the FIRST
+ * occurrence of the maximum wins. Merging two left-to-right ordered ranges:
+ * the right range wins only when strictly greater; a tie keeps the left
+ * (lower index). Per-chunk, per-thread and global merges all use that rule,
+ * so the combined result equals the sequential reference scan (NaN included:
+ * a leading NaN poisons exactly as in the reference, since x > NaN is false).
+ *
+ * Each OpenMP thread scans a contiguous span with 8-wide AVX-512 lanes
+ * (4-wide AVX2 or scalar fallback). Lane k carries (max value, index of its
+ * first max). Horizontal reduction: global lane max, then first (lowest)
+ * lane holding it, which is the lowest index. */
+
+#include <stdint.h>
+#include <math.h>
+#include <stddef.h>
+#include <stdlib.h>
+#include <omp.h>
+#include <immintrin.h>
+
+/* Merge of (value, first-index) pairs: larger value wins; on equal value the
+ * smaller index wins. A pair is never NaN (NaN never wins a lane). */
+static inline void pair_finish(const double *vals, const int64_t *idxs, int n,
+                               double *fv, int64_t *fi) {
+  *fv = vals[0];
+  *fi = idxs[0];
+  for (int k = 1; k < n; ++k) {
+    if (vals[k] > *fv || (vals[k] == *fv && idxs[k] < *fi)) {
+      *fv = vals[k];
+      *fi = idxs[k];
+    }
+  }
+}
+
+/* ---- 8-wide (AVX-512) ---- */
+#if defined(__AVX512F__)
+
+static inline void chunk_scan8(const double *restrict a, int64_t start, int64_t end,
+                               double *ov, int64_t *oi) {
+  if (start >= end) { *ov = -HUGE_VAL; *oi = start; return; }
+  double sv = a[start];
+  int64_t si = start;
+  int64_t i = start + 1;
+  while (i < end && ((uintptr_t)(a + i) & 63)) {
+    double t = a[i];
+    if (t > sv) { sv = t; si = i; }
+    ++i;
+  }
+  __m512d vv = _mm512_set1_pd(-HUGE_VAL);
+  __m512d vi = _mm512_set_pd(7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0, 0.0);
+  const __m512d zero_seven = vi;
+  const int64_t n8 = (end - i) / 8;
+  for (int64_t k = 0; k < n8; ++k, i += 8) {
+    __builtin_prefetch(a + i + 512, 0, 3);
+    __m512d xv = _mm512_load_pd(a + i);
+    __m512d xi = _mm512_add_pd(_mm512_set1_pd((double)i), zero_seven);
+    __mmask8 m = _mm512_cmp_pd_mask(xv, vv, _CMP_GT_OQ);
+    vv = _mm512_mask_blend_pd(m, vv, xv);
+    vi = _mm512_mask_blend_pd(m, vi, xi);
+  }
+  if (n8) {
+    double vals[8];
+    int64_t idxs[8];
+    _mm512_store_pd(vals, vv);
+    _mm512_store_si512(idxs, _mm512_cvtpd_epi64(vi));
+    double fv;
+    int64_t fi;
+    pair_finish(vals, idxs, 8, &fv, &fi);
+    if (fv > sv) { sv = fv; si = fi; }
+  }
+  for (; i < end; ++i) {
+    double t = a[i];
+    if (t > sv) { sv = t; si = i; }
+  }
+  *ov = sv;
+  *oi = si;
+}
+
+#endif /* __AVX512F__ */
+
+/* ---- 4-wide (AVX2) ---- */
+#if defined(__AVX2__)
+
+static inline void amax_vec4_merge(__m256d *vv, __m256d *vi, __m256d xv, __m256d xi) {
+  __m256d m = _mm256_cmp_pd(xv, *vv, _CMP_GT_OQ);
+  *vv = _mm256_blendv_pd(*vv, xv, m);
+  *vi = _mm256_blendv_pd(*vi, xi, m);
+}
+
+static inline void chunk_scan4(const double *restrict a, int64_t start, int64_t end,
+                               double *ov, int64_t *oi) {
+  if (start >= end) { *ov = -HUGE_VAL; *oi = start; return; }
+  double sv = a[start];
+  int64_t si = start;
+  int64_t i = start + 1;
+  while (i < end && ((uintptr_t)(a + i) & 31)) {
+    double t = a[i];
+    if (t > sv) { sv = t; si = i; }
+    ++i;
+  }
+  __m256d vv = _mm256_set1_pd(-HUGE_VAL);
+  __m256d vi = _mm256_set_pd(3.0, 2.0, 1.0, 0.0);
+  const __m256d zero_three = vi;
+  const int64_t n4 = (end - i) / 4;
+  for (int64_t k = 0; k < n4; ++k, i += 4) {
+    __builtin_prefetch(a + i + 512, 0, 3);
+    __m256d xv = _mm256_load_pd(a + i);
+    __m256d xi = _mm256_add_pd(_mm256_set1_pd((double)i), zero_three);
+    amax_vec4_merge(&vv, &vi, xv, xi);
+  }
+  if (n4) {
+    double vals[4];
+    int64_t idxs[4];
+    _mm256_store_pd(vals, vv);
+    _mm256_store_si256((void *)idxs, _mm256_cvtpd_epi64(vi));
+    double fv;
+    int64_t fi;
+    pair_finish(vals, idxs, 4, &fv, &fi);
+    if (fv > sv) { sv = fv; si = fi; }
+  }
+  for (; i < end; ++i) {
+    double t = a[i];
+    if (t > sv) { sv = t; si = i; }
+  }
+  *ov = sv;
+  *oi = si;
+}
+
+#endif /* __AVX2__ */
+
+/* ---- scalar ---- */
+static inline void chunk_scan1(const double *restrict a, int64_t start, int64_t end,
+                               double *ov, int64_t *oi) {
+  if (start >= end) { *ov = -HUGE_VAL; *oi = start; return; }
+  double sv = a[start];
+  int64_t si = start;
+  for (int64_t i = start + 1; i < end; ++i) {
+    double t = a[i];
+    if (t > sv) { sv = t; si = i; }
+  }
+  *ov = sv;
+  *oi = si;
+}
+
+void argmax_with_index_fp64(const double *restrict a, int64_t *restrict out_index, double *restrict out_value,
+                            const int64_t LEN_1D) {
+  if (LEN_1D <= 0) {
+    out_value[0] = a[0];
+    out_index[0] = 0;
+    return;
+  }
+  const int64_t T = (int64_t)omp_get_max_threads();
+  double *pv = (double *)malloc((size_t)T * (sizeof(double) + sizeof(int64_t)));
+  int64_t *pi = (int64_t *)(pv + T);
+#if defined(__AVX512F__)
+  const int mode = __builtin_cpu_supports("avx512f") ? 2 :
+                   (__builtin_cpu_supports("avx2") ? 1 : 0);
+#elif defined(__AVX2__)
+  const int mode = __builtin_cpu_supports("avx2") ? 1 : 0;
+#else
+  const int mode = 0;
+#endif
+  #pragma omp parallel
+  {
+    const int64_t t = (int64_t)omp_get_thread_num();
+    const int64_t nt = (int64_t)omp_get_num_threads();
+    const int64_t base = (LEN_1D * t) / nt;
+    const int64_t end = (LEN_1D * (t + 1)) / nt;
+    double bv;
+    int64_t bi;
+#if defined(__AVX512F__)
+    if (mode == 2)
+      chunk_scan8(a, base, end, &bv, &bi);
+    else
+#endif
+#if defined(__AVX2__)
+    if (mode == 1)
+      chunk_scan4(a, base, end, &bv, &bi);
+    else
+#endif
+      chunk_scan1(a, base, end, &bv, &bi);
+    pv[t] = bv;
+    pi[t] = bi;
+  }
+  int64_t first = 0;
+  while (first < T && (LEN_1D * (first + 1)) / T == 0)
+    ++first;
+  double bv = pv[first];
+  int64_t bi = pi[first];
+  for (int64_t t = 0; t < T; ++t) {
+    if (t == first)
+      continue;
+    if (pv[t] > bv) {
+      bv = pv[t];
+      bi = pi[t];
+    }
+  }
+  free(pv);
+  out_value[0] = bv;
+  out_index[0] = bi;
+}

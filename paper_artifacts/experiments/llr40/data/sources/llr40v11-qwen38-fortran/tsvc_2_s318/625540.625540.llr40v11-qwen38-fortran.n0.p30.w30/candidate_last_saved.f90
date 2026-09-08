@@ -1,0 +1,68 @@
+subroutine tsvc_2_s318_fp64(pa, pr, pl, pi) bind(C, name='tsvc_2_s318_fp64')
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  type(c_ptr), value, intent(in) :: pa, pr, pl, pi
+
+  integer(c_int64_t) :: len1d, inc, i, gidx, j
+  double precision :: v, gmax
+  double precision, dimension(:), pointer :: a, res
+  integer, parameter :: MAXT = 2048
+  double precision :: mp(MAXT)
+  integer(c_int64_t) :: ip(MAXT)
+  integer :: nt, t
+
+  len1d = transfer(pl, 0_8)
+  inc   = transfer(pi, 0_8)
+  call c_f_pointer(pa, a, [huge(0_8)])
+  call c_f_pointer(pr, res, [1])
+
+  if (len1d <= 1) then
+     res(1) = abs(a(1))
+     return
+  end if
+
+  ! small case: serial, avoid OMP overhead
+  if (len1d*max(1,inc) < 262144) then
+     gmax = abs(a(1)); gidx = 0
+     do i = 1, len1d - 1
+        v = abs(a(1 + i*inc))
+        if (v > gmax) then
+           gmax = v
+           gidx = i
+        end if
+     end do
+     res(1) = gmax + dble(gidx)
+     return
+  end if
+
+  nt = 1
+  !$omp parallel default(none) shared(a, len1d, inc, mp, ip, nt) private(i, v, t, j)
+     t = omp_get_thread_num() + 1
+     mp(t) = -1.0d0
+     ip(t) = -1
+     !$omp do schedule(static)
+     do i = 1, len1d - 1
+        v = abs(a(1 + i*inc))
+        if (v > mp(t)) then
+           mp(t) = v
+           ip(t) = i
+        end if
+     end do
+     !$omp end do
+     !$omp single
+        nt = omp_get_num_threads()
+     !$omp end single
+  !$omp end parallel
+
+  gmax = abs(a(1))
+  gidx = 0
+  do t = 1, nt
+     if (mp(t) > gmax .or. (mp(t) == gmax .and. ip(t) < gidx)) then
+        gmax = mp(t)
+        gidx = ip(t)
+     end if
+  end do
+
+  res(1) = gmax + dble(gidx)
+end subroutine tsvc_2_s318_fp64

@@ -1,0 +1,20 @@
+import numpy as np
+import numba
+
+# JIT-compiled implementation of the s252 kernel.
+# Computes a[i] = b[i] * c[i] + (b[i-1] * c[i-1] if i > 0 else 0)
+# Operates in-place on array `a`.
+
+@numba.njit(fastmath=True)
+def _s252_impl(a, b, c):
+    t = 0.0
+    n = a.shape[0]
+    for i in range(n):
+        s = b[i] * c[i]
+        a[i] = s + t
+        t = s
+
+def s252(a, b, c, LEN_1D):
+    """In-place kernel for TSVC s252. Returns None (in-place)."""
+    _s252_impl(a, b, c)
+    return None

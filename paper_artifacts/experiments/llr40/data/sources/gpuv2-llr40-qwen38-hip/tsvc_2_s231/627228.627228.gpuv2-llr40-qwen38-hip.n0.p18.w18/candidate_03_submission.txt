@@ -1,0 +1,68 @@
+#include <hip/hip_runtime.h>
+
+__global__ void tsvc_2_s231_kernel(double* __restrict__ aa, const double* __restrict__ bb, long long L) {
+    long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= L) return;
+    double acc = aa[i];
+    long long j = 1;
+    for (; j + 16 - 1 < L; j += 16) {
+        double v0 = bb[j * L + i];
+        double v1 = bb[(j+1) * L + i];
+        double v2 = bb[(j+2) * L + i];
+        double v3 = bb[(j+3) * L + i];
+        double v4 = bb[(j+4) * L + i];
+        double v5 = bb[(j+5) * L + i];
+        double v6 = bb[(j+6) * L + i];
+        double v7 = bb[(j+7) * L + i];
+        double v8 = bb[(j+8) * L + i];
+        double v9 = bb[(j+9) * L + i];
+        double v10 = bb[(j+10) * L + i];
+        double v11 = bb[(j+11) * L + i];
+        double v12 = bb[(j+12) * L + i];
+        double v13 = bb[(j+13) * L + i];
+        double v14 = bb[(j+14) * L + i];
+        double v15 = bb[(j+15) * L + i];
+        acc += v0;
+        aa[j * L + i] = acc;
+        acc += v1;
+        aa[(j+1) * L + i] = acc;
+        acc += v2;
+        aa[(j+2) * L + i] = acc;
+        acc += v3;
+        aa[(j+3) * L + i] = acc;
+        acc += v4;
+        aa[(j+4) * L + i] = acc;
+        acc += v5;
+        aa[(j+5) * L + i] = acc;
+        acc += v6;
+        aa[(j+6) * L + i] = acc;
+        acc += v7;
+        aa[(j+7) * L + i] = acc;
+        acc += v8;
+        aa[(j+8) * L + i] = acc;
+        acc += v9;
+        aa[(j+9) * L + i] = acc;
+        acc += v10;
+        aa[(j+10) * L + i] = acc;
+        acc += v11;
+        aa[(j+11) * L + i] = acc;
+        acc += v12;
+        aa[(j+12) * L + i] = acc;
+        acc += v13;
+        aa[(j+13) * L + i] = acc;
+        acc += v14;
+        aa[(j+14) * L + i] = acc;
+        acc += v15;
+        aa[(j+15) * L + i] = acc;
+    }
+    for (; j < L; ++j) {
+        acc += bb[j * L + i];
+        aa[j * L + i] = acc;
+    }
+}
+
+extern "C" void tsvc_2_s231_launch(double* aa, const double* bb, long long L) {
+    const int T = 256;
+    long long B = (L + T - 1) / T;
+    tsvc_2_s231_kernel<<<(int)B, T>>>(aa, bb, L);
+}

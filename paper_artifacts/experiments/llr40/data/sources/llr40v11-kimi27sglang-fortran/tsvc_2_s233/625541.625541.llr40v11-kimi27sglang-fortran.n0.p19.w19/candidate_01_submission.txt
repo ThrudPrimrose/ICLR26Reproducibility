@@ -1,0 +1,31 @@
+module tsvc_2_s233_m
+  use iso_c_binding, only: c_double, c_int64_t
+  implicit none
+contains
+  subroutine tsvc_2_s233_fp64(aa, bb, cc, LEN_2D) bind(C, name='tsvc_2_s233_fp64')
+    real(c_double), intent(inout) :: aa(0:*), bb(0:*)
+    real(c_double), intent(in)    :: cc(0:*)
+    integer(c_int64_t), value     :: LEN_2D
+    integer(c_int64_t) :: i, j, base
+    real(c_double) :: s(0:LEN_2D-1), t
+    ! column carry for aa: start from boundary row j=7
+    do i = 8, LEN_2D-1
+       s(i) = aa((8-1)*LEN_2D + i)
+    end do
+    do j = 8, LEN_2D-1
+       base = j*LEN_2D
+       ! aa row: vectorizable running sum down each column
+       !$omp simd
+       do i = 8, LEN_2D-1
+          s(i) = s(i) + cc(base + i)
+          aa(base + i) = s(i)
+       end do
+       ! bb row: running sum across the row
+       t = bb(base + 8 - 1)
+       do i = 8, LEN_2D-1
+          t = t + cc(base + i)
+          bb(base + i) = t
+       end do
+    end do
+  end subroutine tsvc_2_s233_fp64
+end module tsvc_2_s233_m

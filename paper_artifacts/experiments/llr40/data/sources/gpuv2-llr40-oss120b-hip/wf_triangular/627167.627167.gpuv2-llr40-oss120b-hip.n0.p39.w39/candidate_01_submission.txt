@@ -1,0 +1,15 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void wf_triangular_kernel_fp64(double* __restrict__ a, const int64_t LEN_2D, const int64_t d) {
+    int64_t i_min = (1 > d - (LEN_2D - 1)) ? 1 : d - (LEN_2D - 1);
+    int64_t i_max = ((LEN_2D - 1) < (d / 2)) ? (LEN_2D - 1) : (d / 2);
+    int64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int64_t i = i_min + idx;
+    if (i > i_max) return;
+    int64_t j = d - i;
+    int64_t pos = i * LEN_2D + j;
+    int64_t up = (i - 1) * LEN_2D + j;
+    int64_t left = i * LEN_2D + (j - 1);
+    a[pos] = a[pos] + a[up] + a[left];
+}

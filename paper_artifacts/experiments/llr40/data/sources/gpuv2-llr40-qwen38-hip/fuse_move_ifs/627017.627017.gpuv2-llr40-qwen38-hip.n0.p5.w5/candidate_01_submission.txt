@@ -1,0 +1,72 @@
+// Device half of fuse_move_ifs (HIP): kernels + launcher.
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+#include <algorithm>
+
+namespace {
+
+__global__ void fmfi_vec_kernel(const double *__restrict__ cond,
+                                const double4 *__restrict__ src,
+                                double4 *__restrict__ a,
+                                double4 *__restrict__ b,
+                                int64_t LEN_2D, int has_b) {
+  const int64_t V = LEN_2D >> 2;
+  const int64_t jstride = (int64_t)gridDim.x * (int64_t)blockDim.x;
+  const int64_t j0 = (int64_t)blockIdx.x * (int64_t)blockDim.x + (int64_t)threadIdx.x;
+  for (int64_t i = (int64_t)blockIdx.y; i < LEN_2D; i += (int64_t)gridDim.y) {
+    const int go_a = (cond[i] > 0.0) ? 1 : 0;
+    const int64_t off = i * V;
+    const double4 *srow = src + off;
+    double4 *arow = a + off;
+    double4 *brow = b + off;
+    for (int64_t j = j0; j < V; j += jstride) {
+      const double4 s = srow[j];
+      if (go_a) {
+        arow[j] = make_double4(s.x * 2.0, s.y * 2.0, s.z * 2.0, s.w * 2.0);
+      }
+      if (has_b) {
+        brow[j] = make_double4(s.x + 1.0, s.y + 1.0, s.z + 1.0, s.w + 1.0);
+      }
+    }
+  }
+}
+
+__global__ void fmfi_scalar_kernel(const double *__restrict__ cond,
+                                   const double *__restrict__ src,
+                                   double *__restrict__ a,
+                                   double *__restrict__ b,
+                                   int64_t LEN_2D, int has_b) {
+  const int64_t jstride = (int64_t)gridDim.x * (int64_t)blockDim.x;
+  const int64_t j0 = (int64_t)blockIdx.x * (int64_t)blockDim.x + (int64_t)threadIdx.x;
+  for (int64_t i = (int64_t)blockIdx.y; i < LEN_2D; i += (int64_t)gridDim.y) {
+    const int go_a = (cond[i] > 0.0) ? 1 : 0;
+    const int64_t off = i * LEN_2D;
+    const double *srow = src + off;
+    double *arow = a + off;
+    double *brow = b + off;
+    for (int64_t j = j0; j < LEN_2D; j += jstride) {
+      const double s = srow[j];
+      if (go_a) arow[j] = s * 2.0;
+      if (has_b) brow[j] = s + 1.0;
+    }
+  }
+}
+
+} // namespace
+
+void fmfi_launch(const double *cond, const double *src, double *a, double *b,
+                 int64_t K, int64_t LEN_2D) {
+  if (LEN_2D <= 0) return;
+  const int has_b = (K > 0) ? 1 : 0;
+  const unsigned TPB = 256;
+  const unsigned gx = 1;
+  const unsigned gy = (unsigned)std::min<int64_t>(LEN_2D, 65535);
+  dim3 grid(gx, gy);
+  dim3 block(TPB);
+  if ((LEN_2D & 3) == 0) {
+    fmfi_vec_kernel<<<grid, block>>>(cond, (const double4 *)src, (double4 *)a,
+                                     (double4 *)b, LEN_2D, has_b);
+  } else {
+    fmfi_scalar_kernel<<<grid, block>>>(cond, src, a, b, LEN_2D, has_b);
+  }
+}

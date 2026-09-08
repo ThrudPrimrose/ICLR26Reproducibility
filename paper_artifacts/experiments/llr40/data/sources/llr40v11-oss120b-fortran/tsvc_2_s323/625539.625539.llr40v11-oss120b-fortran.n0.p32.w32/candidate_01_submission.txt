@@ -1,0 +1,24 @@
+module tsvc_2_s323_mod
+  use iso_c_binding
+  implicit none
+contains
+  subroutine tsvc_2_s323_fp64(a, b, c, d, e, LEN_1D) bind(C, name="tsvc_2_s323_fp64")
+    ! Simple implementation matching the reference C kernel.
+    real(c_double), intent(inout) :: a(*)
+    real(c_double), intent(inout) :: b(*)
+    real(c_double), intent(in) :: c(*)
+    real(c_double), intent(in) :: d(*)
+    real(c_double), intent(in) :: e(*)
+    integer(c_int64_t), value :: LEN_1D
+    integer(c_int64_t) :: i, N
+    real(c_double) :: cd, ce
+    N = LEN_1D
+    if (N <= 1_c_int64_t) return
+    do i = 2, N
+      cd = c(i) * d(i)
+      a(i) = b(i-1) + cd
+      ce = c(i) * e(i)
+      b(i) = a(i) + ce
+    end do
+  end subroutine tsvc_2_s323_fp64
+end module tsvc_2_s323_mod

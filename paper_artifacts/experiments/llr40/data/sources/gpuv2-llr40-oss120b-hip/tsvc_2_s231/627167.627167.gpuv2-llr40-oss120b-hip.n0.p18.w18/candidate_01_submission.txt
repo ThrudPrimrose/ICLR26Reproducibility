@@ -1,0 +1,11 @@
+#include <hip/hip_runtime.h>
+extern "C" __global__ void tsvc_2_s231_kernel(double *__restrict__ aa, const double *__restrict__ bb, int64_t LEN_2D) {
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (i >= LEN_2D) return;
+    double sum = aa[i];
+    for (int64_t j = 1; j < LEN_2D; ++j) {
+        double b = bb[j * LEN_2D + i];
+        sum += b;
+        aa[j * LEN_2D + i] = sum;
+    }
+}

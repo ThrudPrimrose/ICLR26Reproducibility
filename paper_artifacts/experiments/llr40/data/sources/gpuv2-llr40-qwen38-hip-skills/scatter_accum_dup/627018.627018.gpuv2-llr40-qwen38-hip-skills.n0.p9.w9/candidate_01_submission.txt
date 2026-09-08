@@ -1,0 +1,20 @@
+// Device half: scatter-accumulate bins[ip[i]] += src[i], correct under duplicate indices.
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void scatter_accum_kernel(double* __restrict__ bins,
+                                     const double* __restrict__ src,
+                                     const int32_t* __restrict__ ip,
+                                     const int64_t n) {
+  const int64_t stride = (int64_t)gridDim.x * (int64_t)blockDim.x;
+  for (int64_t i = (int64_t)blockIdx.x * (int64_t)blockDim.x + (int64_t)threadIdx.x; i < n; i += stride) {
+    atomicAdd(&bins[ip[i]], src[i]);
+  }
+}
+
+void scatter_accum_launch(double* bins, const double* src, const int32_t* ip, int64_t n) {
+  const int block = 256;
+  int64_t blocks = (n + block - 1) / block;
+  if (blocks < 1) blocks = 1;
+  scatter_accum_kernel<<<(unsigned)blocks, block>>>(bins, src, ip, n);
+}

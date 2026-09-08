@@ -1,0 +1,43 @@
+#include <hip/hip_runtime.h>
+#include <stdint.h>
+
+#define VEC 8
+#define TPB 256
+
+__global__ void __launch_bounds__(TPB) s255_k(const double * __restrict__ b, double * __restrict__ a, const int64_t n) {
+  const int64_t t = (int64_t)blockIdx.x * TPB + threadIdx.x;
+  const int64_t i0 = t * VEC;
+  if (t >= 1 && i0 + VEC <= n) {
+    const double4 *bp = reinterpret_cast<const double4 *>(b + i0);
+    double4 v0 = bp[0];
+    double4 v1 = bp[1];
+    const double p1 = b[i0 - 1];
+    const double p2 = b[i0 - 2];
+    double4 o0, o1;
+    o0.x = (v0.x + p1 + p2) * 0.333;
+    o0.y = (v0.y + v0.x + p1) * 0.333;
+    o0.z = (v0.z + v0.y + v0.x) * 0.333;
+    o0.w = (v0.w + v0.z + v0.y) * 0.333;
+    o1.x = (v1.x + v0.w + v0.z) * 0.333;
+    o1.y = (v1.y + v1.x + v0.w) * 0.333;
+    o1.z = (v1.z + v1.y + v1.x) * 0.333;
+    o1.w = (v1.w + v1.z + v1.y) * 0.333;
+    *reinterpret_cast<double4 *>(a + i0) = o0;
+    *reinterpret_cast<double4 *>(a + i0 + 4) = o1;
+  } else if (i0 < n) {
+    for (int64_t i = i0; i < n && i < i0 + VEC; i++) {
+      double xv, yv;
+      if (i == 0) { xv = b[n - 1]; yv = b[n - 2]; }
+      else if (i == 1) { xv = b[0]; yv = b[n - 1]; }
+      else { xv = b[i - 1]; yv = b[i - 2]; }
+      a[i] = (b[i] + xv + yv) * 0.333;
+    }
+  }
+}
+
+extern "C" void tsvc_2_s255_launch(const double *b, double *a, const int64_t n) {
+  int64_t threads = (n + VEC - 1) / VEC;
+  int64_t blocks = (threads + TPB - 1) / TPB;
+  if (blocks < 1) blocks = 1;
+  s255_k<<<(unsigned)blocks, TPB>>>(b, a, n);
+}

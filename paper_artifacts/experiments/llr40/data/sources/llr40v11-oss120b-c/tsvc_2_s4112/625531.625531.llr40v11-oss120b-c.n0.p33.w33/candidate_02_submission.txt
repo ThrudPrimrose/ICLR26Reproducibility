@@ -1,0 +1,30 @@
+/* Optimized tsvc_2_s4112_fp64 using OpenMP parallelism and AVX2 gather */
+#include <stdint.h>
+#include <immintrin.h>
+
+void tsvc_2_s4112_fp64(double *restrict a, const double *restrict b, const int32_t *restrict ip, const int64_t LEN_1D) {
+    // Align pointers for SIMD ops
+    double *restrict a_aligned = (double *)__builtin_assume_aligned(a, 32);
+    const double *restrict b_aligned = (const double *)__builtin_assume_aligned(b, 32);
+    const int32_t *restrict ip_aligned = (const int32_t *)__builtin_assume_aligned(ip, 16);
+
+    const __m256d two = _mm256_set1_pd(2.0);
+    int64_t vec_end = LEN_1D - (LEN_1D % 4);
+    #pragma omp parallel for schedule(static)
+    for (int64_t i = 0; i < vec_end; i += 4) {
+        // Load four indices
+        __m128i idx = _mm_loadu_si128((const __m128i *)&ip_aligned[i]);
+        // Gather four doubles from b
+        __m256d b_vals = _mm256_i32gather_pd(b_aligned, idx, 8);
+        // Load four a values
+        __m256d a_vals = _mm256_loadu_pd(&a_aligned[i]);
+        // a_vals = a_vals + 2.0 * b_vals
+        a_vals = _mm256_add_pd(_mm256_mul_pd(b_vals, two), a_vals);
+        // Store results back to a
+        _mm256_storeu_pd(&a_aligned[i], a_vals);
+    }
+    // Tail loop for leftovers
+    for (int64_t i = vec_end; i < LEN_1D; ++i) {
+        a_aligned[i] += b_aligned[ip_aligned[i]] * 2.0;
+    }
+}

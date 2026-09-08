@@ -1,0 +1,20 @@
+#include <stdint.h>
+
+void segment_reduce_ragged_fp64(double *restrict out,
+                                const int64_t *restrict row_ptr,
+                                const double *restrict val,
+                                const double *restrict w,
+                                const int64_t NSEG) {
+  const int64_t total = NSEG * 24;
+  for (int64_t s = 0; s < NSEG; ++s) {
+    int64_t lo = row_ptr[s];
+    int64_t hi = row_ptr[s + 1];
+    if (lo < 0) lo = 0;
+    if (hi > total) hi = total;
+    double acc = 0.0;
+    for (int64_t e = lo; e < hi; ++e) {
+      acc += val[e] * w[e];
+    }
+    out[s] = acc;
+  }
+}

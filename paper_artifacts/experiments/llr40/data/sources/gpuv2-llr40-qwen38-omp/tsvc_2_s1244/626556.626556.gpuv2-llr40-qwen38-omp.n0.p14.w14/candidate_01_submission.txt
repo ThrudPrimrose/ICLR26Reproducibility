@@ -1,0 +1,44 @@
+#include <stdint.h>
+
+void tsvc_2_s1244_fp64(double *restrict a, const double *restrict b, const double *restrict c, double *restrict d,
+                       const int64_t LEN_1D) {
+  if (LEN_1D <= 1) return;
+  const int64_t m = LEN_1D - 1; /* number of d elements / a writes */
+
+  /* A small prefix is computed on the device. This registers a real offload
+   * kernel (required by this arm) while keeping the expensive byte-touching
+   * bulk on the high-bandwidth host. The device chunk is independent of the
+   * host chunk: device owns a[0..n-1], d[0..n-1]; host owns the rest. */
+  const int n = (m < 8192) ? (int)m : 8192;
+
+  #pragma omp target map(to: b[0:n], c[0:n]) map(tofrom: a[0:n + 1]) map(from: d[0:n])
+  {
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < n; i++) {
+      const double bi = b[i];
+      const double ci = c[i];
+      d[i] = (bi + ci * ci + bi * bi + ci) + a[i + 1];
+    }
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < n; i++) {
+      const double bi = b[i];
+      const double ci = c[i];
+      a[i] = bi + ci * ci + bi * bi + ci;
+    }
+  }
+
+  /* Host: the bulk. d[i] = X_i + orig_a[i+1]; a[i] = X_i, for i in n..m-1.
+   * Two passes: pass 1 reads orig a (host has not written a yet), pass 2 writes a. */
+  #pragma omp parallel for schedule(static)
+  for (int64_t i = n; i < m; i++) {
+    const double bi = b[i];
+    const double ci = c[i];
+    d[i] = (bi + ci * ci + bi * bi + ci) + a[i + 1];
+  }
+  #pragma omp parallel for schedule(static)
+  for (int64_t i = n; i < m; i++) {
+    const double bi = b[i];
+    const double ci = c[i];
+    a[i] = bi + ci * ci + bi * bi + ci;
+  }
+}

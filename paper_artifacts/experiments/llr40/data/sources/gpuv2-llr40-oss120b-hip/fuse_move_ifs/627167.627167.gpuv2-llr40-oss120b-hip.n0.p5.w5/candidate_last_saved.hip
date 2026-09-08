@@ -1,0 +1,46 @@
+#include <hip/hip_runtime.h>
+
+extern "C" void fuse_move_ifs_fp64(double *a, double *b,
+                                   const double *cond,
+                                   const double *src,
+                                   const long long K,
+                                   const long long LEN_2D);
+
+// Device kernel
+__global__ void fuse_move_ifs_kernel(double *a, double *b,
+                                     const double *cond,
+                                     const double *src,
+                                     const long long K,
+                                     const long long LEN_2D) {
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < LEN_2D && j < LEN_2D) {
+        size_t idx = (size_t)i * (size_t)LEN_2D + (size_t)j;
+        if (cond[i] > 0.0) {
+            a[idx] = src[idx] * 2.0;
+        }
+        if (K > 0) {
+            b[idx] = src[idx] + 1.0;
+        }
+    }
+}
+
+extern "C" void fuse_move_ifs_fp64(double *a, double *b,
+                                   const double *cond,
+                                   const double *src,
+                                   const long long K,
+                                   const long long LEN_2D) {
+    const int blockX = 32;
+    const int blockY = 8;
+    dim3 block(blockX, blockY);
+    dim3 grid((LEN_2D + blockX - 1) / blockX, (LEN_2D + blockY - 1) / blockY);
+    hipLaunchKernelGGL(fuse_move_ifs_kernel, grid, block, 0, 0,
+                       a, b, cond, src, K, LEN_2D);
+    // Check for kernel launch errors
+    hipError_t err = hipGetLastError();
+    if (err != hipSuccess) {
+        // Optionally, you could handle error; for now do nothing.
+    }
+    // Wait for kernel to finish (synchronization ensures correctness)
+    hipDeviceSynchronize();
+}

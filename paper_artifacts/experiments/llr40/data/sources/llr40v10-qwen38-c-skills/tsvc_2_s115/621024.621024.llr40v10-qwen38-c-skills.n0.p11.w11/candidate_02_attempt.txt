@@ -1,0 +1,93 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <omp.h>
+
+#define T_SERIAL 256
+
+static double *g_buf = NULL;   /* [nt][len] per-thread partials + [1][len] accumulator */
+static int64_t g_cap = 0;      /* capacity in doubles */
+
+static void ensure_buf(int64_t need) {
+  if (need > g_cap) {
+    if (g_buf) free(g_buf);
+    size_t bytes = (size_t)need * sizeof(double);
+    bytes = (bytes + 63u) & ~(size_t)63u;
+    g_buf = aligned_alloc(64, bytes);
+    if (!g_buf) abort();
+    g_cap = need;
+  }
+}
+
+/* Serial triangular update: for j<n, i in (j, n): a[i] -= aa[j*stride+i]*a[j] */
+static void core_serial(double *restrict a, const double *restrict aa,
+                        int64_t n, int64_t stride) {
+  for (int64_t j = 0; j < n; j++) {
+    const double aj = a[j];
+    const double *restrict row = aa + j * stride;
+    #pragma omp simd
+    for (int64_t i = j + 1; i < n; i++) a[i] -= row[i] * aj;
+  }
+}
+
+/* a[m+i2] -= sum_{j=0}^{m-1} aa[j*stride+m+i2] * a[j],  i2 in [0, n-m).
+ * Fully parallel: threads split the j dimension, each with a private
+ * partial accumulator (unit-stride FMA), combined afterwards. */
+static void block_mv(double *restrict a, const double *restrict aa,
+                     int64_t n, int64_t m, int64_t stride, int nt) {
+  const int64_t len = n - m;
+  if (nt > 1 && (int64_t)nt * len > 2048) {
+    ensure_buf((int64_t)(nt + 1) * len);
+    double *const base = g_buf;
+    #pragma omp parallel num_threads(nt)
+    {
+      const int tid = omp_get_thread_num();
+      double *restrict my = base + (int64_t)tid * len;
+      #pragma omp for schedule(static) nowait
+      for (int64_t i2 = 0; i2 < len; i2++) my[i2] = 0.0;
+      #pragma omp for schedule(static)
+      for (int64_t j = 0; j < m; j++) {
+        const double aj = a[j];
+        const double *restrict row = aa + j * stride + m;
+        #pragma omp simd
+        for (int64_t i2 = 0; i2 < len; i2++) my[i2] += row[i2] * aj;
+      }
+    }
+    double *restrict acc = base + (int64_t)nt * len;
+    double *restrict pt = base;
+    #pragma omp simd
+    for (int64_t i2 = 0; i2 < len; i2++) acc[i2] = pt[i2];
+    for (int t = 1; t < nt; t++) {
+      pt = base + (int64_t)t * len;
+      #pragma omp simd
+      for (int64_t i2 = 0; i2 < len; i2++) acc[i2] += pt[i2];
+    }
+    #pragma omp simd
+    for (int64_t i2 = 0; i2 < len; i2++) a[m + i2] -= acc[i2];
+  } else {
+    /* too small to parallelize: serial rank-m update */
+    for (int64_t j = 0; j < m; j++) {
+      const double aj = a[j];
+      const double *restrict row = aa + j * stride + m;
+      #pragma omp simd
+      for (int64_t i2 = 0; i2 < len; i2++) a[m + i2] -= row[i2] * aj;
+    }
+  }
+}
+
+/* D&C: solve lower half, apply cross-block product, solve upper half.
+ * The serial chain lives only on the critical path, O(log n) levels deep;
+ * each level's cross product is a fully parallel matrix-vector product. */
+static void rec(double *restrict a, const double *restrict aa,
+                int64_t n, int64_t stride, int nt) {
+  if (n <= T_SERIAL) { core_serial(a, aa, n, stride); return; }
+  const int64_t m = n / 2;
+  rec(a, aa, m, stride, nt);
+  block_mv(a, aa, n, m, stride, nt);
+  rec(a + m, aa + m * stride + m, n - m, stride, nt);
+}
+
+void tsvc_2_s115_fp64(double *restrict a, const double *restrict aa, const int64_t LEN_2D) {
+  if (LEN_2D <= T_SERIAL) { core_serial(a, aa, LEN_2D, LEN_2D); return; }
+  const int nt = omp_get_max_threads();
+  rec(a, aa, LEN_2D, LEN_2D, nt);
+}

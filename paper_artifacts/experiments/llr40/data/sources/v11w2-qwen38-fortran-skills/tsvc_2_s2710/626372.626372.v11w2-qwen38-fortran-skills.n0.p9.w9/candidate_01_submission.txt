@@ -1,0 +1,56 @@
+subroutine tsvc_2_s2710_fp64(a, b, c, d, e, x, len_1d) bind(C)
+  use iso_c_binding
+  implicit none
+  integer(c_int64_t), value, intent(in) :: len_1d
+  real(c_double), intent(inout) :: a(len_1d), b(len_1d), c(len_1d)
+  real(c_double), intent(in) :: d(len_1d), e(len_1d), x(len_1d)
+
+  integer(c_int64_t) :: n, i
+  logical :: m
+  real(c_double) :: aa, bb, cc, dd, ee
+
+  n = len_1d
+  if (n <= 0) return
+
+  ! loop-invariant guards hoisted out (LEN_1D > 10, x[0] > 0.0);
+  ! each element i is independent -> parallel + vectorizable, branch-free
+  if (n > 10) then
+    if (x(1) > 0.0d0) then
+      !$omp parallel do simd schedule(static)
+      do i = 1, n
+        aa = a(i); bb = b(i); cc = c(i); dd = d(i); ee = e(i)
+        m = aa > bb
+        a(i) = merge(aa + bb*dd, aa, m)
+        b(i) = merge(aa + ee*ee, bb, .not. m)
+        c(i) = merge(cc + dd*dd, aa + dd*dd, m)
+      end do
+    else
+      !$omp parallel do simd schedule(static)
+      do i = 1, n
+        aa = a(i); bb = b(i); cc = c(i); dd = d(i); ee = e(i)
+        m = aa > bb
+        a(i) = merge(aa + bb*dd, aa, m)
+        b(i) = merge(aa + ee*ee, bb, .not. m)
+        c(i) = cc + merge(dd*dd, ee*ee, m)
+      end do
+    end if
+  else
+    if (x(1) > 0.0d0) then
+      do i = 1, n
+        aa = a(i); bb = b(i); dd = d(i); ee = e(i)
+        m = aa > bb
+        a(i) = merge(aa + bb*dd, aa, m)
+        b(i) = merge(aa + ee*ee, bb, .not. m)
+        c(i) = merge(dd*ee + 1.0d0, aa + dd*dd, m)
+      end do
+    else
+      do i = 1, n
+        aa = a(i); bb = b(i); cc = c(i); dd = d(i); ee = e(i)
+        m = aa > bb
+        a(i) = merge(aa + bb*dd, aa, m)
+        b(i) = merge(aa + ee*ee, bb, .not. m)
+        c(i) = merge(dd*ee + 1.0d0, cc + ee*ee, m)
+      end do
+    end if
+  end if
+end subroutine tsvc_2_s2710_fp64

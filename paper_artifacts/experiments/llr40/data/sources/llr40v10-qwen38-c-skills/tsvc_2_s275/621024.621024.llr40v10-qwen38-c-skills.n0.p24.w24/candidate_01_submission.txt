@@ -1,0 +1,20 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s275_fp64(double *restrict aa, const double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+  if (LEN_2D <= 1) return;
+  const int64_t L = LEN_2D;
+  #pragma omp parallel for schedule(static)
+  for (int64_t i = 0; i < L; i++) {
+    const double *restrict b = bb + i;
+    const double *restrict c = cc + i;
+    double *restrict a_ = aa + i;
+    if (a_[0] > 0.0) {
+      double acc = a_[0];
+      for (int64_t j = 1; j < L; j++) {
+        acc += b[j * L] * c[j * L];
+        a_[j * L] = acc;
+      }
+    }
+  }
+}

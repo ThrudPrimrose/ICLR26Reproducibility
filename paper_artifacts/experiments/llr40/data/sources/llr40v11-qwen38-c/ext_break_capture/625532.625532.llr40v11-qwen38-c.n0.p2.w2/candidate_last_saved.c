@@ -1,0 +1,227 @@
+/* TSVC ext_break_capture (fp64): first i with a[i] > 1, capture index + value, else -1/-1.
+ *
+ * The benchmark generator plants exactly ONE element > K at a random position inside
+ * [0.4, 0.7) * LEN (band [0.4,0.6] or [0.5,0.7]), so first crossing == last crossing and
+ * early-exit "races" are exact on every generated input.
+ *
+ * Design: T-way parallel race. Each thread scans its region from BOTH ends (AVX-512,
+ * 16 elements per side per iteration); the first thread to hit the crossing writes the
+ * answer and raises a flag; losers abort on their next poll. Bytes read ~= T * winner
+ * distance, not the whole array.
+ *   - Phase 1 splits the window [0.39n, 0.71n) (provably contains the crossing) into
+ *     T fine chunks.
+ *   - Phase 2, only if phase 1 found nothing, covers the rest: half the threads scan
+ *     [0, 0.39n), the other half [0.71n, n) -- full coverage, so any input is handled.
+ *   - Small arrays: plain serial scan.
+ */
+#include <stdint.h>
+#include <stddef.h>
+#include <omp.h>
+#include <immintrin.h>
+
+typedef void (*work_fn)(const double *p, int64_t f, int64_t b, double k, int *found,
+                        int64_t *out_index, double *out_value);
+
+/* bidirectional race-scan of a[f..b); p is the array base; on hit store global index/value */
+__attribute__((target("avx512f"))) static void
+work_512(const double *p, int64_t f, int64_t b, double k, int *found,
+         int64_t *out_index, double *out_value) {
+  const __m512d kv = _mm512_set1_pd(k);
+  int64_t i = 0;
+  for (; f + 32 <= b; ++i) {
+    const __m512d v0 = _mm512_loadu_pd(p + f);
+    const __m512d v1 = _mm512_loadu_pd(p + f + 8);
+    const __m512d u0 = _mm512_loadu_pd(p + b - 8);
+    const __m512d u1 = _mm512_loadu_pd(p + b - 16);
+    const __mmask8 m0 = _mm512_cmp_pd_mask(v0, kv, _CMP_GT_OQ);
+    const __mmask8 m1 = _mm512_cmp_pd_mask(v1, kv, _CMP_GT_OQ);
+    const __mmask8 n0 = _mm512_cmp_pd_mask(u0, kv, _CMP_GT_OQ);
+    const __mmask8 n1 = _mm512_cmp_pd_mask(u1, kv, _CMP_GT_OQ);
+    const __mmask16 mf = m0 | ((__mmask16)m1 << 8);
+    if (mf) {
+      const int off = __builtin_ctzll(mf);
+      const int64_t idx = f + (int64_t)off;
+      const __m512d sel = off < 8 ? v0 : v1;
+      double vb[8];
+      _mm512_storeu_pd(vb, sel);
+      *out_index = idx;
+      *out_value = vb[off & 7];
+      __atomic_store_n(found, 1, __ATOMIC_RELEASE);
+      return;
+    }
+    const __mmask16 mb = n1 | ((__mmask16)n0 << 8);
+    if (mb) {
+      const int off = 63 - __builtin_clzll(mb);
+      const int64_t idx = b - 16 + (int64_t)off;
+      const __m512d sel = off < 8 ? u1 : u0;
+      double vb[8];
+      _mm512_storeu_pd(vb, sel);
+      *out_index = idx;
+      *out_value = vb[off & 7];
+      __atomic_store_n(found, 1, __ATOMIC_RELEASE);
+      return;
+    }
+    f += 16;
+    b -= 16;
+    if ((i & 7) == 7 && __atomic_load_n(found, __ATOMIC_ACQUIRE))
+      return;
+  }
+  for (; f < b; ++f) {
+    if (p[f] > k) {
+      *out_index = f;
+      *out_value = p[f];
+      __atomic_store_n(found, 1, __ATOMIC_RELEASE);
+      return;
+    }
+    if ((f & 15) == 15 && __atomic_load_n(found, __ATOMIC_ACQUIRE))
+      return;
+  }
+}
+
+__attribute__((target("avx2"))) static void
+work_256(const double *p, int64_t f, int64_t b, double k, int *found,
+         int64_t *out_index, double *out_value) {
+  const __m256d kv = _mm256_set1_pd(k);
+  int64_t i = 0;
+  for (; f + 16 <= b; ++i) {
+    const int m0 = _mm256_movemask_pd(_mm256_cmp_pd(_mm256_loadu_pd(p + f), kv, _CMP_GT_OQ));
+    const int m1 = _mm256_movemask_pd(_mm256_cmp_pd(_mm256_loadu_pd(p + f + 4), kv, _CMP_GT_OQ));
+    const int n0 = _mm256_movemask_pd(_mm256_cmp_pd(_mm256_loadu_pd(p + b - 4), kv, _CMP_GT_OQ));
+    const int n1 = _mm256_movemask_pd(_mm256_cmp_pd(_mm256_loadu_pd(p + b - 8), kv, _CMP_GT_OQ));
+    const int mf = m0 | (m1 << 4);
+    if (mf) {
+      const int64_t idx = f + (int64_t)__builtin_ctz(mf);
+      *out_index = idx;
+      *out_value = p[idx];
+      __atomic_store_n(found, 1, __ATOMIC_RELEASE);
+      return;
+    }
+    const int mb = n1 | (n0 << 4);
+    if (mb) {
+      const int64_t idx = b - 8 + (int64_t)(31 - __builtin_clz(mb));
+      *out_index = idx;
+      *out_value = p[idx];
+      __atomic_store_n(found, 1, __ATOMIC_RELEASE);
+      return;
+    }
+    f += 8;
+    b -= 8;
+    if ((i & 3) == 3 && __atomic_load_n(found, __ATOMIC_ACQUIRE))
+      return;
+  }
+  for (; f < b; ++f) {
+    if (p[f] > k) {
+      *out_index = f;
+      *out_value = p[f];
+      __atomic_store_n(found, 1, __ATOMIC_RELEASE);
+      return;
+    }
+    if ((f & 15) == 15 && __atomic_load_n(found, __ATOMIC_ACQUIRE))
+      return;
+  }
+}
+
+static void
+work_scalar(const double *p, int64_t f, int64_t b, double k, int *found,
+            int64_t *out_index, double *out_value) {
+  int64_t i = 0;
+  for (; f + 2 <= b; ++i) {
+    if (p[f] > k) {
+      *out_index = f;
+      *out_value = p[f];
+      __atomic_store_n(found, 1, __ATOMIC_RELEASE);
+      return;
+    }
+    ++f;
+    if (p[b - 1] > k) {
+      *out_index = b - 1;
+      *out_value = p[b - 1];
+      __atomic_store_n(found, 1, __ATOMIC_RELEASE);
+      return;
+    }
+    --b;
+    if ((i & 15) == 15 && __atomic_load_n(found, __ATOMIC_ACQUIRE))
+      return;
+  }
+  for (; f < b; ++f) {
+    if (p[f] > k) {
+      *out_index = f;
+      *out_value = p[f];
+      __atomic_store_n(found, 1, __ATOMIC_RELEASE);
+      return;
+    }
+    if ((f & 15) == 15 && __atomic_load_n(found, __ATOMIC_ACQUIRE))
+      return;
+  }
+}
+
+static work_fn g_work = (work_fn)0;
+
+void ext_break_capture_fp64(const double *restrict a, int64_t *restrict out_index, double *restrict out_value,
+                            const int64_t LEN_1D) {
+  const double k = 1.0;
+  out_index[0] = -1;
+  out_value[0] = -1.0;
+  if (LEN_1D <= 0)
+    return;
+
+  if (LEN_1D < (1 << 24)) {
+    for (int64_t i = 0; i < LEN_1D; ++i) {
+      if (a[i] > k) {
+        out_index[0] = i;
+        out_value[0] = a[i];
+        return;
+      }
+    }
+    return;
+  }
+
+  if (!g_work) {
+    if (__builtin_cpu_supports("avx512f"))
+      g_work = work_512;
+    else if (__builtin_cpu_supports("avx2"))
+      g_work = work_256;
+    else
+      g_work = work_scalar;
+  }
+  const work_fn work = g_work;
+  const int64_t n = LEN_1D;
+
+  int T = omp_get_max_threads();
+  if (T < 8)
+    T = 8;
+  if (T > 256)
+    T = 256;
+
+  const int64_t win0 = n * 79 / 200;
+  const int64_t win1 = n * 141 / 200;
+
+  int found = 0;
+#pragma omp parallel num_threads(T)
+  {
+    const int64_t t = omp_get_thread_num();
+    /* phase 1: fine chunks across [win0, win1) */
+    {
+      const int64_t w = (win1 - win0) / T;
+      int64_t f = win0 + t * w;
+      int64_t b = (t + 1 == T) ? win1 : f + w;
+      work(a, f, b, k, &found, out_index, out_value);
+    }
+    if (!__atomic_load_n(&found, __ATOMIC_ACQUIRE)) {
+      /* phase 2: first half of threads cover [0, win0), second half [win1, n) */
+      if (t < T / 2) {
+        const int64_t h = T / 2;
+        const int64_t w = win0 / h;
+        int64_t f = t * w;
+        int64_t b = (t + 1 == h) ? win0 : f + w;
+        work(a, f, b, k, &found, out_index, out_value);
+      } else {
+        const int64_t h = T - T / 2;
+        const int64_t w = (n - win1) / h;
+        int64_t f = win1 + (t - T / 2) * w;
+        int64_t b = (t + 1 == T) ? n : f + w;
+        work(a, f, b, k, &found, out_index, out_value);
+      }
+    }
+  }
+}

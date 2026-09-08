@@ -1,0 +1,31 @@
+#include <stdint.h>
+#include <omp.h>
+
+/* TSVC tsvc_2_5 fuse_stencil_through_transient, fp64, single invocation.
+ *
+ * out[i] = (a[i-1] + a[i] + a[i+1]) * (a[i] + a[i+1] + a[i+2])
+ * for i in [1, LEN_1D-3].
+ *
+ * The loop is fully parallel (writes out[i], reads only a).  For large inputs
+ * the region is offloaded to the device; the whole arrays are mapped with a
+ * single target construct so no byte moves more than once.  Small inputs stay
+ * on the host, where the launch + transfer overhead would dominate.
+ */
+
+void fuse_stencil_through_transient_fp64(const double *restrict a, double *restrict out, const int64_t LEN_1D) {
+  const int64_t n = LEN_1D;
+  if (n <= 3) return;
+  const int64_t hi = n - 2; /* i runs 1 .. n-3 */
+
+  if (n >= (1 << 20)) {
+#pragma omp target map(to: a[0:n]) map(tofrom: out[0:n])
+#pragma omp teams distribute parallel for simd
+    for (int64_t i = 1; i < hi; ++i) {
+      out[i] = (a[i - 1] + a[i] + a[i + 1]) * (a[i] + a[i + 1] + a[i + 2]);
+    }
+  } else {
+    for (int64_t i = 1; i < hi; ++i) {
+      out[i] = (a[i - 1] + a[i] + a[i + 1]) * (a[i] + a[i + 1] + a[i + 2]);
+    }
+  }
+}

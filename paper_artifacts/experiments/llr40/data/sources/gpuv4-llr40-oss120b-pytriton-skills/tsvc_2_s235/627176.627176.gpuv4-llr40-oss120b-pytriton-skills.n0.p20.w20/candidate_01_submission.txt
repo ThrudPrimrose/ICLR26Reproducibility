@@ -1,0 +1,18 @@
+'''Row-wise vectorized implementation for the tsvc_2_s235 kernel.
+
+The recurrence can be expressed as:
+    a[i] = a[i] + b[i] * c[i]
+    aa[j, i] = aa[j-1, i] + bb[j, i] * a[i]   for j >= 1
+After updating ``a`` we iterate over rows ``j`` and update each row of ``aa``
+using NumPy vector operations.  This avoids column-wise strides and runs fast
+with only a modest Python loop over ``j`` (O(N) iterations).
+''' 
+import numpy as np
+
+def s235(a, b, c, aa, bb, LEN_2D):
+    # Update a in-place.
+    a += b * c
+    # Update aa row by row.
+    for j in range(1, LEN_2D):
+        aa[j, :] = aa[j-1, :] + bb[j, :] * a
+    return None

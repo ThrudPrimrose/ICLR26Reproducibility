@@ -1,0 +1,19 @@
+// device kernels
+#include <hip/hip_runtime.h>
+#include <cstdint>
+extern "C" __global__ void aa_kernel(double* __restrict__ aa, const double* __restrict__ cc, int64_t N_signed) {
+    const uint64_t N = static_cast<uint64_t>(N_signed);
+    uint64_t i = (static_cast<uint64_t>(blockIdx.x) * blockDim.x) + static_cast<uint64_t>(threadIdx.x) + 8ULL;
+    if (i >= N) return;
+    for (uint64_t j = 8ULL; j < N; ++j) {
+        aa[j * N + i] = aa[(j - 1) * N + i] + cc[j * N + i];
+    }
+}
+extern "C" __global__ void bb_kernel(double* __restrict__ bb, const double* __restrict__ cc, int64_t N_signed) {
+    const uint64_t N = static_cast<uint64_t>(N_signed);
+    uint64_t j = (static_cast<uint64_t>(blockIdx.x) * blockDim.x) + static_cast<uint64_t>(threadIdx.x) + 8ULL;
+    if (j >= N) return;
+    for (uint64_t i = 8ULL; i < N; ++i) {
+        bb[j * N + i] = bb[j * N + (i - 1)] + cc[j * N + i];
+    }
+}

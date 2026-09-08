@@ -1,0 +1,82 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+#define QA_BLOCK 256          // threads per block (4 waves of 64)
+#define QA_WAVE  64
+#define QA_MAXG  2048
+
+__global__ void __launch_bounds__(QA_BLOCK)
+qa_kernel(const double* __restrict__ a,
+          double* __restrict__ out,
+          int64_t npairs,
+          double* __restrict__ partials,
+          unsigned* __restrict__ counter)
+{
+    const int64_t gtid = (int64_t)blockIdx.x * QA_BLOCK + threadIdx.x;
+    const int64_t S    = (int64_t)gridDim.x * QA_BLOCK;
+
+    double acc = 0.0;
+    int64_t m = gtid;
+    while (m + 3 * S < npairs) {
+        const double* p = a + 2 * m;
+        double2 v0 = *reinterpret_cast<const double2*>(p);
+        double2 v1 = *reinterpret_cast<const double2*>(p + 2 * S);
+        double2 v2 = *reinterpret_cast<const double2*>(p + 4 * S);
+        double2 v3 = *reinterpret_cast<const double2*>(p + 6 * S);
+        acc += v0.y + v1.y + v2.y + v3.y;
+        m += 4 * S;
+    }
+    for (; m < npairs; m += S)
+        acc += (*reinterpret_cast<const double2*>(a + 2 * m)).y;
+
+    // full-wave reduction (all 64 lanes active at every shfl site)
+    #pragma unroll
+    for (int off = 32; off > 0; off >>= 1)
+        acc += __shfl_down_sync(0xffffffffffffffffull, acc, off);
+
+    __shared__ double smem[QA_BLOCK / QA_WAVE];
+    if ((threadIdx.x & (QA_WAVE - 1)) == 0)
+        smem[threadIdx.x / QA_WAVE] = acc;
+    __syncthreads();
+
+    if (threadIdx.x == 0) {
+        double v = smem[0] + smem[1] + smem[2] + smem[3];
+        partials[blockIdx.x] = v;
+        __threadfence();
+        unsigned done = atomicAdd(counter, 1u);
+        smem[0] = (done == (unsigned)gridDim.x - 1u) ? 1.0 : 0.0;
+    }
+    __syncthreads();
+    if (smem[0] != 0.0) {
+        if (threadIdx.x == 0) *counter = 0u;
+        double f = 0.0;
+        for (int i = threadIdx.x; i < (int)gridDim.x; i += QA_BLOCK)
+            f += partials[i];
+        #pragma unroll
+        for (int off = 32; off > 0; off >>= 1)
+            f += __shfl_down_sync(0xffffffffffffffffull, f, off);
+        if ((threadIdx.x & (QA_WAVE - 1)) == 0)
+            smem[threadIdx.x / QA_WAVE] = f;
+        __syncthreads();
+        if (threadIdx.x == 0)
+            out[0] = smem[0] + smem[1] + smem[2] + smem[3];
+    }
+}
+
+static double*   g_partials = nullptr;
+static unsigned* g_counter  = nullptr;
+
+extern "C" void qa_launch(const double* a, double* out, int64_t LEN_1D) {
+    if (g_partials == nullptr) {
+        hipError_t e = hipMalloc(&g_partials, QA_MAXG * sizeof(double));
+        e = hipMalloc(&g_counter, 4 * sizeof(unsigned));
+        e = hipMemset(g_counter, 0, sizeof(unsigned));
+        (void)e;
+    }
+    int64_t npairs = LEN_1D / 2;
+    int64_t g = (npairs + (int64_t)QA_BLOCK * 8 - 1) / ((int64_t)QA_BLOCK * 8);
+    if (g < 1) g = 1;
+    g = ((g + 255) / 256) * 256;
+    if (g > 512) g = 512;
+    qa_kernel<<<(unsigned)g, QA_BLOCK>>>(a, out, npairs, g_partials, g_counter);
+}

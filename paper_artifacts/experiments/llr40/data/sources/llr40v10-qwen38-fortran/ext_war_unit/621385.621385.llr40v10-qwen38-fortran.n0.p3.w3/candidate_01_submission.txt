@@ -1,0 +1,15 @@
+! ext_war_unit : a[i] = a[i+1] + b[i]  (ascending -> a(i) = a_orig(i+1) + b(i))
+! C-ABI: void ext_war_unit_fp64(double *restrict a, const double *restrict b, const int64_t LEN_1D)
+subroutine ext_war_unit_fp64(a, b, len_1d) bind(C, name="ext_war_unit_fp64")
+  use iso_c_binding
+  implicit none
+  real(c_double), intent(inout) :: a(*)
+  real(c_double), intent(in) :: b(*)
+  integer(c_int64_t), value, intent(in) :: len_1d
+  integer(c_int64_t) :: i, n
+  n = len_1d
+  if (n < 2) return
+  do i = 1, n - 1
+    a(i) = a(i+1) + b(i)
+  end do
+end subroutine ext_war_unit_fp64

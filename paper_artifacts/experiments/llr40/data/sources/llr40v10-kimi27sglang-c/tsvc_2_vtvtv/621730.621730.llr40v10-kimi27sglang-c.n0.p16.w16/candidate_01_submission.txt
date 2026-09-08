@@ -1,0 +1,54 @@
+#include <stdint.h>
+#include <omp.h>
+#include <immintrin.h>
+
+void tsvc_2_vtvtv_fp64(double *restrict a, const double *restrict b, const double *restrict c, const int64_t LEN_1D) {
+    if (LEN_1D <= 0) return;
+
+    int64_t n = LEN_1D;
+    if (n < 512) {
+        for (int64_t i = 0; i < n; ++i) {
+            a[i] = a[i] * b[i] * c[i];
+        }
+        return;
+    }
+
+    int64_t n32 = n & ~31;
+
+    #pragma omp parallel for schedule(static)
+    for (int64_t j = 0; j < n32; j += 32) {
+        __m512d va0 = _mm512_loadu_pd(&a[j + 0]);
+        __m512d va1 = _mm512_loadu_pd(&a[j + 8]);
+        __m512d va2 = _mm512_loadu_pd(&a[j + 16]);
+        __m512d va3 = _mm512_loadu_pd(&a[j + 24]);
+
+        __m512d vb0 = _mm512_loadu_pd(&b[j + 0]);
+        __m512d vb1 = _mm512_loadu_pd(&b[j + 8]);
+        __m512d vb2 = _mm512_loadu_pd(&b[j + 16]);
+        __m512d vb3 = _mm512_loadu_pd(&b[j + 24]);
+
+        __m512d vc0 = _mm512_loadu_pd(&c[j + 0]);
+        __m512d vc1 = _mm512_loadu_pd(&c[j + 8]);
+        __m512d vc2 = _mm512_loadu_pd(&c[j + 16]);
+        __m512d vc3 = _mm512_loadu_pd(&c[j + 24]);
+
+        va0 = _mm512_mul_pd(va0, vb0);
+        va1 = _mm512_mul_pd(va1, vb1);
+        va2 = _mm512_mul_pd(va2, vb2);
+        va3 = _mm512_mul_pd(va3, vb3);
+
+        va0 = _mm512_mul_pd(va0, vc0);
+        va1 = _mm512_mul_pd(va1, vc1);
+        va2 = _mm512_mul_pd(va2, vc2);
+        va3 = _mm512_mul_pd(va3, vc3);
+
+        _mm512_storeu_pd(&a[j + 0], va0);
+        _mm512_storeu_pd(&a[j + 8], va1);
+        _mm512_storeu_pd(&a[j + 16], va2);
+        _mm512_storeu_pd(&a[j + 24], va3);
+    }
+
+    for (int64_t j = n32; j < n; ++j) {
+        a[j] = a[j] * b[j] * c[j];
+    }
+}

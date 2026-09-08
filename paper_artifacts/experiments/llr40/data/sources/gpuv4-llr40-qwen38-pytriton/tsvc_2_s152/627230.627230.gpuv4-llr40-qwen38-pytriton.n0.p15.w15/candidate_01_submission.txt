@@ -1,0 +1,27 @@
+import os
+import numpy as np
+import numba
+
+# Import-time setup: pick the number of threads from the real CPU quota and
+# fully compile + warm the parallel kernel so the timed call is pure native code.
+_NTHREADS = max(1, len(os.sched_getaffinity(0)))
+numba.set_num_threads(_NTHREADS)
+
+
+@numba.njit(parallel=True)
+def _kern(a, b, c, d, e):
+    n = a.shape[0]
+    for i in numba.prange(n):
+        b[i] = d[i] * e[i]
+        a[i] += b[i] * c[i]
+
+
+def s152(a, b, c, d, e, LEN_1D):
+    n = LEN_1D if 0 <= LEN_1D <= a.shape[0] else a.shape[0]
+    _kern(a[:n], b[:n], c[:n], d[:n], e[:n])
+    return None
+
+
+# Warm up: compile the prange kernel and initialize the threading layer.
+_d = np.ones(1 << 20)
+_kern(_d, _d.copy(), _d.copy(), _d.copy(), _d.copy())

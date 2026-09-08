@@ -1,0 +1,71 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <math.h>
+
+namespace tsvc {
+
+__device__ __forceinline__ void combine2(double &v, long long &i, double v2, long long i2) {
+  if (v2 > v) { v = v2; i = i2; }
+  else if (v2 == v && i2 < i) { i = i2; }
+}
+
+template <int NB>
+__global__ void k1(const double *__restrict__ a, long long LEN_1D, long long inc,
+                   double *__restrict__ pV, long long *__restrict__ pI) {
+  double lv = -1.0;
+  long long li = LEN_1D;
+  long long total = (long long)NB * gridDim.x;
+  for (long long gid = (long long)blockIdx.x * NB + threadIdx.x; gid < LEN_1D; gid += total) {
+    double v = fabs(a[gid * inc]);
+    if (v > lv) { lv = v; li = gid; }
+  }
+  __shared__ double sV[NB];
+  __shared__ long long sI[NB];
+  sV[threadIdx.x] = lv;
+  sI[threadIdx.x] = li;
+  __syncthreads();
+  for (int s = NB / 2; s > 0; s >>= 1) {
+    if (threadIdx.x < s) {
+      combine2(sV[threadIdx.x], sI[threadIdx.x], sV[threadIdx.x + s], sI[threadIdx.x + s]);
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) { pV[blockIdx.x] = sV[0]; pI[blockIdx.x] = sI[0]; }
+}
+
+__global__ void k2(const double *__restrict__ pV, const long long *__restrict__ pI, int n,
+                   double *__restrict__ result) {
+  const int NB = 256;
+  double lv = -1.0;
+  long long li = (long long)n;
+  for (int j = threadIdx.x; j < n; j += NB) {
+    combine2(lv, li, pV[j], pI[j]);
+  }
+  __shared__ double sV[NB];
+  __shared__ long long sI[NB];
+  sV[threadIdx.x] = lv;
+  sI[threadIdx.x] = li;
+  __syncthreads();
+  for (int s = NB / 2; s > 0; s >>= 1) {
+    if (threadIdx.x < s) {
+      combine2(sV[threadIdx.x], sI[threadIdx.x], sV[threadIdx.x + s], sI[threadIdx.x + s]);
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) result[0] = sV[0] + (double)sI[0];
+}
+
+// launcher: grid-stride k1 then single-block k2
+void launch(const double *a, double *result, long long LEN_1D, long long inc,
+            double *wV, long long *wI) {
+  const int NB = 256;
+  int blocks;
+  long long want = (LEN_1D + NB - 1) / NB;
+  const int cap = 2048;
+  if (want < cap) blocks = (int)want; else blocks = cap;
+  if (blocks < 1) blocks = 1;
+  k1<NB><<<blocks, NB>>>(a, LEN_1D, inc, wV, wI);
+  k2<<<1, NB>>>(wV, wI, blocks, result);
+}
+
+} // namespace tsvc

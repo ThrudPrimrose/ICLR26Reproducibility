@@ -1,0 +1,67 @@
+#include <hip/hip_runtime.h>
+#include <cfloat>
+
+namespace {
+
+__device__ __forceinline__ double dmin2(double x, double y) { return x < y ? x : y; }
+
+__global__ void __launch_bounds__(256) tsvc_min_k(
+    const double * __restrict__ a,
+    double * __restrict__ result,
+    int64_t n,
+    double * __restrict__ scratch,
+    unsigned * __restrict__ counter)
+{
+    const int tid = threadIdx.x;
+    const int64_t gtid = (int64_t)blockIdx.x * blockDim.x + tid;
+    const int64_t stride = (int64_t)gridDim.x * blockDim.x;
+
+    double m = INFINITY;
+    int64_t i = gtid;
+    int64_t i8 = gtid + 7 * stride;
+    for (; i8 < n; i += 8 * stride) {
+        double v0 = a[i + 0 * stride];
+        double v1 = a[i + 1 * stride];
+        double v2 = a[i + 2 * stride];
+        double v3 = a[i + 3 * stride];
+        double v4 = a[i + 4 * stride];
+        double v5 = a[i + 5 * stride];
+        double v6 = a[i + 6 * stride];
+        double v7 = a[i + 7 * stride];
+        m = dmin2(dmin2(dmin2(dmin2(m, v0), dmin2(v1, v2)),
+                        dmin2(dmin2(v3, v4), dmin2(v5, v6))), v7);
+    }
+    for (; i < n; i += stride) m = dmin2(m, a[i]);
+
+    __shared__ double sh[256];
+    sh[tid] = m;
+    __syncthreads();
+    #pragma unroll
+    for (int s = 128; s > 0; s >>= 1) {
+        if (tid < s) {
+            double v = sh[tid + s];
+            if (v < sh[tid]) sh[tid] = v;
+        }
+        __syncthreads();
+    }
+    if (tid == 0) {
+        double m0 = sh[0];
+        scratch[blockIdx.x] = m0;
+        __threadfence();
+        unsigned prev = atomicAdd(counter, 1u);
+        if (prev == gridDim.x - 1) {
+            __threadfence();
+            double fm = scratch[0];
+            for (int b = 1; b < gridDim.x; ++b) fm = dmin2(fm, scratch[b]);
+            result[0] = fm;
+            atomicExch(counter, 0u);
+        }
+    }
+}
+
+} // namespace
+
+extern "C" void tsvc_2_s316_launch(const double *a, double *result, int64_t n, int grid, int block,
+                                   double *scratch, unsigned *counter) {
+    tsvc_min_k<<<grid, block>>>(a, result, n, scratch, counter);
+}

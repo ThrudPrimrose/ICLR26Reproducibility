@@ -1,0 +1,71 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#include <cmath>
+
+extern "C" __global__
+void init_tmp_kernel(double * __restrict__ a,
+                     const double * __restrict__ b,
+                     const double * __restrict__ c,
+                     double * __restrict__ tmp,
+                     const int64_t len) {
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (i >= len) return;
+    if (i == 0) {
+        tmp[0] = a[0];
+    } else {
+        double factor = pow(0.75, -static_cast<double>(i));
+        tmp[i] = b[i] * c[i] * factor;
+    }
+}
+
+extern "C" __global__
+void finalize_kernel(double * __restrict__ a,
+                     const double * __restrict__ tmp,
+                     const int64_t len) {
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (i >= len) return;
+    double factor = pow(0.75, static_cast<double>(i));
+    a[i] = tmp[i] * factor;
+}
+
+extern "C" __global__
+void versioned_distance_update_kernel(double * __restrict__ a,
+                                      const double * __restrict__ b,
+                                      const double * __restrict__ c,
+                                      const int64_t K,
+                                      const int64_t LEN_1D) {
+    int64_t gid = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (gid >= K) return;
+    // Process the chain belonging to this thread (indices with same i % K).
+    for (int64_t i = gid + K; i < LEN_1D; i += K) {
+        a[i] = 0.75 * a[i - K] + b[i] * c[i];
+    }
+}
+
+// Pair struct and kernels for K=1
+struct Pair {
+    double mul;
+    double add;
+};
+
+extern "C" __global__
+void fill_pair_kernel(const double * __restrict__ b,
+                      const double * __restrict__ c,
+                      Pair * __restrict__ pairs,
+                      const int64_t len) {
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x + 1;
+    if (i >= len) return;
+    pairs[i-1].mul = 0.75;
+    pairs[i-1].add = b[i] * c[i];
+}
+
+extern "C" __global__
+void apply_scan_kernel(double * __restrict__ a,
+                       const Pair * __restrict__ pairs,
+                       const int64_t len) {
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x + 1;
+    if (i >= len) return;
+    Pair p = pairs[i-1];
+    double a0 = a[0];
+    a[i] = a0 * p.mul + p.add;
+}

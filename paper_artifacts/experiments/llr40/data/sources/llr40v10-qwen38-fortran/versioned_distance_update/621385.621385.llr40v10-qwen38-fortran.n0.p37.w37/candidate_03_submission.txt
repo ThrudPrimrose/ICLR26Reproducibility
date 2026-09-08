@@ -1,0 +1,95 @@
+subroutine versioned_distance_update_fp64(a, b, c, k, n) &
+    bind(C, name="versioned_distance_update_fp64")
+  use iso_c_binding
+  implicit none
+  real(c_double), dimension(*), intent(inout) :: a
+  real(c_double), dimension(*), intent(in) :: b, c
+  integer(c_int64_t), intent(in), value :: k, n
+  integer(c_int64_t) :: s, i, i_lo, i_hi, i0, i1, lmax, smax, m0, m1, kk, sh
+  real(c_double) :: x
+
+  kk = k
+  if (kk < 1_8) kk = 1_8
+  if (n > kk) then
+    if (kk == 1_8) then
+      smax = (n - 1_8) / 4096_8 + 1_8
+      !$omp parallel
+      !$omp do schedule(static)
+      do s = 0_8, smax - 1_8
+        i0 = s * 4096_8 + 1_8
+        if (i0 < n) then
+          i1 = i0 + 4095_8
+          if (i1 > n) i1 = n - 1_8
+          x = a(1)
+          do i = i0, i1
+            x = 0.75d0 * x + b(i + 1) * c(i + 1)
+            a(i + 1) = x
+          end do
+        end if
+      end do
+      !$omp do schedule(static)
+      do s = 0_8, smax - 1_8
+        i0 = s * 4096_8 + 1_8
+        if (i0 < n) then
+          i1 = i0 + 131_8
+          if (i1 > n) i1 = n - 1_8
+          if (s == 0_8) then
+            x = a(1)
+          else
+            x = a(i0)
+          end if
+          do i = i0, i1
+            x = 0.75d0 * x + b(i + 1) * c(i + 1)
+            a(i + 1) = x
+          end do
+        end if
+      end do
+      !$omp end parallel
+    else
+      lmax = (n - 1_8) / kk + 1_8
+      smax = (lmax - 1_8) / 1024_8 + 1_8
+      !$omp parallel
+      !$omp do schedule(static)
+      do s = 0_8, smax - 1_8
+        m0 = s * 1024_8
+        m1 = m0 + 1024_8
+        if (m1 > lmax) m1 = lmax
+        i_lo = (m0 + 1_8) * kk
+        if (i_lo < n) then
+          i_hi = i_lo + kk
+          if (i_hi > n) i_hi = n
+          sh = i_lo
+          do i = i_lo, i_hi - 1_8
+            x = 0.75d0 * a(i + 1 - sh) + b(i + 1) * c(i + 1)
+            a(i + 1) = x
+          end do
+          i_lo = (m0 + 2_8) * kk
+          if (i_lo < n) then
+            i_hi = (m1 + 1_8) * kk
+            if (i_hi > n) i_hi = n
+            do i = i_lo, i_hi - 1_8
+              x = 0.75d0 * a(i + 1 - kk) + b(i + 1) * c(i + 1)
+              a(i + 1) = x
+            end do
+          end if
+        end if
+      end do
+      !$omp do schedule(static)
+      do s = 0_8, smax - 1_8
+        m0 = s * 1024_8
+        m1 = m0 + 132_8
+        if (m1 > lmax) m1 = lmax
+        i_lo = (m0 + 1_8) * kk
+        if (i_lo < n) then
+          i_hi = (m1 + 1_8) * kk
+          if (i_hi > n) i_hi = n
+          do i = i_lo, i_hi - 1_8
+            x = 0.75d0 * a(i + 1 - kk) + b(i + 1) * c(i + 1)
+            a(i + 1) = x
+          end do
+        end if
+      end do
+      !$omp end parallel
+    end if
+  end if
+end subroutine

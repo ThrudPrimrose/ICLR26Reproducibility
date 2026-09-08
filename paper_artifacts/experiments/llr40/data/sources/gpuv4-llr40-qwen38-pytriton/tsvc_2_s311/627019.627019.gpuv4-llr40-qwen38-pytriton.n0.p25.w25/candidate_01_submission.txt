@@ -1,0 +1,189 @@
+"""TSVC tsvc_2 s311 -- sum reduction, adaptive fast implementation.
+
+Computes sum_out[0] = sum(a[:LEN_1D]) for a float64 array.
+At import time it benchmarks the candidate engines (vectorised numpy,
+numba prange, torch CPU, GPU copy+sum) on the local machine and picks
+the fastest for small and for large inputs; the timed call just dispatches.
+"""
+
+import os
+import time as _time
+import numpy as np
+
+# --------------------------------------------------------------------------
+# candidate 1: numba parallel CPU sum
+# --------------------------------------------------------------------------
+_psum = None
+try:
+    import numba as _numba
+    from numba import njit, prange
+
+    @njit(parallel=True, fastmath=True)
+    def _psum(a):
+        s = 0.0
+        for i in prange(a.shape[0]):
+            s += a[i]
+        return s
+
+    _NB_MAX = max(1, int(getattr(_numba.config, 'NUMBA_NUM_THREADS',
+                                 os.cpu_count() or 1)))
+except Exception:
+    _NB_MAX = 0
+
+# --------------------------------------------------------------------------
+# candidate 2: torch (GPU zero-ish-copy sum, and multi-threaded CPU sum)
+# --------------------------------------------------------------------------
+_torch = None
+try:
+    import torch as _torch_mod
+    if _torch_mod.cuda.is_available():
+        _torch = _torch_mod
+except Exception:
+    _torch = None
+
+_CBUF = None  # persistent CUDA destination buffer
+
+
+def _gpu_ready():
+    global _CBUF, _torch
+    if _torch is None:
+        return False
+    try:
+        if _CBUF is None:
+            _CBUF = _torch.empty(250_000_000, dtype=_torch.float64, device='cuda')
+        tiny = np.zeros(1 << 20, dtype=np.float64)
+        _CBUF[: 1 << 20].copy_(_torch.from_numpy(tiny))
+        _torch.cuda.synchronize()
+        return True
+    except Exception:
+        _torch = None
+        _CBUF = None
+        return False
+
+
+def _gsum(a):
+    global _CBUF
+    n = a.shape[0]
+    if n > _CBUF.numel():
+        _CBUF = _torch.empty(n, dtype=_torch.float64, device='cuda')
+    buf = _CBUF[:n]
+    try:
+        t = _torch.from_numpy(a)
+    except Exception:
+        t = _torch.as_tensor(a)
+    buf.copy_(t)
+    return buf.sum().item()
+
+
+def _tcsum(a):
+    try:
+        t = _torch.from_numpy(a)
+    except Exception:
+        t = _torch.as_tensor(a)
+    return t.sum().item()
+
+
+# --------------------------------------------------------------------------
+# import-time benchmark: pick winners for small and large sizes
+# --------------------------------------------------------------------------
+_N1 = 1 << 21   # 2M doubles  (16 MB)
+_N2 = 1 << 25   # 32M doubles (256 MB)
+_d1 = np.random.rand(_N1)
+_d2 = np.random.rand(_N2)
+
+
+def _timeit(f, reps=3):
+    best = float('inf')
+    for _ in range(reps):
+        t0 = _time.perf_counter()
+        f()
+        t1 = _time.perf_counter()
+        if t1 - t0 < best:
+            best = t1 - t0
+    return best
+
+
+_R = {}  # candidate -> (t_small, t_large)
+
+
+def _close(x, ref):
+    return abs(x - ref) <= 1e-9 * max(1.0, abs(ref))
+
+
+_ref1, _ref2 = float(np.sum(_d1)), float(np.sum(_d2))
+
+_R['np'] = (_timeit(lambda: np.sum(_d1)), _timeit(lambda: np.sum(_d2)))
+
+if _psum is not None:
+    try:
+        _best = None
+        for nt in sorted({max(1, min(_NB_MAX, t)) for t in (2, 4, 8, 16, 32, _NB_MAX)}):
+            _numba.set_num_threads(nt)
+            v = _psum(_d2)
+            if not _close(v, _ref2):
+                continue
+            t2 = _timeit(lambda: _psum(_d2))
+            if _best is None or t2 < _best[1]:
+                _best = (nt, t2)
+        if _best is not None:
+            _numba.set_num_threads(_best[0])
+            if _close(_psum(_d1), _ref1):
+                _R['nb'] = (_timeit(lambda: _psum(_d1)), _timeit(lambda: _psum(_d2)))
+            else:
+                _R = {k: v for k, v in _R.items() if k != 'nb'}
+    except Exception:
+        _psum = None
+
+if _torch is not None:
+    try:
+        _tcsum(_d1)
+        v = _tcsum(_d2)
+        if _close(v, _ref2):
+            _R['tcpu'] = (_timeit(lambda: _tcsum(_d1)), _timeit(lambda: _tcsum(_d2)))
+    except Exception:
+        pass
+    try:
+        if _gpu_ready():
+            v = _gsum(_d1)
+            if _close(v, _ref1) and _close(_gsum(_d2), _ref2):
+                _R['gpu'] = (_timeit(lambda: _gsum(_d1)), _timeit(lambda: _gsum(_d2)))
+    except Exception:
+        _torch = None
+
+del _d1, _d2
+
+_FN = {'np': lambda a: float(np.sum(a)), 'nb': _psum, 'tcpu': _tcsum, 'gpu': _gsum}
+
+
+def _pick(i):
+    best = None
+    for k in _R:
+        if best is None or _R[k][i] < _R[best][i]:
+            best = k
+    return _FN[best]
+
+
+_LARGE = _pick(1)
+
+_TINY = 1 << 21  # below this, plain numpy (engines have fixed overhead)
+
+
+def s311(a, sum_out, LEN_1D):
+    n = int(LEN_1D)
+    if n <= 0:
+        sum_out[0] = 0.0
+        return None
+    if not isinstance(a, np.ndarray):
+        a = np.ascontiguousarray(a, dtype=np.float64)
+    if n != a.shape[0]:
+        a = a[:n]
+    if a.dtype != np.float64 or not a.flags['C_CONTIGUOUS']:
+        a = np.ascontiguousarray(a, dtype=np.float64)
+    if n < _TINY:
+        sum_out[0] = float(np.sum(a))
+    else:
+        sum_out[0] = _LARGE(a)
+    return None
+
+
+tsvc_2_s311 = s311

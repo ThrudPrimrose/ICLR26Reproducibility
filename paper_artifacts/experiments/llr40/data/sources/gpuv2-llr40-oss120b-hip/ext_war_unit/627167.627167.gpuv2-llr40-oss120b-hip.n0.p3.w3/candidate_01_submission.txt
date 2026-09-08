@@ -1,0 +1,41 @@
+#include <hip/hip_runtime.h>
+#include <cstddef>
+#include <cstdint>
+
+extern "C" __global__ void ext_war_unit_kernel1(double *a, const double *b, double *boundary, int64_t n) {
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + tid;
+    const int THREADS = 256;
+    extern __shared__ double s_a[];
+    if (idx < n + 1) {
+        s_a[tid + 1] = a[idx];
+    }
+    // Save original first element of block
+    if (tid == 0 && idx < n + 1) {
+        boundary[blockIdx.x] = a[idx];
+    }
+    __syncthreads();
+    // Compute for each valid index. For the last thread of the last block, read neighbor directly from global memory.
+    if (idx < n) {
+        bool is_last_thread = (tid == THREADS - 1);
+        bool is_last_block = (blockIdx.x == gridDim.x - 1);
+        double a_ip1 = 0.0;
+        if (is_last_thread && is_last_block) {
+            // neighbor a[idx+1] is within array and not overwritten yet
+            a_ip1 = a[idx + 1];
+        } else {
+            a_ip1 = s_a[tid + 2];
+        }
+        a[idx] = a_ip1 + b[idx];
+    }
+}
+
+extern "C" __global__ void ext_war_unit_kernel2(double *a, const double *b, const double *boundary, int64_t n) {
+    const int THREADS = 256;
+    int block = blockIdx.x + 1; // corresponds to original block index
+    int idx = block * THREADS - 1;
+    if (idx < n) {
+        double orig = boundary[block];
+        a[idx] = orig + b[idx];
+    }
+}

@@ -1,0 +1,26 @@
+/* Optimized version with OpenMP target offload.
+   Computes two independent column-wise recurrences.
+   The outer loop over columns (index >= 8) is parallelized across the device.
+*/
+#include <stdint.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+    // Total number of elements in each 2D array (LEN_2D * LEN_2D)
+    const int64_t N = LEN_2D;
+    // Map data to the device and run a kernel that processes each column independently.
+    #pragma omp target data map(to: cc[0:N*N]) map(tofrom: aa[0:N*N], bb[0:N*N])
+    {
+        // Parallel over columns (index i in original code)
+        #pragma omp target teams distribute parallel for schedule(static) // each team handles a column
+        for (int64_t col = 8; col < N; ++col) {
+            // Compute column recurrences for aa and bb.
+            // Note: dependencies are along rows, which are sequential within a column.
+            for (int64_t row = 8; row < N; ++row) {
+                aa[row * N + col] = aa[(row - 1) * N + col] + cc[row * N + col];
+            }
+            for (int64_t row = 8; row < N; ++row) {
+                bb[row * N + col] = bb[(row - 1) * N + col] + cc[row * N + col];
+            }
+        }
+    }
+}

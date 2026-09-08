@@ -1,0 +1,27 @@
+subroutine tsvc_2_s318_fp64(a, result, LEN_1D, inc) bind(C)
+  use iso_c_binding
+  use omp_lib
+  implicit none
+  integer(c_int64_t), value, intent(in) :: LEN_1D, inc
+  real(c_double), intent(in) :: a(LEN_1D * inc)
+  real(c_double), intent(out) :: result(1)
+
+  integer(c_int64_t) :: i, index
+  real(c_double) :: maxv
+
+  maxv = 0.0d0
+  !$omp parallel do reduction(max:maxv)
+  do i = 0, LEN_1D - 1
+    maxv = max(maxv, abs(a(1 + i*inc)))
+  end do
+
+  index = LEN_1D
+  !$omp parallel do reduction(min:index)
+  do i = 0, LEN_1D - 1
+    if (abs(a(1 + i*inc)) == maxv) then
+      index = min(index, i)
+    end if
+  end do
+
+  result(1) = maxv + dble(index)
+end subroutine tsvc_2_s318_fp64

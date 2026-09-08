@@ -1,0 +1,29 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+// Device kernels for tsvc_2_s2233_fp64
+__global__ void kernel_aa(double *aa, const double *cc, int64_t LEN) {
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    int64_t i = idx + 8;
+    if (i >= LEN) return;
+    int64_t base_prev = (8 - 1) * LEN + i;
+    double prev = aa[base_prev];
+    for (int64_t j = 8; j < LEN; ++j) {
+        int64_t off = j * LEN + i;
+        prev += cc[off];
+        aa[off] = prev;
+    }
+}
+
+__global__ void kernel_bb(double *bb, const double *cc, int64_t LEN) {
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    int64_t j = idx + 8;
+    if (j >= LEN) return;
+    int64_t base_prev = (8 - 1) * LEN + j;
+    double prev = bb[base_prev];
+    for (int64_t i = 8; i < LEN; ++i) {
+        int64_t off = i * LEN + j;
+        prev += cc[off];
+        bb[off] = prev;
+    }
+}

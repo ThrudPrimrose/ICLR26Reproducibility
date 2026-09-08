@@ -1,0 +1,102 @@
+! Stream compaction: pack src(i)*weight(i) for every src(i) > 0, publish the count.
+! Two-pass: per-thread count -> exclusive prefix -> per-thread compact.
+module ctp_mod
+    use, intrinsic :: iso_c_binding
+    use, intrinsic :: omp_lib
+    implicit none
+contains
+
+    subroutine parallel_compact(src, weight, packed, N, total)
+        integer(c_int64_t), intent(in)  :: N
+        integer(c_int64_t), intent(out) :: total
+        real(c_double), intent(in)  :: src(1:)
+        real(c_double), intent(in)  :: weight(1:)
+        real(c_double), intent(out) :: packed(1:)
+
+        integer, allocatable :: counts(:)
+        integer(c_int64_t), allocatable :: base(:)
+        integer(c_int64_t) :: lo, hi, i, chunk, cc, nl
+        integer :: t, nthreads
+
+        nthreads = omp_get_max_threads()
+        if (nthreads < 1) nthreads = 1
+        if (int(nthreads, 8) > N) nthreads = int(N, 4)
+
+        allocate(counts(nthreads))
+        allocate(base(nthreads+1))
+
+        chunk = (N + nthreads - 1) / nthreads
+
+        !$omp parallel default(none) shared(src, weight, packed, N, chunk, counts, base, nthreads) &
+        !$omp& private(t, lo, hi, i, cc, nl)
+            t = omp_get_thread_num()
+            lo  = int(t, 8) * chunk + 1
+            hi  = min(N, int(t+1, 8) * chunk)
+
+            cc = 0
+            do i = lo, hi
+                if (src(i) > 0.0_c_double) cc = cc + 1
+            end do
+            counts(t+1) = int(cc, 4)
+        !$omp end parallel
+
+        base(1) = 0
+        do t = 1, nthreads
+            base(t+1) = base(t) + int(counts(t), 8)
+        end do
+        total = base(nthreads+1)
+
+        !$omp parallel default(none) shared(src, weight, packed, N, chunk, base, nthreads) &
+        !$omp& private(t, lo, hi, i, nl)
+            t = omp_get_thread_num()
+            lo  = int(t, 8) * chunk + 1
+            hi  = min(N, int(t+1, 8) * chunk)
+            nl  = base(t+1)
+
+            do i = lo, hi
+                if (src(i) > 0.0_c_double) then
+                    packed(nl+1) = src(i) * weight(i)
+                    nl = nl + 1
+                end if
+            end do
+        !$omp end parallel
+
+        deallocate(counts, base)
+    end subroutine parallel_compact
+end module ctp_mod
+
+
+subroutine compact_threshold_pack_fp64(out_count, packed, src, weight, LEN_1D) bind(C, &
+&name="compact_threshold_pack_fp64")
+    use, intrinsic :: iso_c_binding
+    use ctp_mod
+    implicit none
+    integer(c_int64_t), value, intent(in) :: LEN_1D
+    integer(c_int64_t), intent(inout) :: out_count(1)
+    real(c_double), intent(inout) :: packed(LEN_1D)
+    real(c_double), intent(in) :: src(LEN_1D)
+    real(c_double), intent(in) :: weight(LEN_1D)
+
+    integer(c_int64_t) :: N, total, i
+
+    N = LEN_1D
+    if (N <= 0) then
+        out_count(1) = 0
+        return
+    end if
+
+    if (N < 16384) then
+        total = 0
+        do i = 1, N
+            if (src(i) > 0.0_c_double) then
+                packed(total+1) = src(i) * weight(i)
+                total = total + 1
+            end if
+        end do
+        out_count(1) = total
+        return
+    end if
+
+    call parallel_compact(src, weight, packed, N, total)
+    out_count(1) = total
+end subroutine compact_threshold_pack_fp64

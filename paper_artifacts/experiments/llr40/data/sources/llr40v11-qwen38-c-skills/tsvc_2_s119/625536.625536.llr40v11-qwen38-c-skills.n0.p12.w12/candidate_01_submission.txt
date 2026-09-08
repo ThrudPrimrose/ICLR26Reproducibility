@@ -1,0 +1,59 @@
+#include <stdint.h>
+#include <omp.h>
+
+/* s119: for i,j in 1..N-1: aa[i][j] = aa[i-1][j-1] + bb[i][j].
+ * Dependence is only along the (1,1) diagonal; within a row the j iterations
+ * are independent (the read comes from the previous row).  So: give each
+ * thread a contiguous stripe of columns, run all rows; the only cross-thread
+ * value is the stripe's left neighbour column in the previous row, handed off
+ * through one release/acquire flag per row. */
+
+static void serial_fp64(double *restrict aa, const double *restrict bb, const int64_t N) {
+  for (int64_t i = 1; i < N; ++i) {
+    double *restrict a = aa + i * N;
+    const double *restrict ap = aa + (i - 1) * N;
+    const double *restrict b = bb + i * N;
+    #pragma omp simd
+    for (int64_t j = 1; j < N; ++j) a[j] = ap[j - 1] + b[j];
+  }
+}
+
+void tsvc_2_s119_fp64(double *restrict aa, const double *restrict bb, const int64_t LEN_2D) {
+  const int64_t N = LEN_2D;
+  if (N < 2) return;
+
+  const int maxT = omp_get_max_threads();
+  if (maxT < 2 || (N - 1) / maxT < 16) {   /* stripes too thin: stay serial */
+    serial_fp64(aa, bb, N);
+    return;
+  }
+
+  uint32_t flags[maxT];
+  for (int i = 0; i < maxT; ++i) flags[i] = 0;
+
+  #pragma omp parallel
+  {
+    const int t  = omp_get_thread_num();
+    const int nt = omp_get_num_threads();
+
+    const int64_t cnt  = N - 1;                 /* columns 1..N-1 */
+    const int64_t base = cnt / nt;
+    const int64_t rem  = cnt % nt;
+    const int64_t c0   = 1 + (int64_t)t * base + (t < rem ? t : rem);
+    const int64_t w    = base + (t < rem);
+
+    for (int64_t i = 1; i < N; ++i) {
+      if (t > 0) {
+        /* need aa[i-1][c0-1], written by thread t-1 during its row i-1 */
+        while (__atomic_load_n(&flags[t - 1], __ATOMIC_ACQUIRE) < (uint32_t)(i - 1))
+          __builtin_ia32_pause();
+      }
+      double *restrict a  = aa + i * N + c0;
+      const double *restrict ap = aa + (i - 1) * N + c0 - 1;
+      const double *restrict b  = bb + i * N + c0;
+      #pragma omp simd
+      for (int64_t j = 0; j < w; ++j) a[j] = ap[j] + b[j];
+      __atomic_store_n(&flags[t], (uint32_t)i, __ATOMIC_RELEASE);
+    }
+  }
+}

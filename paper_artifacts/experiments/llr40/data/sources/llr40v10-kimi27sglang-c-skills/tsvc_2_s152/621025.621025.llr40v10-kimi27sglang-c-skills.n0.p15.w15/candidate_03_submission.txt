@@ -1,0 +1,70 @@
+#include <stdint.h>
+#include <omp.h>
+#include <immintrin.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+void tsvc_2_s152_fp64(double *restrict a, double *restrict b, const double *restrict c,
+                      const double *restrict d, const double *restrict e,
+                      const int64_t LEN_1D) {
+    if (LEN_1D <= 0) return;
+
+#pragma omp parallel
+    {
+        const int nthreads = omp_get_num_threads();
+        const int tid = omp_get_thread_num();
+
+        const int64_t base = LEN_1D / nthreads;
+        const int64_t rem = LEN_1D % nthreads;
+        const int64_t start = tid * base + (tid < rem ? tid : rem);
+        const int64_t end = start + base + (tid < rem ? 1 : 0);
+
+        int64_t i = start;
+
+        // Scalar peel until output pointers are 64-byte aligned (only possible when
+        // a and b share the same misalignment relative to a 64-byte boundary).
+        if ((((uintptr_t)&a[start] ^ (uintptr_t)&b[start]) & 63) == 0) {
+            while (i < end && (((uintptr_t)&a[i]) & 63) != 0) {
+                const double t = d[i] * e[i];
+                a[i] += t * c[i];
+                b[i] = t;
+                ++i;
+            }
+        }
+
+        const bool aligned = (((uintptr_t)&a[i]) & 63) == 0 && (((uintptr_t)&b[i]) & 63) == 0;
+        const int64_t aligned_end = end - ((end - i) & 7);
+
+        if (aligned) {
+            for (; i < aligned_end; i += 8) {
+                __m512d vd = _mm512_loadu_pd(&d[i]);
+                __m512d ve = _mm512_loadu_pd(&e[i]);
+                __m512d vc = _mm512_loadu_pd(&c[i]);
+                __m512d va = _mm512_loadu_pd(&a[i]);
+                __m512d vt = _mm512_mul_pd(vd, ve);
+                __m512d vnew = _mm512_fmadd_pd(vt, vc, va);
+                _mm512_stream_pd((void *)&a[i], vnew);
+                _mm512_stream_pd((void *)&b[i], vt);
+            }
+        } else {
+            for (; i < aligned_end; i += 8) {
+                __m512d vd = _mm512_loadu_pd(&d[i]);
+                __m512d ve = _mm512_loadu_pd(&e[i]);
+                __m512d vc = _mm512_loadu_pd(&c[i]);
+                __m512d va = _mm512_loadu_pd(&a[i]);
+                __m512d vt = _mm512_mul_pd(vd, ve);
+                __m512d vnew = _mm512_fmadd_pd(vt, vc, va);
+                _mm512_storeu_pd(&a[i], vnew);
+                _mm512_storeu_pd(&b[i], vt);
+            }
+        }
+
+        for (; i < end; ++i) {
+            const double t = d[i] * e[i];
+            a[i] += t * c[i];
+            b[i] = t;
+        }
+
+        _mm_sfence();
+    }
+}

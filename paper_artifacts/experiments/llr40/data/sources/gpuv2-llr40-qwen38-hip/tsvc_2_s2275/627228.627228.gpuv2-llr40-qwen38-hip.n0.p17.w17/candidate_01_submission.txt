@@ -1,0 +1,24 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void tsvc2_mat_fma(double* __restrict__ aa, const double* __restrict__ bb,
+                              const double* __restrict__ cc, int64_t n) {
+    int64_t idx = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) aa[idx] = fma(bb[idx], cc[idx], aa[idx]);
+}
+
+__global__ void tsvc2_vec_fma(const double* __restrict__ b, const double* __restrict__ c,
+                              const double* __restrict__ d, double* __restrict__ a, int64_t n) {
+    int64_t idx = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) a[idx] = fma(c[idx], d[idx], b[idx]);
+}
+
+void tsvc_2_s2275_launch(const double* b, const double* c, const double* d, double* a,
+                         const double* bb, const double* cc, double* aa, int64_t LEN_2D) {
+    const int block = 256;
+    int64_t n2 = LEN_2D * LEN_2D;
+    unsigned grid = (unsigned)((n2 + block - 1) / block);
+    tsvc2_mat_fma<<<grid, block>>>(aa, bb, cc, n2);
+    grid = (unsigned)((LEN_2D + block - 1) / block);
+    tsvc2_vec_fma<<<grid, block>>>(b, c, d, a, LEN_2D);
+}

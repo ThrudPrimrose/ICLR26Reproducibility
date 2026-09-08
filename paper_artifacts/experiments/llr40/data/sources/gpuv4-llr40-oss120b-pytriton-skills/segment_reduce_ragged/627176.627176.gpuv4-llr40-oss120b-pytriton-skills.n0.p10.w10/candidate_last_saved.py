@@ -1,0 +1,13 @@
+import numpy as np
+import numba
+
+@numba.njit(parallel=True, fastmath=True)
+def _segment_reduce_ragged(row_ptr, val, w, out, NSEG):
+    for s in numba.prange(NSEG):
+        acc = 0.0
+        for e in range(row_ptr[s], row_ptr[s+1]):
+            acc += val[e] * w[e]
+        out[s] = acc
+
+def segment_reduce_ragged(row_ptr, val, w, out, NSEG):
+    _segment_reduce_ragged(row_ptr, val, w, out, NSEG)

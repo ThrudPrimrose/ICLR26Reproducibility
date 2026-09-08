@@ -1,0 +1,35 @@
+#include <stdint.h>
+#include <omp.h>
+
+void tsvc_2_s2233_fp64(double *restrict aa, double *restrict bb, const double *restrict cc, const int64_t LEN_2D) {
+
+    /* Update aa: recurrence along j, independent across columns.
+       Give each thread a contiguous, cache-line-aligned slab of columns and
+       walk rows (j) outermost so the inner loop is unit-stride. */
+    #pragma omp parallel
+    {
+        const int nt = omp_get_num_threads();
+        const int tid = omp_get_thread_num();
+        const int64_t n = LEN_2D - 8;
+        int64_t chunk = (n + nt - 1) / nt;
+        chunk = (chunk + 7) & ~7;               /* round up to a multiple of 8 doubles */
+        int64_t istart = 8 + tid * chunk;
+        int64_t iend   = istart + chunk;
+        if (istart > LEN_2D) istart = LEN_2D;
+        if (iend   > LEN_2D) iend   = LEN_2D;
+
+        for (int64_t j = 8; j < LEN_2D; ++j) {
+            for (int64_t i = istart; i < iend; ++i) {
+                aa[j * LEN_2D + i] = aa[(j - 1) * LEN_2D + i] + cc[j * LEN_2D + i];
+            }
+        }
+    }
+
+    /* Update bb: recurrence along i, so i is sequential; j is parallel and unit-stride. */
+    for (int64_t i = 8; i < LEN_2D; ++i) {
+        #pragma omp simd
+        for (int64_t j = 8; j < LEN_2D; ++j) {
+            bb[i * LEN_2D + j] = bb[(i - 1) * LEN_2D + j] + cc[i * LEN_2D + j];
+        }
+    }
+}

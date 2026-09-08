@@ -1,0 +1,49 @@
+/* Hand port of the TSVC tsvc_2 C++ microkernel ``s119`` (s119_d_single.cpp), fp64
+ * single-invocation variant, to C23 under the v2 C-ABI.
+ *
+ * Adapted from TSVC_2 -- Test Suite for Vectorizing Compilers (github.com/UoB-HPC/TSVC_2),
+ * NCSA/MIT license (UIUC).
+ *
+ * DELIBERATELY CARRIES NO ``hpcagent_bench-autogen`` MARKER. emit_io treats an unmarked
+ * reference as a hand-written override and never regenerates it, which is the point: this
+ * corpus exists to ask whether compilers vectorize and parallelize human-written C where they
+ * fail on translator-generated C. Regenerating this file from the numpy reference would compare
+ * translator output against translator output and answer nothing. Produced by
+ * scripts/port_tsvc_cpp_references.py; re-run that, never the emitter.
+ *
+ * The numpy reference remains the correctness oracle. */
+
+#include <stdint.h>
+
+void tsvc_2_s119_fp64(double *restrict aa, const double *restrict bb, const int64_t LEN_2D) {
+    const int64_t N = LEN_2D;
+    if (N <= 1) return;
+    const int64_t B = 64; // tile size
+    const int64_t tile_max = (N - 1 + B - 1) / B;
+    #pragma omp parallel
+    {
+        for (int64_t tile_sum = 0; tile_sum <= 2 * (tile_max - 1); ++tile_sum) {
+            int64_t ti_start = tile_sum - (tile_max - 1);
+            if (ti_start < 0) ti_start = 0;
+            int64_t ti_end = tile_sum;
+            if (ti_end > tile_max - 1) ti_end = tile_max - 1;
+            #pragma omp for schedule(static)
+            for (int64_t ti = ti_start; ti <= ti_end; ++ti) {
+                int64_t tj = tile_sum - ti;
+                int64_t i0 = 1 + ti * B;
+                int64_t j0 = 1 + tj * B;
+                int64_t i_end = i0 + B;
+                if (i_end > N) i_end = N;
+                int64_t j_end = j0 + B;
+                if (j_end > N) j_end = N;
+                for (int64_t i = i0; i < i_end; ++i) {
+                    for (int64_t j = j0; j < j_end; ++j) {
+                        int64_t idx_ij = i * N + j;
+                        int64_t idx_im1j = (i - 1) * N + (j - 1);
+                        aa[idx_ij] = aa[idx_im1j] + bb[idx_ij];
+                    }
+                }
+            }
+        }
+    }
+}

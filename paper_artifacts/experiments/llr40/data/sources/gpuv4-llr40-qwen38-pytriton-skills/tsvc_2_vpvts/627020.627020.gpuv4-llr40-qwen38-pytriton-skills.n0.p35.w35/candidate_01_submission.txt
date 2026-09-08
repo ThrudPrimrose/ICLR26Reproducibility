@@ -1,0 +1,29 @@
+import numpy as np
+
+
+def _vpvts_numpy(a, b, LEN_1D, S):
+    # numpy form: a += b*S without an explicit temp (mutate b, then add)
+    b *= S
+    a += b
+    return None
+
+
+try:
+    import numba
+    from numba import prange
+
+    @numba.njit(fastmath=True, parallel=True)
+    def _core(a, b, n, s):
+        for i in prange(n):
+            a[i] += b[i] * s
+
+    # Warm the JIT at import time so compilation is not charged to the clock.
+    _d = np.ones(4096)
+    _core(_d, _d.copy(), 4096, 2.0)
+
+    def vpvts(a, b, LEN_1D, S):
+        _core(a, b, LEN_1D, S)
+        return None
+
+except Exception:
+    vpvts = _vpvts_numpy

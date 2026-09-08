@@ -1,0 +1,120 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <omp.h>
+#include <immintrin.h>
+
+/*
+ * tsvc_2 s323:  a[i] = b[i-1] + c[i]*d[i];  b[i] = a[i] + c[i]*e[i]
+ * =>  b[i] = b[i-1] + t[i],  t[i] = c[i]*(d[i]+e[i]);  a[i] = b[i-1] + c[i]*d[i]
+ * The b-recurrence is a serial prefix sum. Parallel block-scan:
+ *  pass 1 (per thread, vectorized serial scan over its block):
+ *      store tentative a[i] = L[i] + c[i]*d[i],  b[i] = L[i] + t[i]
+ *      (L = local inclusive prefix of t within the block), record block total.
+ *  serial: exclusive prefix of the block totals (nt adds).
+ *  pass 2 (per thread, vectorized):  a[i] += off;  b[i] += off.
+ */
+void tsvc_2_s323_fp64(double *restrict a, double *restrict b, const double *restrict c, const double *restrict d,
+                      const double *restrict e, const int64_t LEN_1D) {
+  const int64_t m = LEN_1D - 1; /* elements i = 1 .. LEN_1D-1 */
+  if (m <= 0) return;
+
+  if (m < 4096) { /* small: exact serial reference */
+    for (int64_t i = 1; i < LEN_1D; ++i) {
+      a[i] = b[i - 1] + c[i] * d[i];
+      b[i] = a[i] + c[i] * e[i];
+    }
+    return;
+  }
+
+  int nt = omp_get_max_threads();
+  if (nt > m) nt = (int)m;
+  if (nt < 1) nt = 1;
+
+  double *totals = malloc(sizeof(double) * nt);
+  double *offs = malloc(sizeof(double) * nt);
+  int64_t *starts = malloc(sizeof(int64_t) * nt);
+  int64_t *ends = malloc(sizeof(int64_t) * nt);
+  if (!totals || !offs || !starts || !ends) { /* OOM: fall back to serial */
+    free(totals); free(offs); free(starts); free(ends);
+    for (int64_t i = 1; i < LEN_1D; ++i) {
+      a[i] = b[i - 1] + c[i] * d[i];
+      b[i] = a[i] + c[i] * e[i];
+    }
+    return;
+  }
+
+  int64_t bs = m / nt, rem = m % nt, acc = 0;
+  for (int k = 0; k < nt; k++) {
+    starts[k] = 1 + acc;
+    acc += bs + (k < rem);
+    ends[k] = 1 + acc;
+  }
+
+#pragma omp parallel
+  {
+    const int tid = omp_get_thread_num();
+    const int64_t s = starts[tid], ed = ends[tid];
+    const int64_t cnt = ed - s;
+    const double *cp = c + s, *dp = d + s, *ep = e + s;
+    double *ap = a + s, *bp = b + s;
+
+    /* shift-down index vectors for the 8-wide horizontal inclusive scan */
+    const __m512i IDX1 = _mm512_setr_epi64(0, 0, 1, 2, 3, 4, 5, 6);
+    const __m512i IDX2 = _mm512_setr_epi64(0, 0, 0, 1, 2, 3, 4, 5);
+    const __m512i IDX4 = _mm512_setr_epi64(0, 0, 0, 0, 0, 1, 2, 3);
+
+    double carry = (tid == 0) ? b[0] : 0.0;
+    int64_t i = 0;
+    for (; i + 8 <= cnt; i += 8) {
+      const __m512d vc = _mm512_loadu_pd(cp + i);
+      const __m512d vd = _mm512_loadu_pd(dp + i);
+      const __m512d ve = _mm512_loadu_pd(ep + i);
+      const __m512d t = _mm512_mul_pd(vc, _mm512_add_pd(vd, ve));
+      const __m512d cd = _mm512_mul_pd(vc, vd);
+      const __m512d sh1 = _mm512_maskz_permutex2var_pd(0xFE, t, IDX1, t);
+      const __m512d s1 = _mm512_add_pd(t, sh1);
+      const __m512d sh2 = _mm512_maskz_permutex2var_pd(0xFC, s1, IDX2, s1);
+      const __m512d s2 = _mm512_add_pd(s1, sh2);
+      const __m512d sh4 = _mm512_maskz_permutex2var_pd(0xF0, s2, IDX4, s2);
+      const __m512d s3 = _mm512_add_pd(s2, sh4);
+      const __m512d cv = _mm512_set1_pd(carry);
+      const __m512d ex = _mm512_sub_pd(s3, t);   /* exclusive local prefix */
+      const __m512d bprev = _mm512_add_pd(cv, ex);
+      _mm512_storeu_pd(bp + i, _mm512_add_pd(cv, s3)); /* b = carry + inclusive */
+      _mm512_storeu_pd(ap + i, _mm512_add_pd(bprev, cd));
+      carry += _mm512_reduce_add_pd(t);
+    }
+    for (; i < cnt; ++i) { /* scalar tail, reference op order */
+      const double bprev = carry;
+      const double ai = bprev + cp[i] * dp[i];
+      const double bi = ai + cp[i] * ep[i];
+      ap[i] = ai;
+      bp[i] = bi;
+      carry = bi;
+    }
+    totals[tid] = carry;
+
+#pragma omp barrier
+    if (tid == 0) {
+      offs[0] = 0.0;
+      for (int k = 1; k < nt; k++) offs[k] = offs[k - 1] + totals[k - 1];
+    }
+#pragma omp barrier
+
+    const double off = offs[tid];
+    const __m512d ov = _mm512_set1_pd(off);
+    for (i = 0; i + 8 <= cnt; i += 8) {
+      _mm512_storeu_pd(bp + i, _mm512_add_pd(_mm512_loadu_pd(bp + i), ov));
+      _mm512_storeu_pd(ap + i, _mm512_add_pd(_mm512_loadu_pd(ap + i), ov));
+    }
+    for (; i < cnt; ++i) {
+      bp[i] += off;
+      ap[i] += off;
+    }
+  }
+
+  free(totals);
+  free(offs);
+  free(starts);
+  free(ends);
+}

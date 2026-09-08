@@ -1,0 +1,15 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+extern "C" __global__ void fuse_stencil_kernel(const double* __restrict__ a,
+                                              double* __restrict__ out,
+                                              const int64_t LEN_1D) {
+    int64_t i = 1 + static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    int64_t stride = static_cast<int64_t>(blockDim.x) * gridDim.x;
+    const int64_t last = LEN_1D - 3;
+    for (; i <= last; i += stride) {
+        double sum1 = a[i - 1] + a[i] + a[i + 1];
+        double sum2 = a[i] + a[i + 1] + a[i + 2];
+        out[i] = sum1 * sum2;
+    }
+}

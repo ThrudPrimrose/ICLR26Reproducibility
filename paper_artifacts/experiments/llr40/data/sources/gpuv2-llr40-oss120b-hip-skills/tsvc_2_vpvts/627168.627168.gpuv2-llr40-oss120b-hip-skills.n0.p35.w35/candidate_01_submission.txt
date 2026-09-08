@@ -1,0 +1,12 @@
+#include <hip/hip_runtime.h>
+
+__global__ void tsvc_2_vpvts_kernel(double* __restrict__ a,
+                                   const double* __restrict__ b,
+                                   int64_t LEN_1D,
+                                   int64_t S) {
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    int64_t stride = static_cast<int64_t>(blockDim.x) * gridDim.x;
+    for (int64_t i = idx; i < LEN_1D; i += stride) {
+        a[i] += b[i] * static_cast<double>(S);
+    }
+}

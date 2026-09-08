@@ -1,0 +1,10 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+__global__ void fuse_diamond_kernel(const double * __restrict__ a, double * __restrict__ out, const int64_t n) {
+    int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (i < n) {
+        double t = a[i] * a[i];
+        out[i] = (t + 1.0) * (t - 1.0);
+    }
+}

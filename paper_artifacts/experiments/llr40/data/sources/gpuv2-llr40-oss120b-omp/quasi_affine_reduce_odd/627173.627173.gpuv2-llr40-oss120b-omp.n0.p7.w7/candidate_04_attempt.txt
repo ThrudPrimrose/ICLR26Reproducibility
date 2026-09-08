@@ -1,0 +1,15 @@
+/* Original target reduction version. */
+
+#include <stdint.h>
+#include <omp.h>
+
+void quasi_affine_reduce_odd_fp64(const double *restrict a, double *restrict out, const int64_t LEN_1D) {
+    const int64_t Nodd = (LEN_1D > 1) ? ((LEN_1D - 1) / 2) : 0;
+    double acc = 0.0;
+    #pragma omp target teams distribute parallel for reduction(+:acc) map(to: a[0:LEN_1D]) schedule(static)
+    for (int64_t j = 0; j < Nodd; ++j) {
+        acc += a[1 + 2 * j];
+    }
+    out[0] = acc;
+}
+

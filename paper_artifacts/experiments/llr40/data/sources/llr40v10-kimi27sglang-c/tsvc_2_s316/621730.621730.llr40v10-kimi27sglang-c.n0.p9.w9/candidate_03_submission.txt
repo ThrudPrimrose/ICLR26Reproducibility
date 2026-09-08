@@ -1,0 +1,81 @@
+#include <stdint.h>
+#include <immintrin.h>
+#include <omp.h>
+
+static inline double hmin_pd(__m512d v) {
+    double lanes[8] __attribute__((aligned(64)));
+    _mm512_store_pd(lanes, v);
+    double m = lanes[0];
+    for (int j = 1; j < 8; ++j) {
+        if (lanes[j] < m) m = lanes[j];
+    }
+    return m;
+}
+
+void tsvc_2_s316_fp64(const double *restrict a, double *restrict result, const int64_t LEN_1D) {
+    double global_min = a[0];
+
+    if (LEN_1D > 1) {
+        #pragma omp parallel
+        {
+            int nt = omp_get_num_threads();
+            int tid = omp_get_thread_num();
+            int64_t n = LEN_1D - 1;
+            int64_t chunk = n / nt;
+            int64_t rem = n % nt;
+            int64_t start = 1 + tid * chunk + (tid < rem ? tid : rem);
+            int64_t end = start + chunk + (tid < rem ? 1 : 0);
+
+            __m512d v0 = _mm512_set1_pd(global_min);
+            __m512d v1 = v0;
+            __m512d v2 = v0;
+            __m512d v3 = v0;
+            int64_t i = start;
+
+            for (; i + 32 <= end; i += 32) {
+                __m512d a0 = _mm512_loadu_pd(&a[i]);
+                __m512d a1 = _mm512_loadu_pd(&a[i + 8]);
+                __m512d a2 = _mm512_loadu_pd(&a[i + 16]);
+                __m512d a3 = _mm512_loadu_pd(&a[i + 24]);
+                __mmask8 lt0 = _mm512_cmp_pd_mask(a0, v0, _CMP_LT_OQ);
+                __mmask8 lt1 = _mm512_cmp_pd_mask(a1, v1, _CMP_LT_OQ);
+                __mmask8 lt2 = _mm512_cmp_pd_mask(a2, v2, _CMP_LT_OQ);
+                __mmask8 lt3 = _mm512_cmp_pd_mask(a3, v3, _CMP_LT_OQ);
+                v0 = _mm512_mask_blend_pd(lt0, v0, a0);
+                v1 = _mm512_mask_blend_pd(lt1, v1, a1);
+                v2 = _mm512_mask_blend_pd(lt2, v2, a2);
+                v3 = _mm512_mask_blend_pd(lt3, v3, a3);
+            }
+
+            for (; i + 8 <= end; i += 8) {
+                __m512d va = _mm512_loadu_pd(&a[i]);
+                __mmask8 lt = _mm512_cmp_pd_mask(va, v0, _CMP_LT_OQ);
+                v0 = _mm512_mask_blend_pd(lt, v0, va);
+            }
+
+            __mmask8 lt01 = _mm512_cmp_pd_mask(v1, v0, _CMP_LT_OQ);
+            v0 = _mm512_mask_blend_pd(lt01, v0, v1);
+            __mmask8 lt02 = _mm512_cmp_pd_mask(v2, v0, _CMP_LT_OQ);
+            v0 = _mm512_mask_blend_pd(lt02, v0, v2);
+            __mmask8 lt03 = _mm512_cmp_pd_mask(v3, v0, _CMP_LT_OQ);
+            v0 = _mm512_mask_blend_pd(lt03, v0, v3);
+
+            double local_min = hmin_pd(v0);
+
+            for (; i < end; ++i) {
+                if (a[i] < local_min) {
+                    local_min = a[i];
+                }
+            }
+
+            #pragma omp critical
+            {
+                if (local_min < global_min) {
+                    global_min = local_min;
+                }
+            }
+        }
+    }
+
+    result[0] = global_min;
+}

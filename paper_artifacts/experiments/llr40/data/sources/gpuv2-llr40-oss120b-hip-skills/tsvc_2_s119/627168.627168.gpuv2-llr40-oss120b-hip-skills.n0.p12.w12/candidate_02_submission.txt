@@ -1,0 +1,14 @@
+#include "/opt/rocm/include/hip/hip_runtime.h"
+#include <cstdint>
+
+extern "C" __global__ void tsvc_2_s119_row_kernel(double* __restrict__ aa,
+                                                   const double* __restrict__ bb,
+                                                   int N,
+                                                   int row) {
+    int j = 1 + blockIdx.x * blockDim.x + threadIdx.x;
+    if (j < N) {
+        int idx = row * N + j;
+        int idx_prev = (row - 1) * N + (j - 1);
+        aa[idx] = aa[idx_prev] + bb[idx];
+    }
+}

@@ -1,0 +1,83 @@
+/* Segmented dot product over ragged CSR (segment_reduce_ragged).
+ *
+ * ABI (c-abi-v2, canonical order: pointers by name, then scalars by name, then the
+ * reserved workspace pair):
+ *   void segment_reduce_ragged_fp64(double *out, int64_t *row_ptr, double *val,
+ *                                   double *w, int64_t NSEG,
+ *                                   uint8_t *workspace, int64_t workspace_size)
+ *
+ * out[s] = sum_{e in [row_ptr[s], row_ptr[s+1])} val[e] * w[e]
+ *
+ * The work is uniform per ENTRY (one FMA), ragged per SEGMENT (heavy-tailed
+ * lengths), so we partition the entry axis [0, T) into P equal contiguous
+ * chunks -- equal work by construction -- and let each chunk own the segments
+ * whose start boundary falls inside it.  A segment is summed exactly once, by
+ * its owner, over its FULL range, so no cross-thread accumulation is needed
+ * and out[s] is written by exactly one thread.  Empty (zero-length) segments
+ * simply sum to 0.
+ */
+#include <stdint.h>
+#include <omp.h>
+
+static inline int64_t lb_ge(const int64_t *rp, int64_t n, int64_t v)
+{
+    /* first index i in [0, n) with rp[i] >= v, or n if none; rp nondecreasing */
+    int64_t lo = 0, hi = n;
+    while (lo < hi) {
+        int64_t mid = (lo + hi) >> 1;
+        if (rp[mid] >= v)
+            hi = mid;
+        else
+            lo = mid + 1;
+    }
+    return lo;
+}
+
+static inline double dot_range(const double *restrict v, const double *restrict w, int64_t a, int64_t b)
+{
+    double s0 = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0;
+    int64_t e = a;
+    for (; e + 3 < b; e += 4) {
+        s0 += v[e] * w[e];
+        s1 += v[e + 1] * w[e + 1];
+        s2 += v[e + 2] * w[e + 2];
+        s3 += v[e + 3] * w[e + 3];
+    }
+    for (; e < b; e++)
+        s0 += v[e] * w[e];
+    return (s0 + s1) + (s2 + s3);
+}
+
+void segment_reduce_ragged_fp64(double *restrict out, int64_t *restrict row_ptr,
+                                const double *restrict val, const double *restrict w,
+                                int64_t NSEG, uint8_t *restrict workspace, int64_t workspace_size)
+{
+    (void)workspace;
+    (void)workspace_size;
+    if (NSEG <= 0)
+        return;
+    const int64_t T = row_ptr[NSEG];
+    int nt = omp_get_max_threads();
+    if (nt < 1)
+        nt = 1;
+    if (T <= 0) {
+        #pragma omp parallel for num_threads(nt) schedule(static)
+        for (int64_t s = 0; s < NSEG; s++)
+            out[s] = 0.0;
+        return;
+    }
+    #pragma omp parallel num_threads(nt)
+    {
+        const int P = omp_get_num_threads();
+        const int p = omp_get_thread_num();
+        const int64_t lo = (T * p) / P;
+        const int64_t hi = (T * (int64_t)(p + 1)) / P;
+        /* segments owned by this chunk: starts in [lo, hi)
+         * (the tail chunk also owns any zero-length tail segments with start T) */
+        const int64_t sA = lb_ge(row_ptr, NSEG, lo);
+        const int64_t sB = (hi == T) ? NSEG : lb_ge(row_ptr, NSEG, hi);
+        for (int64_t s = sA; s < sB; s++) {
+            out[s] = dot_range(val, w, row_ptr[s], row_ptr[s + 1]);
+        }
+    }
+}
