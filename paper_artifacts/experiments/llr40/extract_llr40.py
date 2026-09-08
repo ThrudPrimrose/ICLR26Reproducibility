@@ -178,7 +178,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     ap.add_argument("--out", required=True, type=pathlib.Path, help="output directory (created if absent)")
     ap.add_argument("--canon", type=pathlib.Path, default=None, help="canonicalization log to key on benchmark")
     ap.add_argument(
-        "--arm-prefix", default="", help="keep only arms whose label starts with this; empty keeps every arm"
+        "--arm-prefix",
+        action="append",
+        default=[],
+        metavar="PREFIX",
+        help="keep only arms whose label starts with one of these; repeatable, empty keeps every arm. "
+        "Repeatable because ONE campaign can wear more than one label: llr40v11 ran its first wave "
+        "as llr40v11-* and every completion wave as v11w2-*, and a single prefix silently drops "
+        "whichever half it does not name",
     )
     ap.add_argument(
         "--exclude-arm",
@@ -309,12 +316,16 @@ def column(row: sqlite3.Row, keys: frozenset[str], name: str) -> Any:
     return row[name] if name in keys else ""
 
 
-def read_db(db: Database, focus: frozenset[str], arm_prefix: str, excluded: frozenset[str], c_fix_ms: int) -> DbResult:
+def read_db(
+    db: Database, focus: frozenset[str], arm_prefix: tuple[str, ...], excluded: frozenset[str], c_fix_ms: int
+) -> DbResult:
     """One database -> the rows it contributes. Opens read-only, never writes.
 
     ``arm_prefix`` selects the campaign by ARM LABEL rather than by run root, because one campaign's
-    arms are spread over both its named wave roots and its per-job Slurm-id roots. It also drops the
-    ``adhoc`` pseudo-arm, which is a grade with no run id rather than a condition. ``excluded``
+    arms are spread over both its named wave roots and its per-job Slurm-id roots. It is a TUPLE:
+    llr40v11 labelled its first wave llr40v11-* and every completion wave v11w2-*, so a single
+    prefix would keep one half and silently drop the other. Empty keeps every arm. It also drops
+    the ``adhoc`` pseudo-arm, which is a grade with no run id rather than a condition. ``excluded``
     drops an arm by one of its hyphen-separated tokens, which is how a model is named in the label;
     a token test rather than a substring keeps it from matching a longer name by accident.
 
@@ -350,7 +361,7 @@ def read_db(db: Database, focus: frozenset[str], arm_prefix: str, excluded: froz
                 run_id = row["run_id"] or ""
                 bench = row["benchmark"] or ""
                 arm = arm_of(run_id)
-                if not arm.startswith(arm_prefix) or not excluded.isdisjoint(arm.split("-")):
+                if (arm_prefix and not arm.startswith(arm_prefix)) or not excluded.isdisjoint(arm.split("-")):
                     continue
                 if c_fix_ms > 0 and column(row, keys, "language") == C_LANGUAGE:
                     stamp = row["ts"]
@@ -609,7 +620,7 @@ def main(argv: list[str]) -> int:
         excluded = frozenset(args.exclude_arm)
         undated_c = 0
         for result in pool.map(
-            lambda db: read_db(db, focus, args.arm_prefix, excluded, args.c_reference_fix_ms), databases
+            lambda db: read_db(db, focus, tuple(args.arm_prefix), excluded, args.c_reference_fix_ms), databases
         ):
             observations.extend(result.observations)
             sources.extend(result.sources)
