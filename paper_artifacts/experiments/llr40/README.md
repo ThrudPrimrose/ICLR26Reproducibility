@@ -31,6 +31,44 @@ cp /tmp/fresh/merged.csv data/llr40_observations.csv
 takes the fresh rows for every arm it does, so a re-measured arm is replaced whole rather than
 duplicated.
 
+### How token cost is computed, and what it assumes
+
+The `tokens` column is the harness's raw figure: every usage field summed over every turn. It is
+wrong twice, in OPPOSITE directions, and both errors grow with things that differ between models:
+
+- **It excludes reasoning.** These OpenAI-compatible endpoints leave
+  `usage.output_tokens_details.thinking_tokens` at 0, so thinking is invisible to it -- measured at
+  **47-55% of everything the model generates**. Every provider bills reasoning at the OUTPUT rate,
+  so this omits the most expensive component.
+- **It overcounts re-sent context.** Each turn re-sends the whole transcript and each turn's
+  `input_tokens` counts all of it again. The server does not: the measured prefix cache hit rate on
+  these runs is **99.3%**.
+
+`token_cost.py` (in the harness, `containers/cluster/example-script/`) recomputes it under three
+assumptions, each stated because each is a choice:
+
+1. **Perfect prefix cache.** Everything turn N shares with turn N-1 is a hit; since the transcript
+   only grows, that is turn N-1's whole input. `fresh = max(0, in_N - in_N-1)`,
+   `cached = min(in_N, in_N-1)`. Measured hit rate is 99.3%, so this approximates something real --
+   but it is an UPPER bound, and an episode whose context was evicted is charged less than it cost.
+2. **Cache discount 50%** (`CACHE_DISCOUNT`). Published rates are 90% off (Anthropic) and 50% off
+   (OpenAI); these are self-hosted vLLM/SGLang endpoints with no published price, so this takes the
+   conservative figure. One named constant, not a literal, because changing it moves every number.
+3. **Reasoning is output**, counted from the client's streamed `estimated_tokens_delta` because the
+   endpoint reports zero.
+
+    effective = fresh + 0.50 x cached + (output + thinking)
+
+**It does not convert to money.** A price needs an output-to-input multiplier (published ratios run
+4x-8x) and a per-model rate; inventing either would bury an assumption inside a number that looks
+measured. `effective` is a token count on one axis -- compare two episodes with it, do not budget
+with it.
+
+**The published comparisons survive this.** Across sampled v11 episodes the correction is close to
+a constant factor -- `effective/naive` runs 0.51 to 0.54, cached fraction 96.7% to 99.1%, thinking
+share 47% to 55% -- so it rescales the axis without reordering anything. It matters for an absolute
+cost claim, not for the relative ones the figures make.
+
 ### Figures, and the scripts that draw them
 
 Three per-experiment figures, all drawn in the harness's shared style
