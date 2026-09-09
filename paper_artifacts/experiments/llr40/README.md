@@ -51,13 +51,25 @@ assumptions, each stated because each is a choice:
    only grows, that is turn N-1's whole input. `fresh = max(0, in_N - in_N-1)`,
    `cached = min(in_N, in_N-1)`. Measured hit rate is 99.3%, so this approximates something real --
    but it is an UPPER bound, and an episode whose context was evicted is charged less than it cost.
-2. **Cache discount 50%** (`CACHE_DISCOUNT`). Published rates are 90% off (Anthropic) and 50% off
-   (OpenAI); these are self-hosted vLLM/SGLang endpoints with no published price, so this takes the
-   conservative figure. One named constant, not a literal, because changing it moves every number.
+2. **Cache discount 50%** (`CACHE_DISCOUNT`), a borrowed PRICING convention. Published rates are
+   90% off (Anthropic) and 50% off (OpenAI); this takes the conservative one. Read it as
+   conservative in the strong sense: nobody bills us per token -- these are self-hosted
+   vLLM/SGLang endpoints -- and what a hit actually saves is the prefill compute for the cached
+   prefix, which published measurements put at **85-95%**. So 50% OVER-charges a cached token
+   against what it costs us, and an arm with a long shared prefix looks dearer than it was. It is
+   kept because it is a number a reader can check, where a compute-derived discount would be ours
+   alone and would move with the hit rate, the eviction policy and the model.
 3. **Reasoning is output**, counted from the client's streamed `estimated_tokens_delta` because the
    endpoint reports zero.
 
     effective = fresh + 0.50 x cached + (output + thinking)
+
+**The unit this setting actually pays in is node-seconds.** Tokens are a borrowed currency: we
+rent nodes by the second, and the token count is only a proxy for how hard we worked them.
+`api_ms` per episode is the share of the shared inference node that episode occupied, so its true
+cost is the job's `nodes x wall` apportioned by it -- with no discount assumption anywhere. Prefer
+that when the question is what an arm COST; prefer `effective` when the question is what an agent
+CONSUMED, which is what a per-agent budget bounds.
 
 **It does not convert to money.** A price needs an output-to-input multiplier (published ratios run
 4x-8x) and a per-model rate; inventing either would bury an assumption inside a number that looks
