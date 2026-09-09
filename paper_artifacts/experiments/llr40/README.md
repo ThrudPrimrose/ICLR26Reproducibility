@@ -64,6 +64,25 @@ assumptions, each stated because each is a choice:
 
     effective = fresh + 0.50 x cached + (output + thinking)
 
+**Two numbers, and both are right -- for different questions.** The published convention is the
+OPPOSITE of the model above, and not by mistake:
+
+- **`billed`** (the per-turn sum) is what the literature reports. An API bills per REQUEST, so a
+  40-turn episode really is charged for its prompt 40 times, and agent benchmarks price open-weight
+  models "using token usage and pricing from an appropriate provider" so their numbers compare with
+  API-based work. Published agentic-coding input:output ratios exceed **150:1**; ours is
+  10,427,977:68,757 = **152:1**, the same convention visible in our data. Quote this against other
+  papers.
+- **`effective`** (every token once) is what the hardware computed. Nobody bills us per request and
+  a cached prefix costs no forward pass. Quote this between arms of THIS work, because `billed`
+  scales with turn count, turn count differs by model, and `effective/billed` runs 0.023-0.061
+  tracking turns almost monotonically -- the convention silently penalises models that take more
+  steps.
+
+The field also reports an **effectiveness-aware** cost: total divided by instances RESOLVED, not
+attempted. Worth pairing with either number, since an arm that spends little and lands nothing is
+not cheap.
+
 **The unit this setting actually pays in is node-seconds.** Tokens are a borrowed currency: we
 rent nodes by the second, and the token count is only a proxy for how hard we worked them.
 `api_ms` per episode is the share of the shared inference node that episode occupied, so its true
