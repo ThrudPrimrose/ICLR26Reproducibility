@@ -51,14 +51,14 @@ assumptions, each stated because each is a choice:
    only grows, that is turn N-1's whole input. `fresh = max(0, in_N - in_N-1)`,
    `cached = min(in_N, in_N-1)`. Measured hit rate is 99.3%, so this approximates something real --
    but it is an UPPER bound, and an episode whose context was evicted is charged less than it cost.
-2. **Cache discount 50%** (`CACHE_DISCOUNT`), a borrowed PRICING convention. Published rates are
-   90% off (Anthropic) and 50% off (OpenAI); this takes the conservative one. Read it as
-   conservative in the strong sense: nobody bills us per token -- these are self-hosted
-   vLLM/SGLang endpoints -- and what a hit actually saves is the prefill compute for the cached
-   prefix, which published measurements put at **85-95%**. So 50% OVER-charges a cached token
-   against what it costs us, and an arm with a long shared prefix looks dearer than it was. It is
-   kept because it is a number a reader can check, where a compute-derived discount would be ours
-   alone and would move with the hit rate, the eviction policy and the model.
+2. **A cache read costs nothing** (`CACHE_DISCOUNT = 0`), so every token is counted ONCE, in the
+   turn it first appeared. This began at 50% -- OpenAI's published cache-read rate -- and that was
+   wrong for a reason worth stating: `cached` is a sum over TURNS, and the thing it sums existed
+   only once. One episode summed **10,329,254 cached tokens against a context that reached
+   98,723**; the KV cache held one copy and the rest is that copy re-counted per turn. Any nonzero
+   fraction prices a phantom, and prices it in proportion to turn count, which differs by model.
+   What zero omits is the KV re-read on each decode step -- real, but memory traffic rather than a
+   forward pass, and second-order beside a 106x double count.
 3. **Reasoning is output**, counted from the client's streamed `estimated_tokens_delta` because the
    endpoint reports zero.
 
@@ -76,10 +76,15 @@ CONSUMED, which is what a per-agent budget bounds.
 measured. `effective` is a token count on one axis -- compare two episodes with it, do not budget
 with it.
 
-**The published comparisons survive this.** Across sampled v11 episodes the correction is close to
-a constant factor -- `effective/naive` runs 0.51 to 0.54, cached fraction 96.7% to 99.1%, thinking
-share 47% to 55% -- so it rescales the axis without reordering anything. It matters for an absolute
-cost claim, not for the relative ones the figures make.
+**This is NOT a rescale, and an earlier version of this note wrongly said it was.** Across sampled
+v11 episodes `effective/naive` runs **0.023 to 0.061 -- a 2.7x spread** -- and it tracks turn count
+almost monotonically (173 turns -> 0.023, 87 -> 0.056, 51 -> 0.060). The naive metric over-charges
+in proportion to how many turns an agent took, and turn counts differ systematically by model, so
+the bias does not cancel in a cross-model comparison.
+
+Per arm on a 101-episode sample the cheapest and dearest are unchanged, but the middle reorders
+(`oss120b-c` moves from fifth to third) and the magnitudes move 10-20x. Any cost figure quoting raw
+`tokens` should be regenerated from `effective` before it is published.
 
 ### Figures, and the scripts that draw them
 
