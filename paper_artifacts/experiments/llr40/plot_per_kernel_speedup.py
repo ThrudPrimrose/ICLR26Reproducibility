@@ -21,13 +21,24 @@ import pathlib
 
 import numpy as np
 import pandas as pd
-from hpcagent_bench import palette, plotstyle
+from hpcagent_bench import experiment_tags, palette, plotstyle
 
 plotstyle.apply()
 import matplotlib.pyplot as plt  # noqa: E402 -- pyplot must follow plotstyle.apply()
 
+MIN_INTERVAL_SAMPLES: int = 5
+
 #: Bootstrap resamples per cell, and the seed that makes the published figure reproducible.
 BOOTSTRAP: int = 2000
+
+#: Fewest submissions a cell needs before an interval is drawn for it.
+#:
+#: A percentile bootstrap of a MEDIAN needs samples the median can actually move between. At n=2
+#: the resampled median takes three values and the 2.5/97.5 percentiles land on the two data
+#: points; at n=3 it takes three. The interval that comes back is not a 95% interval, it is a
+#: redrawing of the two points -- which is why the measured widths did NOT shrink with n
+#: (median width 0.16 at n=2 against 0.64 at n=3-4). Below this, the cell is drawn hollow and
+#: makes no claim, which is the same contract single-submission cells already had.
 SEED: int = 0
 
 #: Agents this figure knows, in the order the shared registry ranks them. The COLOURS come from
@@ -35,6 +46,9 @@ SEED: int = 0
 #: a reader carries colour between figures whether or not we intend them to.
 AGENTS: tuple[str, ...] = ("oss120b", "qwen38", "kimi27sglang")
 AGENT_COLORS: dict[str, str] = palette.colors("model", AGENTS)
+#: Shape as well as colour, from the same registry: identity encoded twice survives a greyscale
+#: print and a figure shrunk to one column, where hue alone does not.
+AGENT_MARKERS: dict[str, str] = palette.markers("model", AGENTS)
 INK, MUTED, RULE = plotstyle.INK, plotstyle.MUTED, plotstyle.RULE
 
 
@@ -78,59 +92,57 @@ def cells(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def draw(cell_frame: pd.DataFrame, baseline: str, campaign: str, out: pathlib.Path) -> pathlib.Path:
-    """One panel per language, kernels down the y axis so their names stay readable."""
+    """One panel per language, kernels along X and the measured speed-up up Y."""
     languages = [lang for lang in ("c", "fortran", "cpp") if lang in set(cell_frame["language"])]
     # Kernels ordered by overall median, so the reader walks a gradient instead of an alphabet.
     order = (cell_frame.groupby("benchmark")["log2_speedup"].median().sort_values(ascending=False).index.tolist())
-    height = max(4.0, 0.24 * len(order) + 1.6)
-    fig, axes = plt.subplots(1, len(languages), figsize=(5.6 * len(languages), height),
-                             squeeze=False, sharey=True)
+    width = max(7.0, 0.26 * len(order) + 2.0)
+    fig, axes = plt.subplots(len(languages), 1, figsize=(width, 4.4 * len(languages)),
+                             squeeze=False, sharex=True)
     positions = {kernel: i for i, kernel in enumerate(order)}
-    # Agents get a small vertical offset each so three points on one kernel never overplot.
+    # Agents get a small horizontal offset each so three points on one kernel never overplot.
     agents = [a for a in AGENTS if a in set(cell_frame["agent"])]
     offsets = np.linspace(-0.26, 0.26, len(agents)) if len(agents) > 1 else [0.0]
 
-    for column, language in enumerate(languages):
-        ax = axes[0][column]
-        ax.axvline(0.0, color=INK, linewidth=1.1, zorder=2)
-        ax.set_axisbelow(True)
-        ax.grid(axis="x", color=RULE, linewidth=0.6)
+    for row, language in enumerate(languages):
+        ax = axes[row][0]
+        ax.axhline(0.0, color=INK, linewidth=1.1, zorder=2)
         panel = cell_frame[cell_frame["language"] == language]
         for agent, offset in zip(agents, offsets, strict=True):
             part = panel[panel["agent"] == agent]
             if part.empty:
                 continue
-            y = np.array([positions[k] for k in part["benchmark"]], dtype=float) + offset
+            x = np.array([positions[k] for k in part["benchmark"]], dtype=float) + offset
             colour = AGENT_COLORS[agent]
-            many = part["n"].to_numpy() > 1
-            ax.hlines(y[many], part["ci_low"].to_numpy()[many], part["ci_high"].to_numpy()[many],
+            many = part["n"].to_numpy() >= MIN_INTERVAL_SAMPLES
+            ax.vlines(x[many], part["ci_low"].to_numpy()[many], part["ci_high"].to_numpy()[many],
                       color=colour, linewidth=1.6, alpha=0.55, zorder=3)
-            ax.scatter(part["log2_speedup"].to_numpy()[many], y[many], s=26, color=colour,
-                       edgecolor="white", linewidth=0.6, zorder=4, label=agent if column == 0 else None)
-            ax.scatter(part["log2_speedup"].to_numpy()[~many], y[~many], s=26, facecolor="none",
+            shape = AGENT_MARKERS[agent]
+            ax.scatter(x[many], part["log2_speedup"].to_numpy()[many], s=26, color=colour, marker=shape,
+                       edgecolor="white", linewidth=0.6, zorder=4,
+                       label=experiment_tags.model_name(agent) if row == 0 else None)
+            ax.scatter(x[~many], part["log2_speedup"].to_numpy()[~many], s=26, facecolor="none", marker=shape,
                        edgecolor=colour, linewidth=1.1, zorder=4)
-        ax.set_title(f"{language}", pad=8)
-        ax.set_xlabel("log2 speed-up over the graded baseline")
+        ax.set_title(experiment_tags.language_name(language), pad=8, loc="left")
+        ax.set_ylabel(f"$\\log_2$ Speedup over {baseline}")
+        plotstyle.value_axis(ax, "y")
         plotstyle.despine(ax)
 
-    axes[0][0].set_yticks(range(len(order)))
-    axes[0][0].set_yticklabels(order, fontsize=7)
-    axes[0][0].set_ylim(-0.8, len(order) - 0.2)
-    axes[0][0].invert_yaxis()
+    bottom = axes[-1][0]
+    bottom.set_xticks(range(len(order)))
+    bottom.set_xticklabels(order, fontsize=7, rotation=90)
+    bottom.set_xlim(-0.8, len(order) - 0.2)
 
     handles, labels = axes[0][0].get_legend_handles_labels()
     # The hollow key is added only when a hollow marker is actually drawn: a legend entry for a
     # style the figure does not use tells the reader to go looking for something that is not there.
-    if bool((cell_frame["n"] == 1).any()):
+    if bool((cell_frame["n"] < MIN_INTERVAL_SAMPLES).any()):
         hollow = plt.Line2D([], [], marker="o", linestyle="none", markerfacecolor="none",
-                            markeredgecolor=MUTED, markersize=6, label="single submission (no interval)")
-        handles, labels = handles + [hollow], labels + [hollow.get_label()]
-    axes[0][-1].legend(handles=handles, labels=labels, loc="lower right", frameon=False, fontsize=8)
-    top = plotstyle.title(
-        fig, f"{campaign}: per-kernel speed-up by agent",
-        f"log2 of the median accepted submission, skills and non-skills arms pooled per model; "
-        f"0 = the {baseline} baseline. Bars are 95% bootstrap intervals on the cell median. "
-        f"Only submissions at or above the baseline are accepted, so no point can fall below 0.")
+                            markeredgecolor=MUTED, markersize=6,
+                            label=f"Fewer Than {MIN_INTERVAL_SAMPLES} Submissions (No Interval)")
+        handles = handles + [hollow]
+    plotstyle.legend_below(fig, handles)
+    top = plotstyle.title(fig, experiment_tags.display_name(campaign))
     fig.tight_layout(rect=(0, 0, 1, top))
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, bbox_inches="tight")
@@ -163,9 +175,9 @@ def main() -> None:
     args.table.parent.mkdir(parents=True, exist_ok=True)
     cell_frame.to_csv(args.table, index=False)
     written = draw(cell_frame, args.baseline, args.campaign, args.out)
-    singles = int((cell_frame["n"] == 1).sum())
+    thin = int((cell_frame["n"] < MIN_INTERVAL_SAMPLES).sum())
     print(f"{len(frame)} submissions -> {len(cell_frame)} cells "
-          f"({singles} with a single submission, drawn hollow)")
+          f"({thin} under n={MIN_INTERVAL_SAMPLES}, drawn hollow with no interval)")
     print(f"table  -> {args.table}")
     print(f"figure -> {written} (+ .png)")
 
