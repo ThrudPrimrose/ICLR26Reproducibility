@@ -1,4 +1,4 @@
-"""Median speedup over sequential C, one bar per framework, from one canon sweep.
+"""Median speedup over the track baseline, one bar per framework, from one canon sweep.
 
 Median is what the bars show, and on its own it would mislead: ``cc_autopar`` and ``numba`` both sit
 at exactly 1.00x median while their geometric means are near 1.9x, because each helps a lot on a few
@@ -24,16 +24,26 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 from benchlib import style  # noqa: E402  -- the artifact is run from a clone, not installed
 
-#: The baseline every speedup is taken against: unmodified C at -O3, one thread.
-BASELINE = "cc"
+#: The baseline every speedup is taken against. Numba, because that is what
+#: ``TRACK_DEFAULT_BASELINE["loop_level_reasoning"]`` declares and therefore what every AGENT
+#: submission on this track is graded against -- a canon figure on `cc` was the one artifact in the
+#: project quoting a different denominator from the results it is read beside, which silently
+#: inflates it: canon reads 10.28x over cc and 7.35x over numba on the same sweep.
+#:
+#: `cc` stays available through --baseline because "what does canonicalization buy over sequential
+#: C" is a real question; it is just not the question the rest of the paper is asking.
+BASELINE = "numba"
 
 #: Columns on the figure, in axis order, with the label each carries. dace_cpu / dace_gpu (the
 #: non-canonicalized DaCe columns) are collected but not drawn here: this figure answers what
 #: canonicalization is worth against the compilers, not what DaCe is worth against itself.
+#: How each column is named in prose, for the axis label. Keyed off the same names DRAW uses.
+LABEL: dict[str, str] = {"cc": "sequential C", "numba": "Numba", "cc_autopar": "C -O3 + autopar"}
+
 DRAW = (
-    ("cc", "C -O3 (baseline)"),
+    ("cc", "C -O3, one thread"),
     ("cc_autopar", "C -O3 + autopar"),
-    ("numba", "Numba"),
+    ("numba", "Numba (baseline)"),
     ("dace_cpu_canonicalize", "DaCe canon CPU"),
     ("dace_gpu_canonicalize", "DaCe canon GPU"),
 )
@@ -117,7 +127,13 @@ def draw(data: pathlib.Path, out_dir: pathlib.Path) -> int:
 
     ax.set_yticks(ypos)
     ax.set_yticklabels([f"{label}  (n={n})" for label, _m, _g, n in rows], fontsize=9, color=style.INK)
-    ax.set_xlabel("speedup over sequential C  (log scale, higher is better)", fontsize=8.5, color=style.INK2)
+    # Named from BASELINE, never written out: the label and the divisor drifting apart is exactly
+    # how a figure comes to say "over sequential C" while dividing by something else.
+    ax.set_xlabel(
+        f"speedup over {LABEL.get(BASELINE, BASELINE)}  (log scale, higher is better)",
+        fontsize=8.5,
+        color=style.INK2,
+    )
     ax.axvline(1.0, color=style.RULE, linewidth=1.0, zorder=0)
     ax.grid(axis="x", color=style.RULE, linewidth=0.6, alpha=0.7, zorder=0)
     ax.set_axisbelow(True)
