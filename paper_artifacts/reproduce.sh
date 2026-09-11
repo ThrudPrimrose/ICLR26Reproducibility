@@ -29,3 +29,10 @@ done
 
 echo "== canon figures   experiments/canon/data/canon_llr40.csv -> experiments/canon/figures/"
 "$PY" experiments/canon/plot_canon_speedup.py
+
+# Agentic campaigns. plot.sh needs an optarena checkout for the plotting tools (OPTARENA).
+for exp in cpf-llr-focus40 gpu-llr-focus40 git-scicomp; do
+  [ "${1:-}" = "--collect" ] && "experiments/$exp/collect.sh"
+  echo "== $exp figures   experiments/$exp/data/observations.csv -> experiments/$exp/figures/"
+  "experiments/$exp/plot.sh"
+done
