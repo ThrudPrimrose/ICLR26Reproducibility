@@ -21,7 +21,9 @@ import pathlib
 
 import numpy as np
 import pandas as pd
-from hpcagent_bench import experiment_tags, palette, plotstyle
+from hpcagent_bench import experiment_tags
+from hpcagent_bench.stats import palette
+from hpcagent_bench.stats import style as plotstyle
 
 plotstyle.apply()
 import matplotlib.pyplot as plt  # noqa: E402 -- pyplot must follow plotstyle.apply()
@@ -42,13 +44,13 @@ BOOTSTRAP: int = 2000
 SEED: int = 0
 
 #: Agents this figure knows, in the order the shared registry ranks them. The COLOURS come from
-#: :mod:`hpcagent_bench.palette`, so an agent wears the same hue here as in every harness figure --
-#: a reader carries colour between figures whether or not we intend them to.
+#: :mod:`hpcagent_bench.stats.palette`, so an agent wears the same hue here as in every harness
+#: figure -- a reader carries colour between figures whether or not we intend them to.
 AGENTS: tuple[str, ...] = ("oss120b", "qwen38", "kimi27sglang")
-AGENT_COLORS: dict[str, str] = palette.colors("model", AGENTS)
+AGENT_COLORS: dict[str, str] = palette.model_colors(AGENTS)
 #: Shape as well as colour, from the same registry: identity encoded twice survives a greyscale
 #: print and a figure shrunk to one column, where hue alone does not.
-AGENT_MARKERS: dict[str, str] = palette.markers("model", AGENTS)
+AGENT_MARKERS: dict[str, str] = palette.model_markers(AGENTS)
 INK, MUTED, RULE = plotstyle.INK, plotstyle.MUTED, plotstyle.RULE
 
 
