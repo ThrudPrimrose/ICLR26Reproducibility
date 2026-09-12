@@ -31,13 +31,13 @@ import dataclasses
 import pathlib
 
 import matplotlib
-import matplotlib.ticker
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402  -- must follow the Agg backend selection
 
-from benchlib import style  # noqa: E402  -- ditto, it imports pyplot itself
 from benchlib import dumbbell  # noqa: E402
+from hpcagent_bench import experiment_tags  # noqa: E402
+from hpcagent_bench.stats import palette, style, summary  # noqa: E402
 
 #: The two x positions of a panel, and what they are called under it.
 LEG_X = {"0": 0.0, "1": 1.0}
@@ -103,7 +103,7 @@ def tally(pairs: dict[str, tuple[float, float]], metric: Metric) -> tuple[int, i
 def draw_panel(ax, cell: dumbbell.Cell, metric: Metric) -> tuple[int, int, int]:
     """One cell's pairs, the geomean dumbbell over them; returns the tally for the annotation."""
     pairs = paired(cell, metric)
-    colour = style.MODEL_COLOR[cell.model]
+    colour, shape = palette.model_color(cell.model), palette.marker(cell.model)
     for before, after in pairs.values():
         ax.plot([LEG_X["0"], LEG_X["1"]], [before, after],
                 color=style.MUTED if worse(before, after, metric) else colour,
@@ -114,17 +114,10 @@ def draw_panel(ax, cell: dumbbell.Cell, metric: Metric) -> tuple[int, int, int]:
     if pairs:
         # The dumbbell idiom, drawn out by hand because the pair runs vertically here: the helper in
         # style puts the two legs on one ROW, which is the same treatment turned 90 degrees.
-        centre = [dumbbell.geomean([v[i] for v in pairs.values()]) for i in (0, 1)]
+        centre = [summary.geomean([v[i] for v in pairs.values()]) for i in (0, 1)]
         ax.plot(list(LEG_X.values()), centre, color=colour, linewidth=2.5, solid_capstyle="round", zorder=4)
-        ax.plot([LEG_X["0"]], [centre[0]],
-                marker="o",
-                markersize=5.5,
-                markerfacecolor=style.SURFACE,
-                markeredgecolor=style.MUTED,
-                markeredgewidth=2.0,
-                linestyle="none",
-                zorder=5)
-        ax.plot([LEG_X["1"]], [centre[1]], marker="o", markersize=5.5, color=colour, linestyle="none", zorder=5)
+        style.point_mark(ax, LEG_X["0"], centre[0], colour, shape, filled=False)
+        style.point_mark(ax, LEG_X["1"], centre[1], colour, shape, filled=True)
     return tally(pairs, metric)
 
 
@@ -134,13 +127,8 @@ def panel_axis(ax, metric: Metric, first: bool) -> None:
     ax.set_xticklabels(LEG_NAME)
     if metric.log:
         ax.set_yscale("log")
-        ax.get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-        ax.get_yaxis().set_minor_formatter(matplotlib.ticker.NullFormatter())
-    ax.grid(True, axis="y", zorder=0)
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
-    ax.spines["left"].set_visible(first)
-    ax.spines["bottom"].set_color(style.RULE)
+    style.value_axis(ax, "y", minor=False)
+    style.despine(ax)
     ax.tick_params(axis="both", length=0.0)
     if not first:
         ax.tick_params(axis="y", labelleft=False)
@@ -151,7 +139,7 @@ def render(cells: list[dumbbell.Cell], out: pathlib.Path) -> pathlib.Path:
     metrics = (SPEEDUP, TOKENS)
     fig, axes = plt.subplots(len(metrics),
                              len(cells),
-                             figsize=(7.0, 4.6),
+                             figsize=(14.0, 9.2),
                              sharey="row",
                              squeeze=False,
                              gridspec_kw={
@@ -159,19 +147,25 @@ def render(cells: list[dumbbell.Cell], out: pathlib.Path) -> pathlib.Path:
                                  "wspace": 0.18
                              })
     fig.subplots_adjust(left=0.085, right=0.99, top=0.745, bottom=0.105)
-    style.heading(fig, 0.06, 0.975, "What the skills packet did to each kernel")
+    fig.text(0.06,
+             0.975,
+             "What the skills packet did to each kernel",
+             fontsize=style.LABEL_PT + 2.0,
+             color=style.INK,
+             ha="left",
+             va="top")
     fig.text(0.06,
              0.925,
              "One line per kernel: its value without the packet, joined to its value with it. Grey marks a kernel\n"
              "the packet made worse. The heavy line is the cell's geomean, hollow without and filled with.",
-             fontsize=7.0,
-             color=style.INK2,
+             fontsize=style.ANNOTATION_PT,
+             color=style.MUTED,
              va="top",
              linespacing=1.55)
     for column, cell in enumerate(cells):
         box = axes[0, column].get_position()
         axes[0, column].set_title("C" if cell.language == "c" else "Fortran",
-                                  fontsize=8.0,
+                                  fontsize=style.LABEL_PT,
                                   color=style.INK,
                                   loc="center",
                                   pad=5.0)
@@ -181,8 +175,8 @@ def render(cells: list[dumbbell.Cell], out: pathlib.Path) -> pathlib.Path:
             other = axes[0, column + 1].get_position() if column + 1 < len(cells) else box
             fig.text((box.x0 + other.x1) / 2.0,
                      box.y1 + 0.038,
-                     style.tracked(style.MODEL_LABEL[cell.model]),
-                     fontsize=6.5,
+                     experiment_tags.model_name(cell.model),
+                     fontsize=style.ANNOTATION_PT,
                      color=style.MUTED,
                      ha="center",
                      va="bottom")
@@ -197,7 +191,7 @@ def render(cells: list[dumbbell.Cell], out: pathlib.Path) -> pathlib.Path:
                         xy=(0.5, -0.235),
                         xycoords="axes fraction",
                         family="monospace",
-                        fontsize=5.6,
+                        fontsize=style.ANNOTATION_PT - 3.0,
                         color=style.MUTED,
                         ha="center",
                         annotation_clip=False)
@@ -217,8 +211,8 @@ def report(cells: list[dumbbell.Cell]) -> None:
             if not pairs:
                 continue
             up, down, flat = tally(pairs, metric)
-            before = dumbbell.geomean([v[0] for v in pairs.values()])
-            after = dumbbell.geomean([v[1] for v in pairs.values()])
+            before = summary.geomean([v[0] for v in pairs.values()])
+            after = summary.geomean([v[1] for v in pairs.values()])
             print(f"  {metric.name:13s} {cell.label():24s} n={len(pairs):3d} better={up:3d} worse={down:3d} "
                   f"same={flat:3d} geomean {before:7.3f} -> {after:7.3f} ({after / before:.3f}x)")
 

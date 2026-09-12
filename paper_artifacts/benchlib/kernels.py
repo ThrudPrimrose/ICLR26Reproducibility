@@ -53,6 +53,7 @@ from __future__ import annotations
 import csv
 import dataclasses
 import pathlib
+import statistics
 import sys
 
 #: What the tag size and the exclusion set are is a property of the EXPERIMENT, not of the pooling
@@ -186,7 +187,7 @@ def rows(cells: dict[tuple[str, str, str, str], Kernel]) -> list[dict[str, objec
             "submissions": len(values),
             "last_speedup": f"{last:.6f}" if last is not None else "",
             "best_speedup": f"{values[-1]:.6f}" if values else "",
-            "median_speedup": f"{values[len(values) // 2]:.6f}" if values else "",
+            "median_speedup": f"{statistics.median(values):.6f}" if values else "",
             "ordering": ordering,
             "solved": int(cell.solved),
             "tokens": cell.tokens,

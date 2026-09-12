@@ -23,6 +23,7 @@ import statistics
 import sys
 
 from benchlib import constructs
+from hpcagent_bench.stats import summary
 
 # Job ids are the record of which Slurm run produced which arm; the arm records are under each
 # experiment's artifacts/provenance/.
@@ -1122,68 +1123,80 @@ def summarise(calls: list[list], submissions: list[list]) -> list[dict[str, obje
         reached = len(arm["attempted"])  # type: ignore[arg-type]
         tokens = sum(arm["spend"].values())  # type: ignore[union-attr]
         out.append({
-            "arm": name,
-            "model": arm["model"],
-            "language": arm["language"],
-            "skills": arm["skills"],
-            "job": arm["job"],
-            "problems": problem_count(name),
-            "attempted": reached,
-            "solved": solved,
-            "success_rate": round(solved / problem_count(name), 4),
+            "arm":
+            name,
+            "model":
+            arm["model"],
+            "language":
+            arm["language"],
+            "skills":
+            arm["skills"],
+            "job":
+            arm["job"],
+            "problems":
+            problem_count(name),
+            "attempted":
+            reached,
+            "solved":
+            solved,
+            "success_rate":
+            round(solved / problem_count(name), 4),
             # Two denominators, because they answer different questions and can disagree.
             # solved/242 is yield at a fixed budget; solved/attempted is per-problem capability.
             # For oss120b C they point opposite ways: the skills packet costs ~33% more tokens per
             # call, so that arm reached 130 problems where its pair reached 192 on the same token
             # spend. Reporting only solved/242 would read as "skills hurt" when the arm simply got
             # through less of the set.
-            "success_rate_attempted": round(solved / reached, 4) if reached else 0.0,
-            "calls": arm["calls"],
-            "submits": arm["submits"],
-            "submits_ok": arm["submits_ok"],
-            "tokens": tokens,
+            "success_rate_attempted":
+            round(solved / reached, 4) if reached else 0.0,
+            "calls":
+            arm["calls"],
+            "submits":
+            arm["submits"],
+            "submits_ok":
+            arm["submits_ok"],
+            "tokens":
+            tokens,
             # The budget question: what one kernel costs an arm from first turn to last grade. This
             # is the term the skills packet moves, and it is why the two success denominators
             # disagree -- a dearer kernel means fewer kernels reached at a fixed budget.
-            "tokens_per_kernel": int(tokens / reached) if reached else 0,
-            "tokens_per_solved": int(tokens / solved) if solved else 0,
-            "speedup_n": len(values),
+            "tokens_per_kernel":
+            int(tokens / reached) if reached else 0,
+            "tokens_per_solved":
+            int(tokens / solved) if solved else 0,
+            "speedup_n":
+            len(values),
             # The HEADLINE. Speed-up is a ratio, so the arm-level figure is the geometric mean: it
             # is the ratio whose product over the set matches, and it is symmetric in speed-up and
             # slowdown (2x and 0.5x cancel to 1). The arithmetic mean is dragged by one 50x kernel
             # past anything the arm does normally, and the median throws away the size of every win
             # -- both are kept below as spread cues, neither is the number to quote.
-            "speedup_geomean": geomean(values),
+            "speedup_geomean":
+            round(summary.geomean(values, unusable="drop"), 4),
             # The row above is weighted by how often somebody pressed SUBMIT, not by kernel: an arm
             # that resubmits one flat kernel eleven times has that kernel eleven times in it.
             # Measured on llr8w6-qwen38-c -- 15 rows over 3 kernels, 11 of them one kernel at 1.00x
             # -- 2.076 per row against 6.892 per kernel, a 3.3x swing from resubmission count alone.
             # The kernel is the unit that was sampled, so these are the columns a figure quotes; the
             # per-row ones stay because the per-wave summary is read by eye as well as by script.
-            "speedup_kernels": len(kernels),
-            "speedup_geomean_kernel_best": geomean([v[-1] for v in kernels]),
-            "speedup_geomean_kernel_median": geomean([statistics.median(v) for v in kernels]),
-            "speedup_median": round(values[len(values) // 2], 4) if values else 0.0,
-            "speedup_mean": round(sum(values) / len(values), 4) if values else 0.0,
-            "speedup_max": round(max(values), 4) if values else 0.0,
+            "speedup_kernels":
+            len(kernels),
+            "speedup_geomean_kernel_best":
+            round(summary.geomean([v[-1] for v in kernels], unusable="drop"), 4),
+            "speedup_geomean_kernel_median":
+            round(summary.geomean([statistics.median(v) for v in kernels], unusable="drop"), 4),
+            "speedup_median":
+            round(statistics.median(values), 4) if values else 0.0,
+            "speedup_mean":
+            round(sum(values) / len(values), 4) if values else 0.0,
+            "speedup_max":
+            round(max(values), 4) if values else 0.0,
             # The median sits at 1.00 for most arms, so the headline number is how often an arm
             # found a real speedup at all rather than the middle of a mostly-flat distribution.
-            "frac_speedup_gt_1_1": round(sum(1 for v in values if v > 1.1) / len(values), 4) if values else 0.0,
+            "frac_speedup_gt_1_1":
+            round(sum(1 for v in values if v > 1.1) / len(values), 4) if values else 0.0,
         })
     return out
-
-
-def geomean(values: list[float]) -> float:
-    """Geometric mean of a speed-up set; ``0.0`` when it is empty.
-
-    Non-positive entries are dropped rather than clamped: a speed-up at or below zero is a missing
-    measurement, not a slow one, and an epsilon would drag the geomean toward zero and read as a
-    collapse that never happened.
-    """
-    usable = [v for v in values if v > 0]
-    if not usable:
-        return 0.0
-    return round(math.exp(sum(math.log(v) for v in usable) / len(usable)), 4)
 
 
 def matched_pairs(calls: list[list], submissions: list[list]) -> list[dict[str, object]]:
@@ -1294,9 +1307,9 @@ def paired_speedup(common: set[str], off: dict[str, float], on: dict[str, float]
     p_value = (min(1.0, 2.0 * sum(math.comb(n, k) for k in range(min(wins, losses) + 1)) / 2**n) if n else 1.0)
     return {
         "paired_n": len(both),
-        "paired_geo_off": round(math.exp(sum(math.log(off[b]) for b in both) / len(both)), 4),
-        "paired_geo_skills": round(math.exp(sum(math.log(on[b]) for b in both) / len(both)), 4),
-        "paired_ratio": round(math.exp(sum(math.log(r) for r in ratios) / len(ratios)), 4),
+        "paired_geo_off": round(summary.geomean([off[b] for b in both]), 4),
+        "paired_geo_skills": round(summary.geomean([on[b] for b in both]), 4),
+        "paired_ratio": round(summary.geomean(ratios), 4),
         "sign_wins": wins,
         "sign_losses": losses,
         "sign_p": round(p_value, 4),

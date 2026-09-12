@@ -22,16 +22,11 @@ import pathlib
 import numpy as np
 import pandas as pd
 from hpcagent_bench import experiment_tags
-from hpcagent_bench.stats import palette
+from hpcagent_bench.stats import palette, summary
 from hpcagent_bench.stats import style as plotstyle
 
 plotstyle.apply()
 import matplotlib.pyplot as plt  # noqa: E402 -- pyplot must follow plotstyle.apply()
-
-MIN_INTERVAL_SAMPLES: int = 5
-
-#: Bootstrap resamples per cell, and the seed that makes the published figure reproducible.
-BOOTSTRAP: int = 2000
 
 #: Fewest submissions a cell needs before an interval is drawn for it.
 #:
@@ -41,6 +36,9 @@ BOOTSTRAP: int = 2000
 #: redrawing of the two points -- which is why the measured widths did NOT shrink with n
 #: (median width 0.16 at n=2 against 0.64 at n=3-4). Below this, the cell is drawn hollow and
 #: makes no claim, which is the same contract single-submission cells already had.
+MIN_INTERVAL_SAMPLES: int = 5
+
+#: The seed that makes each cell's bootstrap interval, and so the published figure, reproducible.
 SEED: int = 0
 
 #: Agents this figure knows, in the order the shared registry ranks them. The COLOURS come from
@@ -54,14 +52,6 @@ AGENT_MARKERS: dict[str, str] = palette.model_markers(AGENTS)
 INK, MUTED, RULE = plotstyle.INK, plotstyle.MUTED, plotstyle.RULE
 
 
-def agent_of(arm: str) -> str:
-    """The model an arm ran, which is the series identity -- ``v11w2-qwen38-c-skills`` -> qwen38."""
-    for name in AGENTS:
-        if f"-{name}-" in arm or arm.endswith(f"-{name}"):
-            return name
-    return "other"
-
-
 def campaign_of(arm: str) -> str:
     """Which campaign an arm belongs to. Campaigns differ in their graded baseline."""
     if arm.startswith(("v11w2", "llr40v11")):
@@ -73,23 +63,23 @@ def campaign_of(arm: str) -> str:
     return "other"
 
 
-def bootstrap_ci(values: np.ndarray, rng: np.random.Generator) -> tuple[float, float]:
-    """95% percentile bootstrap interval on the MEDIAN of ``values`` (already in log2)."""
-    draws = rng.choice(values, size=(BOOTSTRAP, values.size), replace=True)
-    medians = np.median(draws, axis=1)
-    return float(np.percentile(medians, 2.5)), float(np.percentile(medians, 97.5))
-
-
 def cells(frame: pd.DataFrame) -> pd.DataFrame:
     """One row per (agent, language, kernel): median log2 speed-up, its interval, and n."""
-    rng = np.random.default_rng(SEED)
     rows = []
     for (agent, language, kernel), group in frame.groupby(["agent", "language", "benchmark"], sort=True):
         log2 = np.log2(group["speedup"].to_numpy(dtype=float))
         point = float(np.median(log2))
-        low, high = bootstrap_ci(log2, rng) if log2.size > 1 else (point, point)
-        rows.append({"agent": agent, "language": language, "benchmark": kernel,
-                     "n": int(log2.size), "log2_speedup": point, "ci_low": low, "ci_high": high})
+        interval = summary.bootstrap_ci(log2, np.median, "median", method="percentile", seed=SEED)
+        low, high = interval.low, interval.high
+        rows.append({
+            "agent": agent,
+            "language": language,
+            "benchmark": kernel,
+            "n": int(log2.size),
+            "log2_speedup": point,
+            "ci_low": low,
+            "ci_high": high
+        })
     return pd.DataFrame(rows)
 
 
@@ -99,8 +89,7 @@ def draw(cell_frame: pd.DataFrame, baseline: str, campaign: str, out: pathlib.Pa
     # Kernels ordered by overall median, so the reader walks a gradient instead of an alphabet.
     order = (cell_frame.groupby("benchmark")["log2_speedup"].median().sort_values(ascending=False).index.tolist())
     width = max(7.0, 0.26 * len(order) + 2.0)
-    fig, axes = plt.subplots(len(languages), 1, figsize=(width, 4.4 * len(languages)),
-                             squeeze=False, sharex=True)
+    fig, axes = plt.subplots(len(languages), 1, figsize=(width, 4.4 * len(languages)), squeeze=False, sharex=True)
     positions = {kernel: i for i, kernel in enumerate(order)}
     # Agents get a small horizontal offset each so three points on one kernel never overplot.
     agents = [a for a in AGENTS if a in set(cell_frame["agent"])]
@@ -117,14 +106,31 @@ def draw(cell_frame: pd.DataFrame, baseline: str, campaign: str, out: pathlib.Pa
             x = np.array([positions[k] for k in part["benchmark"]], dtype=float) + offset
             colour = AGENT_COLORS[agent]
             many = part["n"].to_numpy() >= MIN_INTERVAL_SAMPLES
-            ax.vlines(x[many], part["ci_low"].to_numpy()[many], part["ci_high"].to_numpy()[many],
-                      color=colour, linewidth=1.6, alpha=0.55, zorder=3)
+            ax.vlines(x[many],
+                      part["ci_low"].to_numpy()[many],
+                      part["ci_high"].to_numpy()[many],
+                      color=colour,
+                      linewidth=1.6,
+                      alpha=0.55,
+                      zorder=3)
             shape = AGENT_MARKERS[agent]
-            ax.scatter(x[many], part["log2_speedup"].to_numpy()[many], s=26, color=colour, marker=shape,
-                       edgecolor="white", linewidth=0.6, zorder=4,
+            ax.scatter(x[many],
+                       part["log2_speedup"].to_numpy()[many],
+                       s=26,
+                       color=colour,
+                       marker=shape,
+                       edgecolor="white",
+                       linewidth=0.6,
+                       zorder=4,
                        label=experiment_tags.model_name(agent) if row == 0 else None)
-            ax.scatter(x[~many], part["log2_speedup"].to_numpy()[~many], s=26, facecolor="none", marker=shape,
-                       edgecolor=colour, linewidth=1.1, zorder=4)
+            ax.scatter(x[~many],
+                       part["log2_speedup"].to_numpy()[~many],
+                       s=26,
+                       facecolor="none",
+                       marker=shape,
+                       edgecolor=colour,
+                       linewidth=1.1,
+                       zorder=4)
         ax.set_title(experiment_tags.language_name(language), pad=8, loc="left")
         ax.set_ylabel(f"$\\log_2$ Speedup over {baseline}")
         plotstyle.value_axis(ax, "y")
@@ -139,17 +145,19 @@ def draw(cell_frame: pd.DataFrame, baseline: str, campaign: str, out: pathlib.Pa
     # The hollow key is added only when a hollow marker is actually drawn: a legend entry for a
     # style the figure does not use tells the reader to go looking for something that is not there.
     if bool((cell_frame["n"] < MIN_INTERVAL_SAMPLES).any()):
-        hollow = plt.Line2D([], [], marker="o", linestyle="none", markerfacecolor="none",
-                            markeredgecolor=MUTED, markersize=6,
+        hollow = plt.Line2D([], [],
+                            marker="o",
+                            linestyle="none",
+                            markerfacecolor="none",
+                            markeredgecolor=MUTED,
+                            markersize=6,
                             label=f"Fewer Than {MIN_INTERVAL_SAMPLES} Submissions (No Interval)")
         handles = handles + [hollow]
     plotstyle.legend_below(fig, handles)
     top = plotstyle.title(fig, experiment_tags.display_name(campaign))
     fig.tight_layout(rect=(0, 0, 1, top))
     out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out, bbox_inches="tight")
-    fig.savefig(out.with_suffix(".png"), dpi=200, bbox_inches="tight")
-    plt.close(fig)
+    plotstyle.save(fig, out.with_suffix(""))
     return out
 
 
@@ -165,11 +173,11 @@ def main() -> None:
 
     frame = pd.read_csv(args.submissions, low_memory=False)
     frame = frame[frame["speedup"] > 0]
-    frame["agent"] = frame["arm"].map(agent_of)
+    frame["agent"] = frame["arm"].map(experiment_tags.model_of)
     frame["campaign"] = frame["arm"].map(campaign_of)
     frame = frame[(frame["campaign"] == args.campaign)
                   & frame["language"].isin(args.languages.split(","))
-                  & (frame["agent"] != "other")]
+                  & frame["agent"].isin(AGENTS)]
     if frame.empty:
         raise SystemExit(f"no rows for campaign {args.campaign} in {args.submissions}")
 

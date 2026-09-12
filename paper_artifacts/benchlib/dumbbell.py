@@ -36,9 +36,10 @@ import matplotlib.ticker
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402  -- must follow the Agg backend selection
 
-from benchlib import style  # noqa: E402  -- ditto: it pulls matplotlib in itself
+import matplotlib.lines  # noqa: E402
 
-MODEL_COLOR = style.MODEL_COLOR
+from hpcagent_bench import experiment_tags  # noqa: E402
+from hpcagent_bench.stats import palette, style, summary  # noqa: E402
 
 #: The two legs: the "0" one first, so the hollow marker is always the one the pair started from.
 LEGS = ("0", "1")
@@ -78,7 +79,7 @@ class Cell:
 
     def label(self) -> str:
         language = "C" if self.language == "c" else "Fortran"
-        return f"{style.MODEL_LABEL[self.model]} / {language}"
+        return f"{experiment_tags.model_name(self.model)} / {language}"
 
     def shared(self) -> list[str]:
         """Kernels BOTH legs have a last submission for; empty when the pair is unpaired."""
@@ -99,13 +100,6 @@ def read(path: pathlib.Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def geomean(values: list[float]) -> float:
-    """Geometric mean, or NaN for an empty set. Non-positive entries never reach here."""
-    if not values:
-        return math.nan
-    return math.exp(sum(math.log(v) for v in values) / len(values))
-
-
 def cells(rows: list[dict[str, str]]) -> list[Cell]:
     """One cell per (model, language), ordered by the palette's model order then by language.
 
@@ -116,15 +110,16 @@ def cells(rows: list[dict[str, str]]) -> list[Cell]:
     for row in rows:
         leg = grouped[(row["model"], row["language"])].setdefault(row["skills"], {})
         leg[row["benchmark"]] = row
-    order = sorted(grouped, key=lambda k: (list(MODEL_COLOR).index(k[0]), k[1]))
+    models = palette.in_order(model for model, _ in grouped)
+    order = sorted(grouped, key=lambda k: (models.index(k[0]), k[1]))
     return [Cell(model, language, grouped[(model, language)]) for model, language in order]
 
 
 def row_figure(rows: int, title: str, xlabel: str) -> tuple:
-    tall = 1.15 + 0.29 * rows
-    fig, ax = plt.subplots(figsize=(7.0, tall))
-    fig.subplots_adjust(left=0.315, right=0.845, top=1.0 - 0.72 / tall, bottom=0.62 / tall)
-    style.axis_title(ax, title, pad=18.0)
+    tall = 2.2 + 0.58 * rows
+    fig, ax = plt.subplots(figsize=(14.0, tall))
+    fig.subplots_adjust(left=0.30, right=0.86, top=1.0 - 1.1 / tall, bottom=1.1 / tall)
+    ax.set_title(title, loc="left", pad=18.0, color=style.INK)
     ax.set_xlabel(xlabel)
     return fig, ax
 
@@ -134,14 +129,33 @@ def usable(value: float, floor: float) -> float | None:
     return None if math.isnan(value) or value <= floor else value
 
 
+def pair_marks(ax, row: int, base: float | None, other: float | None, model: str) -> None:
+    """One row's two legs: hollow for the base leg, filled for the other, joined in the model's colour.
+
+    Either leg may be absent; a lone leg keeps the fill that says which leg it is, so a row with one
+    mark still reads as base-only or other-only rather than as an unlabelled point.
+    """
+    colour, shape = palette.model_color(model), palette.marker(model)
+    if base is not None and other is not None:
+        ax.plot([base, other], [row, row],
+                color=colour,
+                linewidth=2.5,
+                solid_capstyle="round",
+                zorder=style.CONNECTOR_Z)
+    if base is not None:
+        style.point_mark(ax, base, row, colour, shape, filled=False)
+    if other is not None:
+        style.point_mark(ax, other, row, colour, shape, filled=True)
+
+
 def draw_rows(ax, drawn: list[Cell], value: Callable[[Cell, str], float | None], note: Callable[[Cell], str],
               floor: float) -> None:
     for row, cell in enumerate(drawn):
         legs = {skills: value(cell, skills) if skills in cell.legs else None for skills in LEGS}
         if legs["0"] is None and legs["1"] is None:
-            style.right_label(ax, row, "no timed arm", style.MUTED, size=6.5)
+            style.right_label(ax, row, "no timed arm", style.MUTED)
             continue
-        style.dumbbell(ax, row, legs["0"], legs["1"], MODEL_COLOR[cell.model])
+        pair_marks(ax, row, legs["0"], legs["1"], cell.model)
         style.right_label(ax, row, note(cell))
     ax.set_xlim(left=floor)
 
@@ -150,10 +164,19 @@ def finish(fig, ax, drawn: list[Cell], out: pathlib.Path, contrast: Contrast, un
     if unpaired:
         for tick, cell in zip(ax.get_yticklabels(), drawn, strict=True):
             if not cell.shared():
-                tick.set_color(style.WARN)
-    style.key(ax, [(contrast.key_labels[0], style.marker(style.INK2, on=False)),
-                   (contrast.key_labels[1], style.marker(style.INK2, on=True))],
-              anchor=(1.0, 1.005))
+                tick.set_color(style.MUTED)
+    legs = [
+        matplotlib.lines.Line2D([], [],
+                                marker="o",
+                                linestyle="none",
+                                markersize=9,
+                                markerfacecolor=face,
+                                markeredgecolor=style.MUTED,
+                                markeredgewidth=1.8,
+                                label=label)
+        for face, label in zip(("none", style.MUTED), contrast.key_labels, strict=True)
+    ]
+    style.legend_below(fig, legs)
     style.save(fig, out)
 
 
@@ -188,10 +211,10 @@ def speedup_figure(drawn: list[Cell], out: pathlib.Path, contrast: Contrast) -> 
     lonely = [c for c in drawn if len(c.legs) == 1]
 
     def value(cell: Cell, skills: str) -> float | None:
-        return usable(geomean(cell.speedups(skills)), 1.0)
+        return usable(summary.geomean(cell.speedups(skills), unusable="drop"), 1.0)
 
     def best(cell: Cell, skills: str) -> float | None:
-        return usable(geomean(cell.speedups(skills, "best_speedup")), 1.0)
+        return usable(summary.geomean(cell.speedups(skills, "best_speedup"), unusable="drop"), 1.0)
 
     def note(cell: Cell) -> str:
         return "n=" + "/".join(str(len(cell.speedups(s))) for s in LEGS)
@@ -202,7 +225,7 @@ def speedup_figure(drawn: list[Cell], out: pathlib.Path, contrast: Contrast) -> 
     # Log: a speed-up is a ratio, and one group at 70x flattens every 3x-to-8x group into the floor
     # on a linear scale.
     ax.set_xscale("log")
-    style.row_axis(ax, labels, gridaxis="none")
+    style.row_axis(ax, labels)
     draw_rows(ax, pairs, value, note, 1.0)
     plotted = [v for cell in pairs for s in LEGS if (v := value(cell, s)) is not None]
     low, high, ticks = speedup_axis(plotted)
@@ -210,7 +233,7 @@ def speedup_figure(drawn: list[Cell], out: pathlib.Path, contrast: Contrast) -> 
     ax.set_xticks(ticks)
     ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     ax.get_xaxis().set_minor_formatter(matplotlib.ticker.NullFormatter())
-    ax.grid(True, axis="x")
+    style.value_axis(ax, "x", minor=False, major=False)
     finish(fig, ax, pairs, out, contrast, unpaired=True)
     # BEST is reported rather than drawn. What it is for: a cell whose last and best diverge was
     # carried by lucky resubmissions rather than by a repeatable win, so the ratio is the thing to
@@ -243,9 +266,8 @@ def success_figure(drawn: list[Cell], out: pathlib.Path, tag_size: int, contrast
     fig, ax = row_figure(len(drawn), "Successful completion over the tag, all waves pooled",
                          f"kernels ever solved (% of the {tag_size}-kernel tag)")
     ax.set_xlim(0.0, 100.0)
-    style.row_axis(ax, [c.label() for c in drawn], gridaxis="none")
-    for row in range(len(drawn)):
-        style.rounded_bar(ax, 0.0, 100.0, row, 0.62, style.RAISE, zorder=1.0)
+    style.row_axis(ax, [c.label() for c in drawn])
+    style.value_axis(ax, "x", minor=False)
     draw_rows(ax, drawn, value, note, 0.0)
     ax.set_xlim(0.0, 100.0)
     finish(fig, ax, drawn, out, contrast)
@@ -264,9 +286,9 @@ def tokens_figure(drawn: list[Cell], out: pathlib.Path, contrast: Contrast) -> N
     def note(cell: Cell) -> str:
         return "n=" + "/".join(str(len(cell.legs[s])) for s in LEGS if s in cell.legs)
 
-    fig, ax = row_figure(len(drawn), f"Token cost per kernel, {contrast.clause}",
-                         "million tokens per kernel reached")
+    fig, ax = row_figure(len(drawn), f"Token cost per kernel, {contrast.clause}", "million tokens per kernel reached")
     style.row_axis(ax, [c.label() for c in drawn])
+    style.value_axis(ax, "x", minor=False)
     draw_rows(ax, drawn, value, note, 0.0)
     ax.margins(x=0.1)
     finish(fig, ax, drawn, out, contrast)
@@ -274,8 +296,7 @@ def tokens_figure(drawn: list[Cell], out: pathlib.Path, contrast: Contrast) -> N
           "drew it and over the kernels the arm reached, divided by that count; n = kernels reached")
 
 
-def main(data: pathlib.Path, out: pathlib.Path, prefix: str, tag_size: int,
-         contrast: Contrast = SKILLS) -> int:
+def main(data: pathlib.Path, out: pathlib.Path, prefix: str, tag_size: int, contrast: Contrast = SKILLS) -> int:
     """Draw the three figures for one experiment: ``<out>/<prefix>_<figure>.{png,pdf}``."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=pathlib.Path, default=data, help="tidy kernel table")

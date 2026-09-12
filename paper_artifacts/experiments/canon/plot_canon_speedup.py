@@ -5,33 +5,30 @@ at exactly 1.00x median while their geometric means are near 1.9x, because each 
 kernels and not at all on more than half. The geomean is therefore drawn as a second mark rather
 than left to a caption.
 
+Both statistics are taken over KERNELS and both carry an interval (SC15 Rules 5 and 7): the median a
+percentile bootstrap, the geomean the log-t interval. The table beside the figure holds the two
+median times every ratio is a quotient of (Rule 4). A statistic is not an entity, so its marks take
+neutral ink rather than a hue some model or packet wears in another figure.
+
 The x axis is logarithmic because the columns span 1x to ~67x; on a linear axis every CPU bar
 collapses into the axis line next to the GPU one.
 
-Usage:  python3 plot_canon_speedup.py [--data data/canon_llr40.csv] [--out figures]
+Usage:  python3 plot_canon_speedup.py [--data data/canon_llr40.csv] [--out figures] [--table data/canon_speedup.csv]
 """
 from __future__ import annotations
 
 import argparse
 import collections
 import csv
-import math
 import pathlib
 import statistics
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+import numpy as np
+import pandas as pd
 
-from benchlib import style  # noqa: E402  -- the artifact is run from a clone, not installed
+from hpcagent_bench.stats import rules, style, summary
 
-#: The baseline every speedup is taken against. Numba, because that is what
-#: ``TRACK_DEFAULT_BASELINE["loop_level_reasoning"]`` declares and therefore what every AGENT
-#: submission on this track is graded against -- a canon figure on `cc` was the one artifact in the
-#: project quoting a different denominator from the results it is read beside, which silently
-#: inflates it: canon reads 10.28x over cc and 7.35x over numba on the same sweep.
-#:
-#: `cc` stays available through --baseline because "what does canonicalization buy over sequential
-#: C" is a real question; it is just not the question the rest of the paper is asking.
 BASELINE = "numba"
 
 #: Columns on the figure, in axis order, with the label each carries. dace_cpu / dace_gpu (the
@@ -48,8 +45,9 @@ DRAW = (
     ("dace_gpu_canonicalize", "DaCe canon GPU"),
 )
 
-MEDIAN_HUE = "#3b6fd4"
-GEOMEAN_HUE = "#d4772a"
+#: The bar is the median; the tick and the bracket above it are the geomean and its interval.
+MEDIAN_INK = style.FAINT
+GEOMEAN_INK = style.INK
 
 
 def read(path: pathlib.Path) -> dict[str, dict[str, float]]:
@@ -72,15 +70,43 @@ def read(path: pathlib.Path) -> dict[str, dict[str, float]]:
     return out
 
 
-def speedups(times: dict[str, dict[str, float]], column: str) -> list[float]:
-    """Per-kernel baseline/column ratios, over the kernels BOTH measured."""
+def summarize(times: dict[str, dict[str, float]]) -> pd.DataFrame:
+    """One row per drawn column over the kernels it and the baseline BOTH measured: the median and the
+    geomean of the per-kernel ratios, each with its interval, and the two median times behind them."""
     base = times.get(BASELINE, {})
-    cur = times.get(column, {})
-    return [base[k] / cur[k] for k in sorted(base) if k in cur]
+    rows = []
+    for column, label in DRAW:
+        current = times.get(column, {})
+        kernels = [k for k in sorted(base) if k in current]
+        if not kernels:
+            continue
+        ratios = [base[k] / current[k] for k in kernels]
+        median = summary.bootstrap_ci(ratios, np.median, "median", method="percentile")
+        geomean = summary.geomean_ci(ratios)
+        rows.append({
+            "column": column,
+            "label": label,
+            "n": len(ratios),
+            "median": median.point,
+            "median_low": median.low,
+            "median_high": median.high,
+            "geomean": geomean.point,
+            "geomean_low": geomean.low,
+            "geomean_high": geomean.high,
+            "baseline_median_ms": statistics.median(base[k] for k in kernels),
+            "column_median_ms": statistics.median(current[k] for k in kernels),
+        })
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+    rules.require_costs(frame, "median", ["baseline_median_ms", "column_median_ms"])
+    rules.require_interval(frame, "median", "median_low", "median_high")
+    return rules.require_interval(frame, "geomean", "geomean_low", "geomean_high")
 
 
-def draw(data: pathlib.Path, out_dir: pathlib.Path) -> int:
+def draw(data: pathlib.Path, out_dir: pathlib.Path, table: pathlib.Path) -> int:
     import matplotlib.lines
+    import matplotlib.patches
     import matplotlib.patheffects
     import matplotlib.pyplot as plt
 
@@ -88,73 +114,60 @@ def draw(data: pathlib.Path, out_dir: pathlib.Path) -> int:
     if BASELINE not in times:
         print(f"{data} has no '{BASELINE}' column to divide by", file=sys.stderr)
         return 1
-
-    rows = []
-    for column, label in DRAW:
-        sp = speedups(times, column)
-        if not sp:
-            continue
-        geo = math.exp(statistics.fmean(math.log(s) for s in sp))
-        rows.append((label, statistics.median(sp), geo, len(sp)))
-    if not rows:
+    rows = summarize(times)
+    if rows.empty:
         print(f"{data} holds none of the drawn columns", file=sys.stderr)
         return 1
+    table.parent.mkdir(parents=True, exist_ok=True)
+    rows.to_csv(table, index=False)
 
     style.apply()
-    fig, ax = plt.subplots(figsize=(7.2, 0.62 * len(rows) + 1.9))
+    fig, ax = plt.subplots(figsize=(10.0, 0.8 * len(rows) + 2.6))
     ypos = list(range(len(rows)))[::-1]
-
-    # Scale and limits first: rounded_bar reads the axis to size its corners and to find the left
-    # edge a bar grows from, and on a log axis that edge cannot be zero.
+    # Scale and limits first: a bar grows from the left edge, and on a log axis that edge is not zero.
     ax.set_xscale("log")
     ax.set_ylim(-0.7, len(rows) - 0.3)
-    ax.set_xlim(0.8, max(max(r[1], r[2]) for r in rows) * 2.6)
+    ax.set_xlim(0.8, float(max(rows.median_high.max(), rows.geomean_high.max())) * 2.6)
     left = ax.get_xlim()[0]
 
-    for y, (_label, median, geo, _n) in zip(ypos, rows, strict=True):
-        style.rounded_bar(ax, left, median, y, 0.5, MEDIAN_HUE)
-        # A tick spanning the bar's height rather than a dot on it. The geomean can fall either side
-        # of the median and, where it falls just inside, a dot lands on top of the value label; a
-        # tick occupies a channel the label never uses.
-        ax.vlines(geo, y - 0.31, y + 0.31, color=GEOMEAN_HUE, linewidth=2.0, zorder=6)
-        # Always past the BAR's end, so it labels the bar. Placed past whichever mark sits further
-        # right it would read as the geomean's label, and the two are different statistics.
-        # Haloed rather than nudged: where the geomean lands just past the bar's end the tick would
-        # otherwise cross the digits, and moving the label to clear it would detach it from the bar.
-        ax.text(median * 1.09, y, f"{median:.2f}x", va="center", ha="left", zorder=7,
-                fontsize=8, color=style.INK2, family="monospace",
-                path_effects=[matplotlib.patheffects.withStroke(linewidth=2.6, foreground=style.SURFACE)])
+    for y, row in zip(ypos, rows.itertuples(index=False), strict=True):
+        ax.barh(y, row.median - left, left=left, height=0.5, color=MEDIAN_INK, zorder=2)
+        ax.hlines(y, row.median_low, row.median_high, color=style.INK, linewidth=1.2, zorder=5)
+        # A tick spanning the bar's height rather than a dot on it: the geomean can fall either side of
+        # the median, and a dot just inside the bar lands on the value label.
+        ax.vlines(row.geomean, y - 0.31, y + 0.31, color=GEOMEAN_INK, linewidth=2.0, zorder=6)
+        ax.hlines(y + 0.36, row.geomean_low, row.geomean_high, color=GEOMEAN_INK, linewidth=1.0, zorder=6)
+        # Past the BAR's end, haloed rather than nudged, so it labels the bar and not the geomean.
+        ax.text(row.median * 1.09,
+                y,
+                f"{row.median:.2f}x",
+                va="center",
+                ha="left",
+                zorder=7,
+                fontsize=style.ANNOTATION_PT,
+                color=style.INK,
+                family="monospace",
+                path_effects=[matplotlib.patheffects.withStroke(linewidth=2.6, foreground="white")])
 
     ax.set_yticks(ypos)
-    ax.set_yticklabels([f"{label}  (n={n})" for label, _m, _g, n in rows], fontsize=9, color=style.INK)
-    # Named from BASELINE, never written out: the label and the divisor drifting apart is exactly
-    # how a figure comes to say "over sequential C" while dividing by something else.
-    ax.set_xlabel(
-        f"speedup over {LABEL.get(BASELINE, BASELINE)}  (log scale, higher is better)",
-        fontsize=8.5,
-        color=style.INK2,
-    )
-    ax.axvline(1.0, color=style.RULE, linewidth=1.0, zorder=0)
-    ax.grid(axis="x", color=style.RULE, linewidth=0.6, alpha=0.7, zorder=0)
-    ax.set_axisbelow(True)
-    for side in ("top", "right", "left"):
-        ax.spines[side].set_visible(False)
-    ax.spines["bottom"].set_color(style.RULE)
-    ax.tick_params(axis="both", length=0, colors=style.INK2, labelsize=8)
-
-    # Below the axis label, not inside the axes and not above them: the longest bar reaches the right
-    # edge, and the title already occupies the strip above.
-    geomean_key = matplotlib.lines.Line2D([], [], color=GEOMEAN_HUE, linewidth=2.0, marker="none")
-    ax.legend(handles=[style.swatch(MEDIAN_HUE), geomean_key],
-              labels=["median speedup", "geometric mean"],
-              loc="upper right", bbox_to_anchor=(1.0, -0.13), ncols=2,
-              frameon=False, fontsize=8, handletextpad=0.6, columnspacing=1.6)
-    style.axis_title(ax, "Canonicalization against the compilers, llr-focus40")
-    out_dir.mkdir(parents=True, exist_ok=True)
+    ax.set_yticklabels([f"{row.label}  (n={row.n})" for row in rows.itertuples(index=False)], color=style.INK)
+    # Named from BASELINE, never written out: the label and the divisor drifting apart is exactly how a
+    # figure comes to say "over sequential C" while dividing by something else.
+    ax.set_xlabel(f"Speedup over {LABEL.get(BASELINE, BASELINE)} (Log Scale, Higher Is Better)")
+    ax.axvline(1.0, color=style.REFERENCE, linewidth=1.0, zorder=1)
+    style.value_axis(ax, "x", minor=False, major=False)
+    style.despine(ax)
+    ax.tick_params(axis="y", length=0)
+    handles = [
+        matplotlib.patches.Patch(facecolor=MEDIAN_INK, label="Median Speedup, 95% Bootstrap Interval"),
+        matplotlib.lines.Line2D([], [], color=GEOMEAN_INK, linewidth=2.0, label="Geometric Mean, 95% Log-t Interval"),
+    ]
+    style.legend_below(fig, handles, ncol=1)
+    ax.set_title("Canonicalization against the Compilers, llr-focus40", loc="left", color=style.INK)
     written = style.save(fig, out_dir / "canon_speedup")
     print(f"{written}")
-    for label, median, geo, n in rows:
-        print(f"  {label:<24} median {median:>7.2f}x   geomean {geo:>7.2f}x   n={n}")
+    for row in rows.itertuples(index=False):
+        print(f"  {row.label:<24} median {row.median:>7.2f}x   geomean {row.geomean:>7.2f}x   n={row.n}")
     return 0
 
 
@@ -163,8 +176,9 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--data", type=pathlib.Path, default=here / "data" / "canon_llr40.csv")
     ap.add_argument("--out", type=pathlib.Path, default=here / "figures")
+    ap.add_argument("--table", type=pathlib.Path, default=here / "data" / "canon_speedup.csv")
     args = ap.parse_args(argv)
-    return draw(args.data, args.out)
+    return draw(args.data, args.out, args.table)
 
 
 if __name__ == "__main__":

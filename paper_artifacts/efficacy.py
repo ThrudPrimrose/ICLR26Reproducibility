@@ -29,22 +29,20 @@ linear in the ratio, so one 100x cell would otherwise carry an entire sum.
 import csv
 import math
 import os
-import random
 from collections import defaultdict
+
+import numpy as np
+
+from hpcagent_bench.stats import summary
 
 CSV = os.environ.get("EFFICACY_CSV", "experiments/llr9/data/kernels.csv")
 W = (1 / 3, 1 / 3, 1 / 3)  # w_c, w_S, w_T
 
 
 def geomean(xs):
-    xs = [x for x in xs if x > 0]
-    return math.exp(sum(math.log(x) for x in xs) / len(xs)) if xs else 1.0
-
-
-def g(rho):
-    """Symmetric relative change: g(2) = +1, g(0.5) = -1, g(1) = 0, g(1/r) = -g(r).
-    Continuous and smooth at 1, unlike the bare signed fold change, which leaps +1 to -1."""
-    return rho - 1.0 if rho >= 1.0 else 1.0 - 1.0 / rho
+    """Geometric mean of the positive entries; 1.0 on none, so an arm that solved nothing scores neutral."""
+    value = summary.geomean(xs, unusable="drop")
+    return 1.0 if math.isnan(value) else value
 
 
 def gains(cells, ceil=None):
@@ -64,20 +62,28 @@ def gains(cells, ceil=None):
 def efficacy(cells, w=W, ceil=None, scale="ln"):
     """(Q, (rho_c, rho_S, rho_T)). Q = 0 at no effect, positive when the treatment helped."""
     r = gains(cells, ceil)
-    f = math.log if scale == "ln" else g
+    f = math.log if scale == "ln" else summary.signed_change
     return sum(wi * f(ri) for wi, ri in zip(w, r, strict=True)), r
 
 
 def bootstrap(cells, n=4000, seed=0, ceil=None, scale="ln"):
-    """Paired percentile bootstrap over the kernel roster. A CI covering 0 means no effect."""
-    rng = random.Random(seed)
+    """Paired percentile bootstrap over the kernel roster. A CI covering 0 means no effect.
+
+    Resamples kernel INDICES, so a kernel enters a replicate with both of its legs together."""
     keys = list(cells)
-    out = []
-    for _ in range(n):
-        draw = [rng.choice(keys) for _ in keys]
-        out.append(efficacy({f"{i}:{k}": cells[k] for i, k in enumerate(draw)}, ceil=ceil, scale=scale)[0])
-    out.sort()
-    return out[int(0.025 * n)], out[int(0.975 * n)]
+
+    def q_of(index, axis=-1):
+        rows = np.atleast_2d(index)
+        values = [
+            efficacy({f"{i}:{keys[int(k)]}": cells[keys[int(k)]] for i, k in enumerate(row)}, ceil=ceil, scale=scale)[0]
+            for row in rows
+        ]
+        return np.asarray(values) if np.ndim(index) > 1 else values[0]
+
+    interval = summary.bootstrap_ci(
+        np.arange(len(keys), dtype=float), q_of, "Q", n_resamples=n, method="percentile", seed=seed
+    )
+    return interval.low, interval.high
 
 
 def ceilings(legs):

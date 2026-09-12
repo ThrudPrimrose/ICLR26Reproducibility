@@ -16,6 +16,7 @@ import pathlib
 import pytest
 
 import efficacy
+from hpcagent_bench.stats import summary
 
 DATA = pathlib.Path(__file__).resolve().parent / "experiments/llr9/data/kernels.csv"
 
@@ -74,8 +75,8 @@ def test_ln_damps_an_outlier_that_a_relative_delta_would_let_win():
 
 
 def test_g_is_symmetric_where_the_relative_delta_is_not():
-    assert efficacy.g(2.0) == pytest.approx(-efficacy.g(0.5))
-    assert efficacy.g(1.0) == pytest.approx(0.0)
+    assert summary.signed_change(2.0) == pytest.approx(-summary.signed_change(0.5))
+    assert summary.signed_change(1.0) == pytest.approx(0.0)
     assert pytest.approx(-(0.5 - 1)) != (2.0 - 1)
 
 
