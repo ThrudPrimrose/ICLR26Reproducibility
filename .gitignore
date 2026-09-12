@@ -3,3 +3,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 paper_artifacts/experiments/*/timings/
+
+# a credential dropped in a working tree must not be committable from a public repo
+dckr_pat_*
+*.pat
