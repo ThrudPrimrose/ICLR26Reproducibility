@@ -390,8 +390,10 @@ $S/venv-optarena-314/bin/python $S/optarena/scripts/collect_campaign.py \
   ROW, which scores best-of-N attempts -- and they pool two grading denominators under one arm
   label. **All five llr40 run roots above are purged**, so the command cannot rebuild it from any
   reduction. Read `analysis/per_arm_summary.csv` instead: it is keyed on `(arm, baseline)` and
-  computed from `data/llr40_observations.csv`, which is the surviving record. The `adhoc` row is the
-  pseudo-arm, not a condition.
+  computed from `data/llr40_observations.csv`, which is the surviving record. `data/timings_summary.csv`
+  is the committed copy of the same 63 rows and carries the same defect; both are kept only so a
+  reader can see what the superseded reduction said. The `adhoc` row is the pseudo-arm, not a
+  condition.
 - `timings/<job>.db` + `timings/<job>_prompts/` -- 132 per-job aggregate judge databases the same
   command builds, merged from the rank shards. Query these for anything `summary.csv` does not say.
 - **Per-submission timings are in `data/llr40_observations.csv`**, not duplicated here: the
