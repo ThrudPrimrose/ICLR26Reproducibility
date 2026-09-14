@@ -519,17 +519,22 @@ kernels with the interval [44.7, 172.1], and its `served` number over the 32 it 
 
 ### The one comparative language claim, and its population
 
-`per_language_summary.csv` carries the PAIRED Hodges-Lehmann C-against-Fortran estimate, paired by
-`(campaign, model, kernel)` so the two sides are two answers to the same question by the same model
-in the same campaign. It holds under both denominators:
+`per_language_summary.csv` carries the PAIRED Hodges-Lehmann C-against-Fortran estimate, one log
+ratio per `(campaign, model, kernel)` so the two sides are two answers to the same question by the
+same model in the same campaign. Each side is ONE arm: the C and the Fortran arm of one packet give
+one ratio, and a kernel both packets paired enters once, at the mean of its two log ratios. A side
+taken as the max over its language's arms is a best-of-k whose k is how many arms verified the
+kernel, and the two k differ on 72 of the 217 Numba (campaign, model, kernel) cells. It holds under
+both denominators:
 
-| denominator | paired n | HL C/Fortran | 95% CI | signed-rank p |
+| denominator | paired n (differ) | HL C/Fortran | 95% CI | signed-rank p |
 |---|---|---|---|---|
-| c | 67 | 1.0991 | [1.0303, 1.1961] | 0.0037 |
-| numba | 195 | 1.0883 | [1.0303, 1.1668] | 0.0010 |
+| c | 71 (68) | 1.0991 | [1.0406, 1.1961] | 0.0013 |
+| numba | 199 (182) | 1.0642 | [1.0201, 1.1381] | 0.0023 |
 
-Both are exact signed-rank tests on a tie-free sample. **C is about 9-10% ahead of Fortran per
-kernel, not the 20%+ a pair of unpaired geomeans suggests.** The `geomean_su` column beside it is
+Both p values are the tie-corrected normal approximation: the recorded speed-up sits on a 1% ladder,
+so the absolute log ratios collide (68 carry 42 distinct magnitudes, 182 carry 94). **C is 6-10%
+ahead of Fortran per kernel, not the 17-42% a pair of unpaired geomeans suggests.** The `geomean_su` column beside it is
 DESCRIPTIVE ONLY -- it is a max over that language's arms, a best-of-k with unequal k (21 C arms
 against 17 Fortran arms under Numba) -- and dividing two of those numbers is not the comparison.
 
@@ -537,13 +542,18 @@ against 17 Fortran arms under Numba) -- and dividing two of those numbers is not
 
 `intervention_efficacy.csv` pairs each arm that ran with the packet against the arm of the same
 `(baseline, campaign, model, language)` that ran without it, per kernel, on score and on cost. The
-family is the table -- 18 pairs on two axes -- so every p is Benjamini-Hochberg corrected across it
-and `*_verdict` is the only column a sentence may be taken from.
+family is the table -- 28 pairs on two axes -- so every p is Benjamini-Hochberg corrected across it
+and `*_verdict` is the only column a sentence may be taken from. A pair's name carries its campaign,
+because `llr40v10`, `llr40v11` and `v11w2` ran the same models and languages against Numba.
 
-**Nothing is significant on either axis.** The smallest corrected q is 0.19; four pairs are
-`underpowered`, pairing 1 to 6 kernels, which is below the count at which any interval or p is
-computed at all. The `skills:all` row reads `not-independent`: it re-reads the same kernels the
-eighteen pairs are built from, so its p stands but it is not a further finding.
+**Nothing is significant on score; three pairs are significant on cost, in both directions.** A
+positive `cost_*_pct` is cheaper with the packet. `llr40v10` qwen38 is cheaper with it in C (+237%,
+q = 0.0097, 23 kernels) and in Fortran (+220%, q = 0.0039, 19 kernels); `llr40v11` oss120b in
+Fortran is dearer (-41%, q = 0.020, 22 kernels). The smallest corrected score q is 0.41. Eight
+pairs are `underpowered` on score and seven on cost, pairing 1 to 6 kernels, which is below the
+count at which any interval or p is computed at all. The `skills:all` row reads `not-independent`:
+it re-reads the same kernels the twenty-eight pairs are built from, so its p stands but it is not a
+further finding.
 
 `*_pct` with its bootstrap interval and `*_hl_pct` with its Walsh interval are TWO parameters. The
 bootstrap bounds a mean and carries no test -- against a zero-mean population with this repo's

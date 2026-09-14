@@ -1,7 +1,7 @@
 # llr40 speed-up by language and denominator
 
-Snapshot: **2026-09-11T23:56:36Z**. The campaign was UNFINISHED when this was extracted, so every
-count below is a snapshot of a live tree, not a finished campaign.
+Snapshot of the rows recorded up to **2026-09-08T16:54:53Z**. The campaign was UNFINISHED when this was
+extracted, so every count below is a snapshot of a live tree, not a finished campaign.
 
 **How to read these numbers.**
 
@@ -47,11 +47,11 @@ excluded from the paired table and the paired figure.
 
 | baseline | language | arms | kernels | geomean_su | median_su | min_su | max_su | paired_n | hl_c_over_fortran | hl_ci_low | hl_ci_high | hl_pvalue |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| c | c | 9 | 38 | 13.326 | 15.369 | 1.000 | 242.884 | 67 | 1.099 | 1.030 | 1.196 | 0.004 |
+| c | c | 9 | 38 | 13.326 | 15.369 | 1.000 | 242.884 | 68 | 1.099 | 1.041 | 1.196 | 0.001 |
 | c | cpp | 3 | 3 | 7.196 | 5.013 | 3.610 | 20.592 | 0 | -- | -- | -- | -- |
-| c | fortran | 9 | 38 | 11.436 | 13.297 | 1.000 | 169.757 | 67 | 1.099 | 1.030 | 1.196 | 0.004 |
-| numba | c | 21 | 40 | 15.616 | 13.900 | 1.062 | 711.388 | 195 | 1.088 | 1.030 | 1.167 | 0.001 |
-| numba | fortran | 17 | 40 | 10.969 | 10.735 | 1.051 | 250.243 | 195 | 1.088 | 1.030 | 1.167 | 0.001 |
+| c | fortran | 9 | 38 | 11.436 | 13.297 | 1.000 | 169.757 | 68 | 1.099 | 1.041 | 1.196 | 0.001 |
+| numba | c | 21 | 40 | 15.616 | 13.900 | 1.062 | 711.388 | 182 | 1.064 | 1.020 | 1.138 | 0.002 |
+| numba | fortran | 17 | 40 | 10.969 | 10.735 | 1.051 | 250.243 | 182 | 1.064 | 1.020 | 1.138 | 0.002 |
 | numba | hip | 4 | 38 | 70.002 | 75.858 | 1.460 | 3228.163 | 0 | -- | -- | -- | -- |
 | numba | python | 4 | 40 | 7.999 | 7.223 | 1.000 | 247.766 | 0 | -- | -- | -- | -- |
 

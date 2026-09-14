@@ -1,7 +1,7 @@
 # llr40 speed-up by kernel and denominator
 
-Snapshot: **2026-09-11T23:56:36Z**. The campaign was UNFINISHED when this was extracted, so every
-count below is a snapshot of a live tree, not a finished campaign.
+Snapshot of the rows recorded up to **2026-09-08T16:54:53Z**. The campaign was UNFINISHED when this was
+extracted, so every count below is a snapshot of a live tree, not a finished campaign.
 
 **How to read these numbers.**
 
