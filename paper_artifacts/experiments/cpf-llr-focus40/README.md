@@ -41,5 +41,8 @@ survive this reduction.
 
 ## Open
 
+- The Canonical Parallel Form page arms (`-c-cpf`) have no rows: the judge container did not mount the
+  forms view, so the CPF tool never served a form, and those rows were deleted. They rerun on the fixed
+  launcher.
 - GLM-5.3 arms have no rows: the SGLang loader fails on `format_ue8m0` (patch not reaching the job).
 - GPT-OSS-120B Fortran with the packet never lands `argmax_with_index` or `tsvc_2_s4112` (six waves).
