@@ -130,6 +130,23 @@ still in the queue when this snapshot was extracted.
 
 ## Caveats
 
+**The Fortran skills arm did not receive the treatment it names.** The closing skill reminder in
+`agent_driver.py` took the first `lang-` page of the alphabetical index and named `lang-c.md` and
+`openmp-c.md` for EVERY arm, so all 40 prompts of the clean Fortran skills arm (job 639221,
+GPT-OSS-120B) told a Fortran agent to read the C pages. None of the 40 followed the pointer; Fortran
+page uptake stayed at 28% (11 of 40) while C skills uptake rose to 58% once the pointer was added.
+The Fortran skills row below is therefore a weaker treatment than its name says, and the C skills
+rows are unaffected. Fixed on the code side at `bd4a2f777`; the Qwen3.8-27B Fortran skills clean arm
+was cancelled and resubmitted as job 639441 with the fix, and is not in this snapshot.
+
+Two further prompt defects were live for the waves in this snapshot and are being fixed for the
+next one: the `canonical_parallel_form` MCP tool was advertised to every arm, so 24 of 40 bare
+Qwen3.8-27B agents called it and were told it was unavailable (it answered only in the CPF-page
+arms), and the CPF-as-source drop-in is never announced, its prompt being byte-identical to the bare
+one, yet agents read it in 92-100% of episodes because the prompt mentions a C reference under
+`/shared/tasks`.
+
+
 Qwen3.8-27B relaunched 30-62% of its tasks; GPT-OSS-120B and Kimi-K2.7-Code relaunched none. Its
 reported cost is the final attempt's, and its crashed attempts spent a further 47.1M tokens across
 this campaign, recorded in `tokens_crashed` and in no ratio. The same crashes cost it answers: 75
