@@ -108,6 +108,13 @@ over every episode that touched it, never averaged. Every row in this repository
 this one rule: rows originally graded before 2026-09-13 used an older rule and were re-timed so no
 two numbers here come from different definitions.
 
+## Status (snapshot 2026-09-15)
+
+`canon` is complete: database, figures and checksums are committed. The four agent experiments carry their
+reproduce commands but no committed database yet. Their databases are committed after the re-grade of rows graded
+before 2026-09-13 finishes, so that no committed number mixes the two timing rules; until then `--extract` rebuilds
+them from `$RUNS` on the cluster.
+
 ## Full artifact
 
 The earlier, more detailed artifact (per-wave provenance, campaign history, superseded readings)
