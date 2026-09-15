@@ -34,6 +34,15 @@ extract() {
     rm -rf "$tmp"
 }
 
+# roster --tag <manifest tag> | --kernels-file <launcher kernels file>
+# The kernel set a table is read over (spec E1), printed one per line. DECLARED, never derived from
+# the rows: an experiment that lost a kernel everywhere would otherwise report full coverage over
+# the survivors, and one stray kernel served by a single wave would empty a family.
+roster() {
+    "$PY" "$HPCAGENT_BENCH/reproducibility/llr40/focus_roster.py" \
+        --benchmarks "$HPCAGENT_BENCH/hpcagent_bench/benchmarks" "$@"
+}
+
 # check: every figure and table matches SHA256SUMS. check --record rewrites SHA256SUMS instead.
 check() {
     local dirs=()
