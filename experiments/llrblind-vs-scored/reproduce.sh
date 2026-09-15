@@ -17,7 +17,10 @@ pairs=()
 for model in oss120b qwen38 kimi27sglang; do
     for lang in c fortran; do
         for suffix in "" "-skills"; do
-            pairs+=(--pair "cpf-llr-focus40-$model-$lang$suffix,llrblind-$model-$lang$suffix")
+            # TREATMENT,CONTROL: withdrawing the score tool is the intervention, so the blind arm
+            # is the treated side and the scored arm the control. Every ratio in this experiment is
+            # therefore no-score / scored, and a value below 1 means the agent did worse without it.
+            pairs+=(--pair "llrblind-$model-$lang$suffix,cpf-llr-focus40-$model-$lang$suffix")
         done
     done
 done
@@ -32,9 +35,14 @@ roster --tag llr-focus40 > "$roster_file"
     --family blind-vs-scored "${pairs[@]}" --roster-file "$roster_file" --out tables/paired_arms.csv \
     --arms-out tables/arms.csv --impact-out tables/impact_blind_vs_scored.csv
 
-"$PY" "$HPCAGENT_BENCH/scripts/plot_paired_arms.py" tables/paired_arms.csv \
-    --label "What the Score Tool and Unlimited Submissions Buy" --ratio-label "Scored / Blind" \
-    --out figures/blind_vs_scored.pdf
+# The same two square slope panels every other intervention is drawn with: X = Control | Treated,
+# left Y = geomean speed-up, right Y = median tokens per task. The pairs CSV supplies both the
+# pairing and the corrected verdicts, so the figure cannot star a pair this table calls not
+# significant.
+"$PY" "$HPCAGENT_BENCH/scripts/plot_score_change.py" "$scored" "$blind" \
+    --pairs-csv tables/paired_arms.csv --intervention no-score --label "No Score Tool" \
+    --control-label "Score Tool and Unlimited Submissions" \
+    --out figures/blind_vs_scored.pdf --table tables/blind_vs_scored_points.csv
 
 # The README quotes its own tables; it is regenerated from them, never edited (spec N4:
 # rounding happens in printed text only).

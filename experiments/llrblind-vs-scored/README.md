@@ -8,8 +8,9 @@ in `llrblind` has neither, and gets one accepted submission.
 
 ## Conditions
 
-`cpf-llr-focus40-<model>-<language>[-skills]` (scored) against
-`llrblind-<model>-<language>[-skills]` (blind), matched by model, language and packet: twelve pairs
+`llrblind-<model>-<language>[-skills]` (blind, the treatment) against
+`cpf-llr-focus40-<model>-<language>[-skills]` (scored, the control), matched by model, language and
+packet: twelve pairs
 over the same 40 `llr-focus40` CPU kernels. This experiment has no database of its own; it reads
 its two siblings' directly.
 
@@ -74,25 +75,26 @@ scoring it at 1.
 
 ## Results
 
-Ratios are scored / blind, so above 1 means the scored arm was faster or spent more. `n` is the
+Ratios are no-score / scored: withdrawing the score tool is the intervention, so below 1 on the
+speed-up leg means the agent did worse without it, and below 1 on the token leg means it spent less. `n` is the
 kernels behind the speed-up leg and behind the token leg. `q` is the Benjamini-Hochberg adjusted p
 over the family of all twelve pairs; `*` marks q < 0.05.
 
 <!--TABLE impact_blind_vs_scored-->
 | model | language | packet | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
 |---|---|---|---|---|---|---|---|---|---|---|
-| oss120b | c | none | 40/40 | 1.00 | 0% | 1.46 [1.16, 1.84] | 0.008* | 1.57 [1.25, 1.96] | 0.003* | 1.77 [1.38, 2.23] |
-| oss120b | c | lang-skills | 40/40 | 1.00 | 0% | 1.43 [1.07, 1.92] | 0.042* | 1.56 [1.27, 1.91] | 0.002* | 1.84 [1.43, 2.35] |
-| oss120b | fortran | none | 40/40 | 1.00 | 0% | 1.54 [1.12, 2.11] | 0.025* | 1.20 [0.99, 1.45] | 0.130 | 1.31 [1.06, 1.58] |
-| oss120b | fortran | lang-skills | 40/40 | 1.00 | 0% | 1.59 [1.13, 2.23] | 0.025* | 1.32 [1.14, 1.52] | 0.003* | 1.40 [1.20, 1.63] |
-| qwen38 | c | none | 40/40 | 1.88 | 60% | 0.84 [0.63, 1.12] | 0.324 | 0.76 [0.55, 1.04] | 0.150 | 0.97 [0.75, 1.24] |
-| qwen38 | c | lang-skills | 40/40 | 1.90 | 62% | 0.79 [0.47, 1.33] | 0.463 | 0.89 [0.66, 1.18] | 0.480 | 1.12 [0.88, 1.38] |
-| qwen38 | fortran | none | 40/39 | 1.43 | 30% | 0.89 [0.56, 1.42] | 0.701 | 0.62 [0.46, 0.84] | 0.010* | 0.81 [0.65, 0.97] |
-| qwen38 | fortran | lang-skills | 40/40 | 1.60 | 48% | 0.72 [0.48, 1.06] | 0.164 | 0.64 [0.46, 0.88] | 0.023* | 0.87 [0.68, 1.06] |
-| kimi27sglang | c | none | 40/40 | 1.00 | 0% | 1.71 [1.28, 2.29] | 0.004* | 0.85 [0.66, 1.09] | 0.303 | 0.85 [0.72, 1.02] |
-| kimi27sglang | c | lang-skills | 40/40 | 1.00 | 0% | 0.96 [0.73, 1.26] | 0.795 | 0.98 [0.76, 1.25] | 0.842 | 0.98 [0.83, 1.17] |
-| kimi27sglang | fortran | none | 40/40 | 1.00 | 0% | 1.61 [1.06, 2.45] | 0.058 | 1.15 [0.92, 1.45] | 0.303 | 1.22 [1.03, 1.45] |
-| kimi27sglang | fortran | lang-skills | 40/40 | 1.00 | 0% | 1.16 [0.87, 1.56] | 0.406 | 0.95 [0.75, 1.21] | 0.738 | 0.91 [0.77, 1.08] |
+| oss120b | c | none | 40/40 | 1.00 | 0% | 0.68 [0.54, 0.86] | 0.008* | 0.64 [0.51, 0.80] | 0.003* | 0.57 [0.45, 0.73] |
+| oss120b | c | lang-skills | 40/40 | 1.00 | 0% | 0.70 [0.52, 0.94] | 0.042* | 0.64 [0.52, 0.79] | 0.002* | 0.54 [0.43, 0.70] |
+| oss120b | fortran | none | 40/40 | 1.00 | 0% | 0.65 [0.47, 0.89] | 0.025* | 0.83 [0.69, 1.01] | 0.130 | 0.77 [0.63, 0.94] |
+| oss120b | fortran | lang-skills | 40/40 | 1.00 | 0% | 0.63 [0.45, 0.88] | 0.025* | 0.76 [0.66, 0.87] | 0.003* | 0.71 [0.61, 0.84] |
+| qwen38 | c | none | 40/40 | 1.10 | 10% | 1.19 [0.89, 1.59] | 0.324 | 1.32 [0.96, 1.82] | 0.150 | 1.03 [0.81, 1.34] |
+| qwen38 | c | lang-skills | 40/40 | 1.05 | 5% | 1.26 [0.75, 2.12] | 0.463 | 1.13 [0.85, 1.51] | 0.480 | 0.89 [0.72, 1.14] |
+| qwen38 | fortran | none | 40/39 | 1.10 | 10% | 1.13 [0.70, 1.80] | 0.701 | 1.62 [1.20, 2.19] | 0.010* | 1.24 [1.03, 1.53] |
+| qwen38 | fortran | lang-skills | 40/40 | 1.02 | 2% | 1.39 [0.94, 2.07] | 0.164 | 1.57 [1.14, 2.15] | 0.023* | 1.15 [0.95, 1.46] |
+| kimi27sglang | c | none | 40/40 | 1.00 | 0% | 0.59 [0.44, 0.78] | 0.004* | 1.18 [0.92, 1.52] | 0.303 | 1.17 [0.98, 1.39] |
+| kimi27sglang | c | lang-skills | 40/40 | 1.00 | 0% | 1.04 [0.80, 1.36] | 0.795 | 1.03 [0.80, 1.32] | 0.842 | 1.02 [0.85, 1.21] |
+| kimi27sglang | fortran | none | 40/40 | 1.00 | 0% | 0.62 [0.41, 0.94] | 0.058 | 0.87 [0.69, 1.08] | 0.303 | 0.82 [0.69, 0.97] |
+| kimi27sglang | fortran | lang-skills | 40/40 | 1.00 | 0% | 0.86 [0.64, 1.15] | 0.406 | 1.05 [0.83, 1.34] | 0.738 | 1.10 [0.92, 1.30] |
 
 ## Commands
 

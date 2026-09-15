@@ -30,9 +30,13 @@ done
     --roster-file "$roster_file" --family git-scicomp-repo-vs-kernel --out tables/paired.csv \
     --arms-out tables/arms.csv --impact-out tables/impact_git.csv
 
-"$PY" "$HPCAGENT_BENCH/scripts/plot_paired_arms.py" tables/paired.csv \
-    --label "Repository vs Kernel, Scientific Computing" --ratio-label "Repository / Kernel" \
-    --out figures/paired_forest.pdf
+# The same two square slope panels every other intervention is drawn with: X = Control | Treated,
+# left Y = geomean speed-up, right Y = median tokens per task. The pairs CSV supplies both the
+# pairing and the corrected verdicts.
+"$PY" "$HPCAGENT_BENCH/scripts/plot_score_change.py" "$db" \
+    --pairs-csv tables/paired.csv --intervention repo --label "Whole Repository" \
+    --control-label "Bare Kernel" --out figures/paired_forest.pdf \
+    --table tables/paired_forest_points.csv
 
 # Condition comes from the arm's own kernel|repo suffix, not the language/packet columns: a
 # git-scicomp episode does not always stamp them, and the arm name is the one thing every row of
