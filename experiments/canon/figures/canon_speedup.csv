@@ -1,0 +1,6 @@
+column,label,median_speedup,geomean_speedup,n
+cc,"sequential C, one thread",1.007938,0.598673,40
+cc_autopar,C -O3 + autopar,1.151682,1.135523,40
+numba,Numba (baseline),1.000000,1.000000,40
+dace_cpu_canonicalize,DaCe canon CPU,7.351903,6.269102,40
+dace_gpu_canonicalize,DaCe canon GPU,45.065552,36.236881,40

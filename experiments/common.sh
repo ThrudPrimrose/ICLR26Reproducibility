@@ -36,8 +36,10 @@ extract() {
 
 # check: every figure and table matches SHA256SUMS. check --record rewrites SHA256SUMS instead.
 check() {
+    local dirs=()
+    for dir in figures tables; do [[ -d "$dir" ]] && dirs+=("$dir"); done
     if [[ "${1:-}" == --record ]]; then
-        find figures tables -type f | LC_ALL=C sort | xargs sha256sum > SHA256SUMS
+        find "${dirs[@]}" -type f | LC_ALL=C sort | xargs sha256sum > SHA256SUMS
         echo "recorded $(wc -l < SHA256SUMS) checksums"
     else
         sha256sum --quiet -c SHA256SUMS && echo "OK: every figure and table matches SHA256SUMS"
