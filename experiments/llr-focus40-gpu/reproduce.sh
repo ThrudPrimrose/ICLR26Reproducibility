@@ -8,10 +8,13 @@ cd "$(dirname "$0")"
 db=data/llr-focus40-gpu.db
 runs=${RUNS:-/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs}
 # 631274-631277: Triton graded while the judge refused Python, so every row is a C submission.
-# 638935 638940: still in the queue on 2026-09-15 when this snapshot was extracted; a live job's
-# tasks are half-run, so the arm is read at its last finished wave.
+# 638935 638940: still in the queue when this snapshot was extracted, so the arm is read at its
+# last finished wave. 639239 639240 639243 and 639313-639331: the GPU -clean re-run, still running.
+# A finished clean arm supersedes the arm of the same identity (spec X9) and is kept; an unfinished
+# one would replace a finished campaign with a wave still filling up, so it waits.
+clean_running="639239 639240 639243 639313 639314 639315 639316 639317 639318 639319 639320 639321 639322 639323 639324 639325 639326 639327 639328 639329 639330 639331"
 [[ " $* " == *" --extract "* ]] && extract "$db" gpu-llr-focus40 "$runs"/gpu-llr-focus40-2026* \
-    -- 631274 631275 631276 631277 638935 638940
+    -- 631274 631275 631276 631277 638935 638940 $clean_running
 
 mkdir -p tables figures
 # The 40 loop-level kernels, read from the corpus manifest tag the jobs were selected by (spec E1).

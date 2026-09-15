@@ -7,12 +7,15 @@ cd "$(dirname "$0")"
 . ../common.sh
 db=data/llr-focus40-cpu.db
 runs=${RUNS:-/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs}
-# 631231: cancelled while the CPF forms directory was being overwritten.
-# 639060 639061 639207 639209-639221: still in the queue on 2026-09-15 when this snapshot was
-# extracted. A live job's tasks are half-run, and the -clean arms among them would supersede the
-# arms this snapshot reports (X9); both are read only once the wave has ended.
-live="639060 639061 639207 639209 639210 639211 639212 639213 639214 639215 639216 639217 639218 639219 639220 639221"
-[[ " $* " == *" --extract "* ]] && extract "$db" cpf-llr-focus40 "$runs"/cpf-llr-focus40-2026* -- 631231 $live
+# The GPT-OSS-120B -clean re-run finished (639211-639213, 639219-639221, 40/40 tasks each) and is
+# INCLUDED: a finished clean arm supersedes the arm of the same identity (spec X9), which is what it
+# was launched to do. Excluded:
+#   631231                                   cancelled while the CPF forms directory was overwritten
+#   639060 639061 639214 639215              still in the queue when this snapshot was extracted
+#   639207 639209 639210 639216 639217 639218  the Qwen3.8-27B clean re-run, killed at 2h by a stale
+#                                            worktree mount; 0-3 of 40 tasks finished, resubmitted
+unfinished="639060 639061 639214 639215 639207 639209 639210 639216 639217 639218"
+[[ " $* " == *" --extract "* ]] && extract "$db" cpf-llr-focus40 "$runs"/cpf-llr-focus40-2026* -- 631231 $unfinished
 
 mkdir -p tables figures
 # The 40 loop-level kernels, read from the corpus manifest tag the jobs were selected by (spec E1).
