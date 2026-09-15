@@ -19,6 +19,12 @@ regrades=${REGRADES:-${RUNS:-/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-benc
 
 # extract <out.db> <arm-prefix> <run-root>... [-- <excluded job id>...]
 # Every judge database under the run roots, minus the excluded jobs -> one observations table.
+#
+# A -clean arm is excluded by NAME rather than by job id. It is a re-run of one condition from
+# scratch, launched after something about the earlier wave was found wrong, and it carries the same
+# identity, so letting one in would drop every row of the arm it supersedes (spec X9) and replace a
+# finished campaign with a wave that is still filling up. This snapshot reports the campaigns as
+# they finished; a re-run enters only once it is complete and the snapshot is rebuilt for it.
 extract() {
     local out=$1 prefix=$2 roots=() excluded=() args=() root job id
     shift 2
@@ -34,6 +40,7 @@ extract() {
     local tmp
     tmp=$(mktemp -d)
     "$PY" "$HPCAGENT_BENCH/reproducibility/llr40/extract_llr40.py" "${args[@]}" --arm-prefix "$prefix" \
+        --exclude-arm clean \
         --benchmarks "$HPCAGENT_BENCH/hpcagent_bench/benchmarks" --out "$tmp" --no-sources --db "$out" \
         --regrades "$regrades"
     rm -rf "$tmp"

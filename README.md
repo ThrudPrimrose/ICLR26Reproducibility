@@ -24,7 +24,8 @@ holds only committed data and the commands that turn it into figures and tables.
 | `llr-focus40-cpu` | does a packet or the Canonical Parallel Form help, on CPU? | no packet, Language Skill Packet, CPF page, CPF as source, perf playbook (perf-playbook-cpu); CPF conditions are C only | Qwen3.8-27B, GPT-OSS-120B, Kimi-K2.7-Code, GLM-5.3 | 40 `llr-focus40` kernels, C and Fortran |
 | `llr-focus40-gpu` | does the packet help on GPU, across delivery languages? | HIP, Triton (Python delivery), C + OpenMP offload, with/without Language Skill Packet | Qwen3.8-27B, GPT-OSS-120B, Kimi-K2.7-Code | same 40 kernels, on the MI300A GPU |
 | `llrblind` | does removing the score tool and capping submissions to one change the outcome? | Language Skill Packet on/off, C vs Fortran, one submission, no score route | GPT-OSS-120B, Qwen3.8-27B, Kimi-K2.7-Code | same 40 kernels, CPU |
-| `git-scicomp` | does handing the agent the whole repository beat handing it the bare kernel? | bare kernel vs repository, 3 agents per kernel | Qwen3.8-27B, GPT-OSS-120B | 10 scientific-computing kernels |
+| `git-scicomp` | does handing the agent the whole repository beat handing it the bare kernel? | bare kernel vs repository, 3 agents per kernel | Qwen3.8-27B, GPT-OSS-120B, Kimi-K2.7-Code | 10 scientific-computing kernels |
+| `perf-playbook` | does a performance-engineering playbook packet change what the agent delivers? | no packet vs the playbook packet, on scicomp-focus40, loop-level C and loop-level HIP | Qwen3.8-27B, GPT-OSS-120B | 40 scientific-computing and 40 loop-level kernels |
 | `canon` | what does DaCe canonicalization buy against plain compilers, with no agent? | toolchain column: numba, cc, cc_autopar, dace_cpu, dace_cpu_canonicalize (+ GPU columns) | none, deterministic compiler baselines | same 40 kernels |
 
 ## Reproduce
@@ -94,26 +95,56 @@ Each run rebuilds `figures/` (and `tables/`, where the experiment has them) from
 
 ## What the numbers mean
 
+The full specification is `docs/DESIGN_data_collection_and_scoring.md` in HPCAgent-Bench; this is
+what a reader of the tables has to know.
+
 A per-kernel speedup is `median(baseline run time) / median(candidate run time)` over 20 timed
 repeats each, credited only when a one-sided Mann-Whitney U test confirms the direction (p = 0.1);
-otherwise the speedup is exactly 1.0, and a confirmed slow-down is below 1. That per-kernel value
-is the credited speedup of the kernel's final answer. The baseline is Numba for the
-loop-level-reasoning kernels (`llr-focus40-cpu`, `llr-focus40-gpu`, `llrblind`) and C -O3 + autopar
-for `git-scicomp`. Scoring: within one agent episode the LAST verified submission counts; across an
-arm's episodes the maximum is kept; suspect rows are dropped before any aggregate. Every OVERALL
-speedup (per arm, per experiment, or any other summary) is the GEOMETRIC MEAN of the per-kernel
-speedups, never the median: a speedup is a ratio, and a median over a mostly-flat distribution
-reports "no effect" everywhere a geometric mean would not. Tokens are the total per kernel, summed
-over every episode that touched it, never averaged. Every row in this repository is measured under
-this one rule: rows originally graded before 2026-09-13 used an older rule and were re-timed so no
-two numbers here come from different definitions.
+otherwise the speedup is exactly 1.0, and a confirmed slow-down is below 1. The baseline is Numba
+for the loop-level-reasoning kernels (`llr-focus40-cpu`, `llr-focus40-gpu`, `llrblind`) and C -O3 +
+autopar for `git-scicomp` and `perf-playbook`'s scicomp campaign. Rows graded before 2026-09-13
+used an older timing rule and were re-timed; a submission with no re-timed row is dropped, so every
+speedup here comes from one rule.
+
+A TASK is one agent optimizing one kernel once. Within a task the LAST verified submission is the
+answer; a suspect row and a non-positive speedup are not candidates. A kernel a campaign runs more
+than once is reduced by that campaign's policy: the LATEST task where a rerun replaces what it
+repeats, the MEDIAN over tasks where the repeats are by design (`git-scicomp` and `perf-playbook`'s
+scicomp campaign run three agents per kernel). The maximum over an arm's tasks is never taken, and
+tokens are never summed over tasks.
+
+THE LAST AGENT RAN THE TASK FROM NOTHING TO ITS END. A crashed agent is relaunched from an empty
+context and an empty workspace, so a task is scored and priced as its final attempt alone: judge
+rows stamped before that attempt started are dropped, the token total is the final attempt's, and
+what the earlier attempts spent is reported beside it as `tokens_crashed` and added to nothing.
+Cancelled tasks are dropped whole. Every table carries `attempts_per_task` and the share of tasks
+that relaunched, because that is where this rule applied.
+
+TOKENS ARE COUNTED ONCE. `output` is every token the model generated, reasoning included, as both
+serving engines report it; the client's thinking estimate is never added on top. Input is counted
+when it first enters the context, so a cached prompt is not billed again on every turn. Where no
+server count survived, the count comes from the model's own tokenizer over the transcript, which is
+2-4% low by construction and is marked `output_source = retokenized` on the task row.
+
+Every OVERALL speedup (per arm, per experiment, or any other summary) is the GEOMETRIC MEAN of the
+per-kernel speedups, never the median: a speedup is a ratio, and a median over a mostly-flat
+distribution reports "no effect" everywhere a geometric mean would not. A token cost per arm is the
+MEDIAN task total. A paired comparison reports the geometric mean ratio with a log-t interval and a
+paired t test, and on the token leg also the ratio of total tokens with a paired bootstrap interval
+(9999 resamples, seed 0). Benjamini-Hochberg at q = 0.05 runs over one declared family, and only a
+corrected verdict is called significant.
 
 ## Status (snapshot 2026-09-15)
 
-`canon` is complete: database, figures and checksums are committed. The four agent experiments carry their
-reproduce commands but no committed database yet. Their databases are committed after the re-grade of rows graded
-before 2026-09-13 finishes, so that no committed number mixes the two timing rules; until then `--extract` rebuilds
-them from `$RUNS` on the cluster.
+Every experiment carries a committed database, figures, tables and checksums, re-extracted after
+the re-grade and after the token records were re-folded, so no committed number mixes two timing
+rules or two token folds.
+
+A `-clean` arm is a re-run of one condition from scratch and is excluded by name: it carries the
+same identity as the arm it supersedes, so one incomplete re-run would replace a finished campaign.
+Arms whose jobs were still in the queue on 2026-09-15 are read at their last finished wave, and the
+excluded job ids are named in each `reproduce.sh` and README. The re-runs launched that evening are
+not in this snapshot.
 
 ## Full artifact
 

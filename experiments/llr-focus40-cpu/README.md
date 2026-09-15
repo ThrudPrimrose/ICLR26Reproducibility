@@ -55,6 +55,14 @@ behind the speed-up leg and behind the token leg. `q` is the Benjamini-Hochberg 
 family of twelve tests; `*` marks q < 0.05.
 
 <!--TABLE impact_lang_skills_cpu-->
+| model | language | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
+|---|---|---|---|---|---|---|---|---|---|
+| qwen38 | c | 14/40 | 1.90 | 62% | 1.21 [0.93, 1.57] | 0.598 | 1.15 [0.76, 1.72] | 0.712 | 1.12 [0.82, 1.53] |
+| qwen38 | fortran | 23/39 | 1.60 | 48% | 1.03 [0.73, 1.44] | 0.939 | 0.80 [0.52, 1.24] | 0.712 | 0.88 [0.64, 1.18] |
+| oss120b | c | 38/40 | 1.00 | 0% | 1.07 [0.87, 1.31] | 0.712 | 0.99 [0.87, 1.14] | 0.939 | 1.00 [0.86, 1.18] |
+| oss120b | fortran | 38/40 | 1.00 | 0% | 0.93 [0.80, 1.09] | 0.712 | 0.95 [0.81, 1.11] | 0.712 | 0.90 [0.76, 1.07] |
+| kimi27sglang | c | 37/40 | 1.00 | 0% | 0.86 [0.67, 1.09] | 0.607 | 1.12 [0.96, 1.30] | 0.598 | 1.13 [0.98, 1.29] |
+| kimi27sglang | fortran | 39/40 | 1.00 | 0% | 0.95 [0.74, 1.20] | 0.773 | 0.78 [0.63, 0.97] | 0.310 | 0.75 [0.63, 0.90] |
 
 The packet moved nothing that survives the correction. Six pairs, twelve tests, no significant
 verdict on either leg; point estimates run from 0.86x to 1.21x on speed-up and 0.78x to 1.15x on

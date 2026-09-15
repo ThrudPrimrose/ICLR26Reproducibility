@@ -54,6 +54,17 @@ behind the speed-up leg and behind the token leg. `q` is the Benjamini-Hochberg 
 family of eighteen tests; `*` marks q < 0.05.
 
 <!--TABLE impact_lang_skills_gpu-->
+| model | language | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
+|---|---|---|---|---|---|---|---|---|---|
+| qwen38 | c | 24/40 | 1.25 | 22% | 1.45 [0.68, 3.08] | 0.597 | 1.18 [0.81, 1.72] | 0.597 | 1.02 [0.73, 1.46] |
+| qwen38 | hip | 21/40 | 2.00 | 62% | 1.63 [0.93, 2.88] | 0.343 | 0.91 [0.66, 1.24] | 0.638 | 0.94 [0.70, 1.24] |
+| qwen38 | triton | 13/39 | 1.55 | 50% | 0.78 [0.37, 1.63] | 0.627 | 1.04 [0.71, 1.55] | 0.822 | 1.07 [0.78, 1.48] |
+| oss120b | c | 39/40 | 1.00 | 0% | 0.64 [0.42, 0.97] | 0.289 | 0.94 [0.79, 1.12] | 0.627 | 0.93 [0.80, 1.08] |
+| oss120b | hip | 40/40 | 1.00 | 0% | 1.38 [0.94, 2.03] | 0.343 | 1.07 [0.93, 1.23] | 0.597 | 1.04 [0.90, 1.20] |
+| oss120b | triton | 0/40 | 1.00 | 0% | 1.00 (no interval) | underpowered | 1.02 [0.92, 1.15] | 0.751 | 1.03 [0.93, 1.14] |
+| kimi27sglang | c | 37/40 | 1.00 | 0% | 1.19 [0.84, 1.69] | 0.597 | 0.82 [0.67, 1.00] | 0.289 | 0.86 [0.73, 1.02] |
+| kimi27sglang | hip | 32/40 | 1.00 | 0% | 1.02 [0.90, 1.15] | 0.822 | 0.86 [0.70, 1.06] | 0.425 | 0.92 [0.78, 1.07] |
+| kimi27sglang | triton | 38/40 | 1.00 | 0% | 1.24 [0.83, 1.86] | 0.597 | 1.32 [1.11, 1.57] | 0.048* | 1.18 [1.03, 1.38] |
 
 Nine pairs, eighteen tests, one significant verdict: Kimi-K2.7-Code with the packet spent 1.32x as
 many tokens per kernel in Triton (total 1.18x, q = 0.048) and was no faster for it. No speed-up leg
