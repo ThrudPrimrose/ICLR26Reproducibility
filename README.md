@@ -113,6 +113,11 @@ repeats, the MEDIAN over tasks where the repeats are by design (`git-scicomp` an
 scicomp campaign run three agents per kernel). The maximum over an arm's tasks is never taken, and
 tokens are never summed over tasks.
 
+A KERNEL THE ARM NEVER DELIVERED SCORES 1x AND STILL COSTS ITS TOKENS. Every speed-up aggregate is
+over the kernels the arm was SERVED, not the kernels it verified: a failed episode enters at 1.0,
+which is what it left standing, and its tokens enter the totals and medians, because the agent was
+given the kernel and spent its budget. Every table carries `n_solved` beside `n`.
+
 THE LAST AGENT RAN THE TASK FROM NOTHING TO ITS END. A crashed agent is relaunched from an empty
 context and an empty workspace, so a task is scored and priced as its final attempt alone: judge
 rows stamped before that attempt started are dropped, the token total is the final attempt's, and
@@ -133,6 +138,20 @@ MEDIAN task total. A paired comparison reports the geometric mean ratio with a l
 paired t test, and on the token leg also the ratio of total tokens with a paired bootstrap interval
 (9999 resamples, seed 0). Benjamini-Hochberg at q = 0.05 runs over one declared family, and only a
 corrected verdict is called significant.
+
+The interval choices follow Hoefler and Belli (SC15), encoded in `hpcagent_bench/stats/rules.py`:
+Rule 4 (a ratio is summarized by the geometric mean, and the costs it was taken over stay in the
+table, so `baseline_ns`, `native_ns` and `tokens` are kept beside every ratio), Rule 5 (an interval
+is required for nondeterministic data, so no geomean is reported bare), Rule 7 (comparison goes
+through the intervals), Rule 12 (a connecting line only where it means something, so the segment
+joining a control mark to its packet mark is a pair link and the legend says so). Geomean intervals
+are taken in log space; token costs use the nonparametric bootstrap of the median; every figure and
+table states `n`.
+
+A `-clean` arm is a re-run of one condition from scratch. A FINISHED one supersedes the arm of the
+same condition and is then reported under that condition's name, because the suffix names a wave and
+not a condition. An unfinished one is excluded by job id, named in the experiment's `reproduce.sh`,
+so a wave still filling up never replaces a finished campaign.
 
 ## Status (snapshot 2026-09-15)
 

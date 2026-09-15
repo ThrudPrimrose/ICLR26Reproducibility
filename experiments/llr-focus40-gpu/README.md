@@ -35,6 +35,15 @@ server's episode count on the `result` record, else the model's own tokenizer ov
 (`output_source = retokenized`, which is 2-4% low by construction, T11). Input is counted when it
 first enters the context, so a cached prompt is not billed again on every turn.
 
+**A failed episode scores 1x and still costs its tokens.** The population of every speed-up
+aggregate is the kernels the arm was SERVED, not the kernels it verified. An episode that never
+delivered a verified answer enters at 1.0, which is exactly what it left standing, and its tokens
+enter the totals and the medians, because the agent was given the kernel and spent its budget.
+Scoring only what an arm verified reports it on the subset it happened to succeed on, which flatters
+the arms that failed most. Every table carries `n_solved` beside `n`, so how much of an arm's number
+is delivery and how much is 1.0 is always visible, and the per-kernel figures draw a
+never-delivered kernel with an x.
+
 **Summary statistics.** Per arm, the speed-up is the geometric mean over the kernels it verified,
 with a log-t interval (A1), and the token cost is the median task total with a percentile bootstrap
 interval (A2). Per pair, both legs are paired by kernel: the geometric mean ratio with its log-t
@@ -43,6 +52,16 @@ kernels with a paired bootstrap interval (9999 resamples, seed 0). The two token
 different questions and the table carries both: the geomean is the typical kernel, the total is the
 budget. Benjamini-Hochberg at q = 0.05 runs over one family, and the family is every leg of every
 pair of one invocation (M1).
+
+**Which interval, and why.** Hoefler and Belli (SC15), as encoded in
+`hpcagent_bench/stats/rules.py`: Rule 4 says a ratio is summarized by the geometric mean and the
+costs it was taken over stay in the table, so the artifact tables keep `baseline_ns`, `native_ns`
+and `tokens` beside every ratio. Rule 5 requires an interval for nondeterministic data, so a geomean
+is never reported bare. Rule 7 compares through intervals rather than through point estimates. The
+geomean interval is taken in log space (log-t from `summary.geomean_ci`); token costs use the
+nonparametric bootstrap of the median. Every figure and table states `n`, the kernels or pairs
+behind the number. Rule 12 allows a connecting line only where it means something, so the segment
+joining a control mark to its packet mark is a PAIR LINK and the legend says so.
 
 One task per kernel per arm. A kernel an arm ran more than once is charged its LATEST task, never
 the best of them and never the sum (R4, R6).
@@ -54,17 +73,17 @@ behind the speed-up leg and behind the token leg. `q` is the Benjamini-Hochberg 
 family of eighteen tests; `*` marks q < 0.05.
 
 <!--TABLE impact_lang_skills_gpu-->
-| model | language | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
-|---|---|---|---|---|---|---|---|---|---|
-| qwen38 | c | 24/40 | 1.25 | 22% | 1.45 [0.68, 3.08] | 0.597 | 1.18 [0.81, 1.72] | 0.597 | 1.02 [0.73, 1.46] |
-| qwen38 | hip | 21/40 | 2.00 | 62% | 1.63 [0.93, 2.88] | 0.343 | 0.91 [0.66, 1.24] | 0.638 | 0.94 [0.70, 1.24] |
-| qwen38 | triton | 13/39 | 1.55 | 50% | 0.78 [0.37, 1.63] | 0.627 | 1.04 [0.71, 1.55] | 0.822 | 1.07 [0.78, 1.48] |
-| oss120b | c | 39/40 | 1.00 | 0% | 0.64 [0.42, 0.97] | 0.289 | 0.94 [0.79, 1.12] | 0.627 | 0.93 [0.80, 1.08] |
-| oss120b | hip | 40/40 | 1.00 | 0% | 1.38 [0.94, 2.03] | 0.343 | 1.07 [0.93, 1.23] | 0.597 | 1.04 [0.90, 1.20] |
-| oss120b | triton | 0/40 | 1.00 | 0% | 1.00 (no interval) | underpowered | 1.02 [0.92, 1.15] | 0.751 | 1.03 [0.93, 1.14] |
-| kimi27sglang | c | 37/40 | 1.00 | 0% | 1.19 [0.84, 1.69] | 0.597 | 0.82 [0.67, 1.00] | 0.289 | 0.86 [0.73, 1.02] |
-| kimi27sglang | hip | 32/40 | 1.00 | 0% | 1.02 [0.90, 1.15] | 0.822 | 0.86 [0.70, 1.06] | 0.425 | 0.92 [0.78, 1.07] |
-| kimi27sglang | triton | 38/40 | 1.00 | 0% | 1.24 [0.83, 1.86] | 0.597 | 1.32 [1.11, 1.57] | 0.048* | 1.18 [1.03, 1.38] |
+| model | language | packet | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
+|---|---|---|---|---|---|---|---|---|---|---|
+| qwen38 | c | lang-skills | 40/40 | 1.25 | 22% | 1.85 [1.00, 3.41] | 0.183 | 1.18 [0.81, 1.72] | 0.633 | 1.02 [0.73, 1.46] |
+| qwen38 | hip | lang-skills | 40/40 | 2.00 | 62% | 1.59 [0.76, 3.34] | 0.427 | 0.91 [0.66, 1.24] | 0.727 | 0.94 [0.70, 1.24] |
+| qwen38 | triton | lang-skills | 40/39 | 1.55 | 50% | 0.88 [0.52, 1.50] | 0.746 | 1.04 [0.71, 1.55] | 0.870 | 1.07 [0.78, 1.48] |
+| oss120b | c | lang-skills | 40/40 | 1.00 | 0% | 0.65 [0.43, 0.97] | 0.183 | 0.94 [0.79, 1.12] | 0.719 | 0.93 [0.80, 1.08] |
+| oss120b | hip | lang-skills | 40/40 | 1.00 | 0% | 1.38 [0.94, 2.03] | 0.303 | 1.07 [0.93, 1.23] | 0.633 | 1.04 [0.90, 1.20] |
+| oss120b | triton | lang-skills | 40/40 | 1.00 | 0% | 1.00 [0.87, 1.14] | 0.945 | 1.02 [0.92, 1.15] | 0.746 | 1.03 [0.93, 1.14] |
+| kimi27sglang | c | lang-skills | 40/40 | 1.00 | 0% | 1.10 [0.78, 1.55] | 0.727 | 0.82 [0.67, 1.00] | 0.183 | 0.86 [0.73, 1.02] |
+| kimi27sglang | hip | lang-skills | 40/40 | 1.00 | 0% | 0.45 [0.26, 0.79] | 0.056 | 0.86 [0.70, 1.06] | 0.386 | 0.92 [0.78, 1.07] |
+| kimi27sglang | triton | lang-skills | 40/40 | 1.00 | 0% | 1.29 [0.88, 1.89] | 0.426 | 1.32 [1.11, 1.57] | 0.051 | 1.18 [1.03, 1.38] |
 
 Nine pairs, eighteen tests, one significant verdict: Kimi-K2.7-Code with the packet spent 1.32x as
 many tokens per kernel in Triton (total 1.18x, q = 0.048) and was no faster for it. No speed-up leg

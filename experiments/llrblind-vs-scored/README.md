@@ -39,6 +39,15 @@ server's episode count on the `result` record, else the model's own tokenizer ov
 (`output_source = retokenized`, which is 2-4% low by construction, T11). Input is counted when it
 first enters the context, so a cached prompt is not billed again on every turn.
 
+**A failed episode scores 1x and still costs its tokens.** The population of every speed-up
+aggregate is the kernels the arm was SERVED, not the kernels it verified. An episode that never
+delivered a verified answer enters at 1.0, which is exactly what it left standing, and its tokens
+enter the totals and the medians, because the agent was given the kernel and spent its budget.
+Scoring only what an arm verified reports it on the subset it happened to succeed on, which flatters
+the arms that failed most. Every table carries `n_solved` beside `n`, so how much of an arm's number
+is delivery and how much is 1.0 is always visible, and the per-kernel figures draw a
+never-delivered kernel with an x.
+
 **Summary statistics.** Per arm, the speed-up is the geometric mean over the kernels it verified,
 with a log-t interval (A1), and the token cost is the median task total with a percentile bootstrap
 interval (A2). Per pair, both legs are paired by kernel: the geometric mean ratio with its log-t
@@ -47,6 +56,16 @@ kernels with a paired bootstrap interval (9999 resamples, seed 0). The two token
 different questions and the table carries both: the geomean is the typical kernel, the total is the
 budget. Benjamini-Hochberg at q = 0.05 runs over one family, and the family is every leg of every
 pair of one invocation (M1).
+
+**Which interval, and why.** Hoefler and Belli (SC15), as encoded in
+`hpcagent_bench/stats/rules.py`: Rule 4 says a ratio is summarized by the geometric mean and the
+costs it was taken over stay in the table, so the artifact tables keep `baseline_ns`, `native_ns`
+and `tokens` beside every ratio. Rule 5 requires an interval for nondeterministic data, so a geomean
+is never reported bare. Rule 7 compares through intervals rather than through point estimates. The
+geomean interval is taken in log space (log-t from `summary.geomean_ci`); token costs use the
+nonparametric bootstrap of the median. Every figure and table states `n`, the kernels or pairs
+behind the number. Rule 12 allows a connecting line only where it means something, so the segment
+joining a control mark to its packet mark is a PAIR LINK and the legend says so.
 
 The two campaigns differ in one more way the reader has to hold: the blind arms run under
 `AGENT_SINGLE_SUBMISSION=1`, so an accepted submission ends the task. A blind task that never
