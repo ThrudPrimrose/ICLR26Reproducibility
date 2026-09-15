@@ -10,7 +10,7 @@ holds only committed data and the commands that turn it into figures and tables.
 
 | folder | what it is |
 |---|---|
-| `experiments/<name>/` | one experiment: `data/<name>.db`, `figures/`, `tables/`, `reproduce.sh`, `SHA256SUMS` |
+| `experiments/<name>/` | one experiment: `data/<name>.db`, `figures/`, `tables/` (when it has tables), `reproduce.sh`, `SHA256SUMS` |
 | `experiments/common.sh` | shared shell helpers every `reproduce.sh` sources (`extract`, `check`) |
 | `skill_histories/` | every version of the **language packet** (Language Skill Packet) the agents read |
 | `notes/` | earlier notes, kept for provenance, not part of the reproduction path |
@@ -29,8 +29,8 @@ holds only committed data and the commands that turn it into figures and tables.
 
 ## Reproduce
 
-Needs `git`, Python 3.12 or newer, and `sha256sum`. Run every command from this folder (the
-repository root).
+Needs `git`, Python 3.12 or newer, `sha256sum`, and an HPCAgent-Bench checkout (the first command
+below clones it). Run every command from this folder (the repository root).
 
 ```sh
 git clone https://github.com/spcl/HPCAgent-Bench.git hpcagent-bench
@@ -44,7 +44,7 @@ Replace `git-scicomp` with any experiment name under `experiments/` to reproduce
 `HPCAGENT_BENCH` and `PYTHON` are read by `experiments/common.sh`, which every `reproduce.sh`
 sources; both must be set for every run.
 
-Each `reproduce.sh` rebuilds `figures/` and `tables/` from the committed `data/<name>.db` and
+Each `reproduce.sh` rebuilds `figures/` (and `tables/`, where the experiment has them) from the committed `data/<name>.db` and
 prints `OK: every figure and table matches SHA256SUMS` on success.
 
 - `reproduce.sh --extract` first rebuilds the `.db` from the judge databases. This only works on
