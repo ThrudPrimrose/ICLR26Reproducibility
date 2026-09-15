@@ -13,6 +13,10 @@ made_with=$(cat "$here_common/../HPCAGENT_BENCH_COMMIT")
 using=$(git -C "$HPCAGENT_BENCH" rev-parse HEAD)
 [[ "$using" == "$made_with"* ]] || echo "note: figures were made with hpcagent-bench $made_with; using $using" >&2
 
+# Re-timed rows (scripts/regrade.py) for submissions graded before the timing-reduction stamp; extract drops such
+# a submission when it has no re-timed row, so every speed-up in a table comes from one rule.
+regrades=${REGRADES:-${RUNS:-/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs}/regrade-20260915/full/regrade-*.db}
+
 # extract <out.db> <arm-prefix> <run-root>... [-- <excluded job id>...]
 # Every judge database under the run roots, minus the excluded jobs -> one observations table.
 extract() {
@@ -30,7 +34,8 @@ extract() {
     local tmp
     tmp=$(mktemp -d)
     "$PY" "$HPCAGENT_BENCH/reproducibility/llr40/extract_llr40.py" "${args[@]}" --arm-prefix "$prefix" \
-        --benchmarks "$HPCAGENT_BENCH/hpcagent_bench/benchmarks" --out "$tmp" --no-sources --db "$out"
+        --benchmarks "$HPCAGENT_BENCH/hpcagent_bench/benchmarks" --out "$tmp" --no-sources --db "$out" \
+        --regrades "$regrades"
     rm -rf "$tmp"
 }
 
