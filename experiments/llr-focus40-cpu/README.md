@@ -15,11 +15,23 @@ CPF conditions (`cpf`, `cpfsrc`) are C only; Fortran has no CPF spelling.
 Qwen3.8-27B, GPT-OSS-120B, Kimi-K2.7-Code, GLM-5.3, driven by Claude Code. 40 `llr-focus40`
 kernels, C and Fortran, one agent per kernel per arm.
 
-## Command
+## Commands
+
+Set `ARTIFACT_ROOT`, `HPCAGENT_BENCH`, `PYTHON` (and `RUNS` for `--extract`) as in the top-level README, then:
 
 ```sh
-./reproduce.sh              # data/llr-focus40-cpu.db -> figures/ + tables/, then check checksums
-./reproduce.sh --extract    # first rebuild the .db from the judge databases (cluster only)
+"$ARTIFACT_ROOT/experiments/llr-focus40-cpu/reproduce.sh"                     # data/llr-focus40-cpu.db -> figures/ + tables/, check SHA256SUMS
+"$ARTIFACT_ROOT/experiments/llr-focus40-cpu/reproduce.sh" --extract           # CSCS only: rebuild the .db from $RUNS first
+"$ARTIFACT_ROOT/experiments/llr-focus40-cpu/reproduce.sh" --extract --record  # also rewrite SHA256SUMS
+```
+
+Example on CSCS Beverin:
+
+```sh
+HPCAGENT_BENCH=/capstor/scratch/cscs/ybudanaz/x86_64/optarena \
+PYTHON=/capstor/scratch/cscs/ybudanaz/x86_64/venv-optarena-314/bin/python \
+RUNS=/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs \
+    /capstor/scratch/cscs/ybudanaz/x86_64/ICLR26Reproducibility/experiments/llr-focus40-cpu/reproduce.sh
 ```
 
 ## Outputs
@@ -40,6 +52,5 @@ the CPF forms directory was being overwritten.
 
 ## Caveats
 
-Neither intervention is statistically significant: none of the packet tests clears q < 0.36 and
-none of the CPF tests clears q < 0.071. GLM-5.3 arms and the CPF page (`cpf`) arms are thin or
-empty in places (loader/mount issues during the run); the figures reflect whatever rows exist.
+Significance per contrast is in the `paired_*.csv` tables (the `*_verdict` columns). GLM-5.3 ran
+only the C skills arm; the figures reflect the rows that exist.

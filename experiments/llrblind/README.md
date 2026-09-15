@@ -16,11 +16,23 @@ call itself).
 
 GPT-OSS-120B, Qwen3.8-27B, Kimi-K2.7-Code, driven by Claude Code. Same 40 `llr-focus40` kernels.
 
-## Command
+## Commands
+
+Set `ARTIFACT_ROOT`, `HPCAGENT_BENCH`, `PYTHON` (and `RUNS` for `--extract`) as in the top-level README, then:
 
 ```sh
-./reproduce.sh              # data/llrblind.db -> figures/ + tables/, then check checksums
-./reproduce.sh --extract    # first rebuild the .db from the judge databases (cluster only)
+"$ARTIFACT_ROOT/experiments/llrblind/reproduce.sh"                     # data/llrblind.db -> figures/ + tables/, check SHA256SUMS
+"$ARTIFACT_ROOT/experiments/llrblind/reproduce.sh" --extract           # CSCS only: rebuild the .db from $RUNS first
+"$ARTIFACT_ROOT/experiments/llrblind/reproduce.sh" --extract --record  # also rewrite SHA256SUMS
+```
+
+Example on CSCS Beverin:
+
+```sh
+HPCAGENT_BENCH=/capstor/scratch/cscs/ybudanaz/x86_64/optarena \
+PYTHON=/capstor/scratch/cscs/ybudanaz/x86_64/venv-optarena-314/bin/python \
+RUNS=/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs \
+    /capstor/scratch/cscs/ybudanaz/x86_64/ICLR26Reproducibility/experiments/llrblind/reproduce.sh
 ```
 
 ## Outputs

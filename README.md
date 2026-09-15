@@ -29,27 +29,68 @@ holds only committed data and the commands that turn it into figures and tables.
 
 ## Reproduce
 
-Needs `git`, Python 3.12 or newer, `sha256sum`, and an HPCAgent-Bench checkout (the first command
-below clones it). Run every command from this folder (the repository root).
+Needs `git`, Python 3.12 or newer and `sha256sum`. Every `reproduce.sh` can be called from any
+directory.
+
+### 1. Set the paths
 
 ```sh
-git clone https://github.com/spcl/HPCAgent-Bench.git hpcagent-bench
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-HPCAGENT_BENCH="$PWD/hpcagent-bench" PYTHON="$PWD/.venv/bin/python" experiments/git-scicomp/reproduce.sh
+export ARTIFACT_ROOT=/path/to/ICLR26Reproducibility   # this repository
+export HPCAGENT_BENCH=/path/to/hpcagent-bench         # HPCAgent-Bench checkout, latest main
+export PYTHON=/path/to/venv/bin/python                 # a Python with requirements.txt installed
+export RUNS=/path/to/hpcagent-bench-runs               # --extract only: the campaign run directories
+export CANON_SWEEP=/path/to/canon-llr40-sweep          # --extract of canon only: the compiler sweep
+```
+
+Example on CSCS Beverin:
+
+```sh
+export ARTIFACT_ROOT=/capstor/scratch/cscs/ybudanaz/x86_64/ICLR26Reproducibility
+export HPCAGENT_BENCH=/capstor/scratch/cscs/ybudanaz/x86_64/optarena
+export PYTHON=/capstor/scratch/cscs/ybudanaz/x86_64/venv-optarena-314/bin/python
+export RUNS=/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs
+export CANON_SWEEP=/capstor/scratch/cscs/ybudanaz/x86_64/canon-llr40-20260910
+```
+
+### 2. Install (once)
+
+```sh
+git clone https://github.com/ThrudPrimrose/ICLR26Reproducibility.git "$ARTIFACT_ROOT"
+git clone https://github.com/spcl/HPCAgent-Bench.git "$HPCAGENT_BENCH"
+python3 -m venv /path/to/venv
+/path/to/venv/bin/pip install -r "$ARTIFACT_ROOT/requirements.txt"
 ```
 
 Use HPCAgent-Bench's latest `main`, not a pinned commit.
 
-Replace `git-scicomp` with any experiment name under `experiments/` to reproduce that one instead.
-`HPCAGENT_BENCH` and `PYTHON` are read by `experiments/common.sh`, which every `reproduce.sh`
-sources; both must be set for every run.
+### 3. Reproduce the figures and tables
 
-Each `reproduce.sh` rebuilds `figures/` (and `tables/`, where the experiment has them) from the committed `data/<name>.db` and
-prints `OK: every figure and table matches SHA256SUMS` on success.
+One experiment (any name from the table above):
 
-- `reproduce.sh --extract` first rebuilds the `.db` from the judge databases. This only works on
-  the CSCS cluster, where the run directories live; `RUNS=<path>` overrides their default location.
-- `reproduce.sh --record` rewrites `SHA256SUMS` instead of checking it.
+```sh
+"$ARTIFACT_ROOT/experiments/git-scicomp/reproduce.sh"
+```
+
+All experiments:
+
+```sh
+for name in llr-focus40-cpu llr-focus40-gpu llrblind git-scicomp canon; do
+    "$ARTIFACT_ROOT/experiments/$name/reproduce.sh"
+done
+```
+
+Each run rebuilds `figures/` (and `tables/`, where the experiment has them) from the committed
+`data/<name>.db` and prints `OK: every figure and table matches SHA256SUMS` on success.
+
+### 4. Rebuild the data (CSCS cluster only)
+
+```sh
+"$ARTIFACT_ROOT/experiments/llr-focus40-cpu/reproduce.sh" --extract           # $RUNS -> data/llr-focus40-cpu.db, then step 3
+"$ARTIFACT_ROOT/experiments/canon/reproduce.sh" --extract                     # $CANON_SWEEP -> data/canon.db, then step 3
+"$ARTIFACT_ROOT/experiments/llr-focus40-cpu/reproduce.sh" --extract --record  # also rewrite SHA256SUMS
+```
+
+`--record` rewrites `SHA256SUMS` instead of checking it. Use it only when the data changed on purpose.
 
 ## What the numbers mean
 

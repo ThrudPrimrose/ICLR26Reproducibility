@@ -15,23 +15,34 @@ run once each.
 None (a compiler ablation, no agent). Same 40 `llr-focus40` kernels as the other `llr-focus40*`
 experiments.
 
-## Command
+## Commands
+
+Set `ARTIFACT_ROOT`, `HPCAGENT_BENCH`, `PYTHON` (and `CANON_SWEEP` for `--extract`) as in the top-level README, then:
 
 ```sh
-./reproduce.sh              # data/canon.db -> figures/ + tables/, then check checksums
-./reproduce.sh --extract    # first rebuild the .db from the sweep run directory (cluster only)
+"$ARTIFACT_ROOT/experiments/canon/reproduce.sh"                     # data/canon.db -> figures/, check SHA256SUMS
+"$ARTIFACT_ROOT/experiments/canon/reproduce.sh" --extract           # CSCS only: rebuild the .db from $CANON_SWEEP first
+"$ARTIFACT_ROOT/experiments/canon/reproduce.sh" --extract --record  # also rewrite SHA256SUMS
 ```
 
-`--extract` runs `collect_canon.py --run-dir <sweep> --db data/canon.db` to turn the sweep's
-per-rank output into the committed database, then `plot_canon_speedup.py --db data/canon.db --out
-figures/` to draw the figure and print its table.
+Example on CSCS Beverin:
+
+```sh
+HPCAGENT_BENCH=/capstor/scratch/cscs/ybudanaz/x86_64/optarena \
+PYTHON=/capstor/scratch/cscs/ybudanaz/x86_64/venv-optarena-314/bin/python \
+CANON_SWEEP=/capstor/scratch/cscs/ybudanaz/x86_64/canon-llr40-20260910 \
+    /capstor/scratch/cscs/ybudanaz/x86_64/ICLR26Reproducibility/experiments/canon/reproduce.sh
+```
+
+`--extract` runs `$HPCAGENT_BENCH/scripts/collect_canon.py --run-dir $CANON_SWEEP --db data/canon.db`.
+Every run then draws the figure and its table with `$HPCAGENT_BENCH/scripts/plot_canon_speedup.py --db data/canon.db --out figures`.
 
 ## Outputs
 
 | file | how to read it |
 |---|---|
-| `figures/canon_speedup.pdf` | geometric mean speed-up per toolchain column over Numba (the headline number); median shown alongside as a spread cue only, never as the overall figure |
-| printed table (from `plot_canon_speedup.py`) | the numeric result behind the figure |
+| `figures/canon_speedup.pdf`, `figures/canon_speedup.png` | geometric mean speed-up per toolchain column over Numba (the headline number); median shown alongside as a spread cue only, never as the overall figure |
+| `figures/canon_speedup.csv` | the numbers behind the figure, one row per toolchain column |
 
 ## Data provenance
 
