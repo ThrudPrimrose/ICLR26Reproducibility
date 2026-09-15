@@ -14,6 +14,54 @@ Packet. Speedups are over the same Numba baseline as the CPU track.
 Qwen3.8-27B, GPT-OSS-120B, Kimi-K2.7-Code, driven by Claude Code. Same 40 `llr-focus40` kernels,
 on the MI300A GPU.
 
+## Scoring
+
+Every number obeys `docs/DESIGN_data_collection_and_scoring.md` in HPCAgent-Bench. Three rules
+decide what the tables say, and a reader needs all three.
+
+**The last agent ran the task from nothing to its end.** A crashed agent is relaunched from an
+empty context and an empty workspace (T5), so nothing an earlier attempt built survived into what
+was graded. A task is therefore scored and priced as its FINAL attempt alone: judge rows stamped
+before that attempt started are dropped (X7), the token total is the final attempt's (T2), and what
+the earlier attempts spent is reported beside it as `tokens_crashed`, never added in. Cancelled
+tasks, where the job ended under a working agent, are dropped whole (X8); this snapshot has none.
+Because the rule bites hardest where agents crash most, every table carries `attempts_per_task` and
+the share of tasks that relaunched next to its token ratio.
+
+**Tokens are counted once (fold 2).** `output` is every token the model generated, reasoning
+included, as both serving engines report it; the client's thinking estimate is never added on top.
+The count comes from the first source that has it: the server's per-request count, else the
+server's episode count on the `result` record, else the model's own tokenizer over the transcript
+(`output_source = retokenized`, which is 2-4% low by construction, T11). Input is counted when it
+first enters the context, so a cached prompt is not billed again on every turn.
+
+**Summary statistics.** Per arm, the speed-up is the geometric mean over the kernels it verified,
+with a log-t interval (A1), and the token cost is the median task total with a percentile bootstrap
+interval (A2). Per pair, both legs are paired by kernel: the geometric mean ratio with its log-t
+interval and paired t test (P3), and beside the token leg the ratio of TOTAL tokens over the shared
+kernels with a paired bootstrap interval (9999 resamples, seed 0). The two token numbers answer
+different questions and the table carries both: the geomean is the typical kernel, the total is the
+budget. Benjamini-Hochberg at q = 0.05 runs over one family, and the family is every leg of every
+pair of one invocation (M1).
+
+One task per kernel per arm. A kernel an arm ran more than once is charged its LATEST task, never
+the best of them and never the sum (R4, R6).
+
+## Results: the Language Skill Packet
+
+Ratios are with-packet / no-packet, so above 1 means faster and more expensive. `n` is the kernels
+behind the speed-up leg and behind the token leg. `q` is the Benjamini-Hochberg adjusted p over the
+family of eighteen tests; `*` marks q < 0.05.
+
+<!--TABLE impact_lang_skills_gpu-->
+
+Nine pairs, eighteen tests, one significant verdict: Kimi-K2.7-Code with the packet spent 1.32x as
+many tokens per kernel in Triton (total 1.18x, q = 0.048) and was no faster for it. No speed-up leg
+is significant on any model or language.
+
+GPT-OSS-120B in Triton solved 5 kernels without the packet and 6 with it, and the two sets do not
+overlap, so its speed-up leg has no pairs at all and reports `underpowered` rather than a ratio.
+
 ## Commands
 
 Set `ARTIFACT_ROOT`, `HPCAGENT_BENCH`, `PYTHON` (and `RUNS` for `--extract`) as in the top-level README, then:
@@ -39,6 +87,8 @@ RUNS=/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs \
 |---|---|
 | `figures/gpu.pdf`, `tables/gpu.csv` | geometric mean speed-up and total tokens per arm, across HIP, Triton, OpenMP offload |
 | `figures/paired_skills.pdf`, `tables/paired_skills.csv` | per-kernel paired speed-up/cost ratio, skills on vs off, with significance |
+| `tables/impact_lang_skills_gpu.csv` | the intervention impact table: one row per arm, the packet row carrying both legs, the total-token ratio, and the usage and relaunch counts behind them |
+| `tables/lang_skills_<language>_kernels.csv`, `figures/lang_skills_<language>_kernels.pdf` | per kernel, each arm's speed-up and task token total, with a geomean and median summary row; no ratios and no tests |
 
 ## Data provenance
 
@@ -48,5 +98,16 @@ while the judge refused Python, so every row in them is actually a C submission 
 
 ## Caveats
 
-Triton coverage is low on every model (agents rarely land a correct kernel). Device residency
-(the kernel actually running on the GPU, not falling back to host) is not enforced per submission.
+Triton coverage is low on GPT-OSS-120B, 5 and 6 kernels of 40, so its Triton row carries a token leg
+and no speed-up leg. Device residency (the kernel actually running on the GPU, not falling back to
+host) is not enforced per submission.
+
+Qwen3.8-27B relaunched 22-62% of its tasks depending on the language; the other two models
+relaunched none. Its reported cost is the final attempt's, and its crashed attempts spent a further
+41.6M tokens across this campaign, recorded in `tokens_crashed` and in no ratio. The same crashes
+cost it answers: 71 of the campaign's (arm, kernel) answers were graded before their task's final
+attempt began and are dropped by X7, all of them Qwen's, with a median dropped speed-up of 18x.
+
+Jobs 638935 and 638940 (Kimi-K2.7-Code with the packet, OpenMP offload and HIP) were still in the
+queue when this snapshot was extracted and are excluded, so those two arms are read at their last
+finished wave.

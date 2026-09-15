@@ -16,6 +16,58 @@ call itself).
 
 GPT-OSS-120B, Qwen3.8-27B, Kimi-K2.7-Code, driven by Claude Code. Same 40 `llr-focus40` kernels.
 
+## Scoring
+
+Every number obeys `docs/DESIGN_data_collection_and_scoring.md` in HPCAgent-Bench. Three rules
+decide what the tables say, and a reader needs all three.
+
+**The last agent ran the task from nothing to its end.** A crashed agent is relaunched from an
+empty context and an empty workspace (T5), so nothing an earlier attempt built survived into what
+was graded. A task is therefore scored and priced as its FINAL attempt alone: judge rows stamped
+before that attempt started are dropped (X7), the token total is the final attempt's (T2), and what
+the earlier attempts spent is reported beside it as `tokens_crashed`, never added in. Cancelled
+tasks, where the job ended under a working agent, are dropped whole (X8); this snapshot has none.
+Because the rule bites hardest where agents crash most, every table carries `attempts_per_task` and
+the share of tasks that relaunched next to its token ratio.
+
+**Tokens are counted once (fold 2).** `output` is every token the model generated, reasoning
+included, as both serving engines report it; the client's thinking estimate is never added on top.
+The count comes from the first source that has it: the server's per-request count, else the
+server's episode count on the `result` record, else the model's own tokenizer over the transcript
+(`output_source = retokenized`, which is 2-4% low by construction, T11). Input is counted when it
+first enters the context, so a cached prompt is not billed again on every turn.
+
+**Summary statistics.** Per arm, the speed-up is the geometric mean over the kernels it verified,
+with a log-t interval (A1), and the token cost is the median task total with a percentile bootstrap
+interval (A2). Per pair, both legs are paired by kernel: the geometric mean ratio with its log-t
+interval and paired t test (P3), and beside the token leg the ratio of TOTAL tokens over the shared
+kernels with a paired bootstrap interval (9999 resamples, seed 0). The two token numbers answer
+different questions and the table carries both: the geomean is the typical kernel, the total is the
+budget. Benjamini-Hochberg at q = 0.05 runs over one family, and the family is every leg of every
+pair of one invocation (M1).
+
+One task per kernel per arm. A kernel an arm ran more than once is charged its LATEST task, never
+the best of them and never the sum (R4, R6).
+
+## Results: the Language Skill Packet with no score tool
+
+Ratios are with-packet / no-packet, so above 1 means faster and more expensive. `n` is the kernels
+behind the speed-up leg and behind the token leg. `q` is the Benjamini-Hochberg adjusted p over this
+experiment's family; `*` marks q < 0.05.
+
+<!--TABLE impact_llrblind_skills-->
+| model | language | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
+|---|---|---|---|---|---|---|---|---|---|
+| oss120b | c | 30/40 | 1.00 | 0% | 1.34 [1.02, 1.77] | 0.094 | 1.06 [0.92, 1.22] | 0.704 | 1.01 [0.87, 1.16] |
+| oss120b | fortran | 29/40 | 1.00 | 0% | 1.03 [0.69, 1.55] | 0.881 | 1.05 [0.92, 1.19] | 0.712 | 1.03 [0.91, 1.17] |
+| qwen38 | c | 25/40 | 1.05 | 5% | 1.33 [1.08, 1.63] | 0.038* | 0.98 [0.83, 1.15] | 0.857 | 0.98 [0.80, 1.17] |
+| qwen38 | fortran | 23/40 | 1.02 | 2% | 0.89 [0.67, 1.18] | 0.704 | 0.79 [0.69, 0.90] | 0.010* | 0.83 [0.73, 0.93] |
+| kimi27sglang | c | 36/40 | 1.00 | 0% | 1.63 [1.21, 2.20] | 0.012* | 0.97 [0.79, 1.20] | 0.857 | 0.98 [0.85, 1.12] |
+| kimi27sglang | fortran | 32/40 | 1.00 | 0% | 1.34 [1.06, 1.70] | 0.049* | 0.95 [0.78, 1.16] | 0.801 | 1.01 [0.85, 1.19] |
+
+What the score tool itself buys is the sibling experiment `llrblind-vs-scored`, which pairs these
+arms against the scored arms of `llr-focus40-cpu` kernel by kernel.
+
 ## Commands
 
 Set `ARTIFACT_ROOT`, `HPCAGENT_BENCH`, `PYTHON` (and `RUNS` for `--extract`) as in the top-level README, then:
@@ -40,8 +92,12 @@ RUNS=/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs \
 | file | how to read it |
 |---|---|
 | `figures/llrblind.pdf`, `tables/llrblind.csv` | geometric mean speed-up and total tokens per arm, no score tool, skills on/off |
-| `tables/paired_arms.csv` | per-kernel paired ratios: C vs Fortran, and skills vs no-skills, per model, with significance |
-| `tables/arms.csv` | geometric mean speed-up and total tokens per arm, behind the paired table |
+| `tables/paired_arms.
+
+C against Fortran is no longer reported as a pair: a paired comparison holds model and language
+fixed (spec P1), and a speed-up over Numba in C is not the same quantity as one in Fortran.csv`, `figures/paired_skills.pdf` | per-kernel paired ratios, skills against no packet, per model and language, with intervals and corrected verdicts |
+| `tables/impact_llrblind_skills.csv`, `tables/arms.csv` | the intervention impact table and the per-arm table behind it: geomean speed-up, median task tokens, attempts, calls, crashed spend |
+| `tables/llrblind_<language>_kernels.csv`, `figures/llrblind_<language>_kernels.pdf` | per kernel, each arm's speed-up and task token total, with a geomean and median summary row; no ratios and no tests |
 
 ## Data provenance
 
