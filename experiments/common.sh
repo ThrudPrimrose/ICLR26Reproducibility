@@ -1,0 +1,45 @@
+# Sourced by every experiments/<name>/reproduce.sh. Sets PY and PYTHONPATH, and defines extract
+# (cluster only) and check (checksums). Use the latest hpcagent-bench main; HPCAGENT_BENCH_COMMIT
+# records the commit the committed figures were made with.
+set -euo pipefail
+
+here_common=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+: "${HPCAGENT_BENCH:?set HPCAGENT_BENCH to a hpcagent-bench checkout (latest main)}"
+PY=${PYTHON:-python3}
+export PYTHONPATH="$HPCAGENT_BENCH:$HPCAGENT_BENCH/hpcagent_bench/numpy_translators/src"
+export MPLBACKEND=Agg
+
+made_with=$(cat "$here_common/../HPCAGENT_BENCH_COMMIT")
+using=$(git -C "$HPCAGENT_BENCH" rev-parse HEAD)
+[[ "$using" == "$made_with"* ]] || echo "note: figures were made with hpcagent-bench $made_with; using $using" >&2
+
+# extract <out.db> <arm-prefix> <run-root>... [-- <excluded job id>...]
+# Every judge database under the run roots, minus the excluded jobs -> one observations table.
+extract() {
+    local out=$1 prefix=$2 roots=() excluded=() args=() root job id
+    shift 2
+    while (($#)); do [[ $1 == -- ]] && { shift; excluded=("$@"); break; }; roots+=("$1"); shift; done
+    for root in "${roots[@]}"; do
+        for job in "$root"/*/; do
+            id=$(basename "$job")
+            [[ $id =~ ^[0-9]+$ ]] || continue
+            [[ " ${excluded[*]:-} " == *" $id "* ]] && continue
+            args+=(--runs "${job%/}")
+        done
+    done
+    local tmp
+    tmp=$(mktemp -d)
+    "$PY" "$HPCAGENT_BENCH/reproducibility/llr40/extract_llr40.py" "${args[@]}" --arm-prefix "$prefix" \
+        --benchmarks "$HPCAGENT_BENCH/hpcagent_bench/benchmarks" --out "$tmp" --no-sources --db "$out"
+    rm -rf "$tmp"
+}
+
+# check: every figure and table matches SHA256SUMS. check --record rewrites SHA256SUMS instead.
+check() {
+    if [[ "${1:-}" == --record ]]; then
+        find figures tables -type f | LC_ALL=C sort | xargs sha256sum > SHA256SUMS
+        echo "recorded $(wc -l < SHA256SUMS) checksums"
+    else
+        sha256sum --quiet -c SHA256SUMS && echo "OK: every figure and table matches SHA256SUMS"
+    fi
+}

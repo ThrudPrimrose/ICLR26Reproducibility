@@ -1,3 +1,0 @@
-int broken() {
-    return
-}
