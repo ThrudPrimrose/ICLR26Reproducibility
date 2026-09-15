@@ -74,11 +74,11 @@ the kernels behind the speed-up leg and behind the token leg. `q` is the Benjami
 adjusted p over the family of six tests; `*` marks q < 0.05.
 
 <!--TABLE impact_git-->
-| model | language | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
-|---|---|---|---|---|---|---|---|---|---|
-| qwen38 | -- | 7/10 | 2.45 | 85% | 0.72 [0.34, 1.54] | 0.396 | 0.86 [0.63, 1.17] | 0.396 | 0.85 [0.69, 1.03] |
-| oss120b | -- | 7/10 | 1.00 | 0% | 0.75 [0.58, 0.96] | 0.093 | 0.93 [0.66, 1.30] | 0.616 | 0.91 [0.67, 1.28] |
-| kimi27sglang | -- | 8/10 | 1.00 | 0% | 0.62 [0.32, 1.21] | 0.272 | 0.64 [0.52, 0.77] | 0.003* | 0.68 [0.55, 0.84] |
+| model | language | packet | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
+|---|---|---|---|---|---|---|---|---|---|---|
+| qwen38 | -- | repo | 10/10 | 2.45 | 85% | 0.64 [0.34, 1.22] | 0.234 | 0.86 [0.63, 1.17] | 0.344 | 0.85 [0.69, 1.03] |
+| oss120b | -- | repo | 10/10 | 1.00 | 0% | 0.64 [0.38, 1.08] | 0.176 | 0.93 [0.66, 1.30] | 0.616 | 0.91 [0.67, 1.28] |
+| kimi27sglang | -- | repo | 10/10 | 1.00 | 0% | 0.49 [0.26, 0.93] | 0.095 | 0.64 [0.52, 0.77] | 0.003* | 0.68 [0.55, 0.84] |
 
 Handing over the repository did not make any model faster. All three point estimates are below 1,
 and no speed-up leg survives the correction. Kimi-K2.7-Code spent less with the repository (geomean

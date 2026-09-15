@@ -86,26 +86,26 @@ Benjamini-Hochberg adjusted p of that campaign's family; `*` marks q < 0.05.
 Scientific computing:
 
 <!--TABLE playbook_scicomp-->
-| model | language | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
-|---|---|---|---|---|---|---|---|---|---|
-| qwen38 | -- | 14/40 | 2.82 | 95% | 1.04 [0.83, 1.29] | 0.943 | 1.12 [0.94, 1.34] | 0.361 | 1.13 [0.95, 1.36] |
-| oss120b | -- | 19/40 | 1.00 | 0% | 0.99 [0.77, 1.27] | 0.943 | 0.92 [0.84, 1.01] | 0.338 | 0.93 [0.87, 1.00] |
+| model | language | packet | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
+|---|---|---|---|---|---|---|---|---|---|---|
+| qwen38 | -- | perf-playbook-cpu | 40/40 | 2.82 | 95% | 0.90 [0.58, 1.41] | 0.715 | 1.12 [0.94, 1.34] | 0.361 | 1.13 [0.95, 1.36] |
+| oss120b | -- | perf-playbook-cpu | 40/40 | 1.00 | 0% | 1.04 [0.85, 1.26] | 0.715 | 0.92 [0.84, 1.01] | 0.338 | 0.93 [0.87, 1.00] |
 
 Loop-level C:
 
 <!--TABLE playbook_llr_cpu-->
-| model | language | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
-|---|---|---|---|---|---|---|---|---|---|
-| qwen38 | c | 14/40 | 1.80 | 55% | 1.34 [0.91, 1.98] | 0.378 | 1.29 [0.88, 1.89] | 0.378 | 1.21 [0.91, 1.60] |
-| oss120b | c | 38/40 | 1.00 | 0% | 1.01 [0.81, 1.26] | 0.924 | 1.07 [0.90, 1.26] | 0.598 | 1.02 [0.84, 1.26] |
+| model | language | packet | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
+|---|---|---|---|---|---|---|---|---|---|---|
+| qwen38 | c | perf-playbook-cpu | 40/40 | 1.80 | 55% | 1.15 [0.74, 1.79] | 0.530 | 1.29 [0.88, 1.89] | 0.378 | 1.21 [0.91, 1.60] |
+| oss120b | c | perf-playbook-cpu | 40/40 | 1.00 | 0% | 0.87 [0.72, 1.06] | 0.378 | 1.06 [0.90, 1.24] | 0.530 | 0.99 [0.83, 1.21] |
 
 Loop-level HIP:
 
 <!--TABLE playbook_llr_gpu-->
-| model | language | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
-|---|---|---|---|---|---|---|---|---|---|
-| qwen38 | hip | 13/40 | 1.88 | 65% | 1.69 [0.65, 4.40] | 0.536 | 0.88 [0.60, 1.28] | 0.657 | 0.94 [0.71, 1.25] |
-| oss120b | hip | 40/40 | 1.00 | 0% | 1.27 [0.83, 1.93] | 0.536 | 0.99 [0.86, 1.13] | 0.830 | 0.96 [0.82, 1.11] |
+| model | language | packet | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
+|---|---|---|---|---|---|---|---|---|---|---|
+| qwen38 | hip | perf-playbook-amd | 40/40 | 1.88 | 65% | 0.94 [0.36, 2.47] | 0.898 | 0.88 [0.60, 1.28] | 0.898 | 0.94 [0.71, 1.25] |
+| oss120b | hip | perf-playbook-amd | 40/40 | 1.00 | 0% | 1.27 [0.83, 1.93] | 0.898 | 0.99 [0.86, 1.13] | 0.898 | 0.96 [0.82, 1.11] |
 
 Nothing the packet did reaches significance on any campaign, on either leg. The speed-up ratios sit
 between 0.99x and 1.69x with intervals that all contain 1, and the widest of them, Qwen3.8-27B on

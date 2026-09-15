@@ -75,14 +75,14 @@ behind the speed-up leg and behind the token leg. `q` is the Benjamini-Hochberg 
 experiment's family; `*` marks q < 0.05.
 
 <!--TABLE impact_llrblind_skills-->
-| model | language | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
-|---|---|---|---|---|---|---|---|---|---|
-| oss120b | c | 30/40 | 1.00 | 0% | 1.34 [1.02, 1.77] | 0.094 | 1.06 [0.92, 1.22] | 0.704 | 1.01 [0.87, 1.16] |
-| oss120b | fortran | 29/40 | 1.00 | 0% | 1.03 [0.69, 1.55] | 0.881 | 1.05 [0.92, 1.19] | 0.712 | 1.03 [0.91, 1.17] |
-| qwen38 | c | 25/40 | 1.05 | 5% | 1.33 [1.08, 1.63] | 0.038* | 0.98 [0.83, 1.15] | 0.857 | 0.98 [0.80, 1.17] |
-| qwen38 | fortran | 23/40 | 1.02 | 2% | 0.89 [0.67, 1.18] | 0.704 | 0.79 [0.69, 0.90] | 0.010* | 0.83 [0.73, 0.93] |
-| kimi27sglang | c | 36/40 | 1.00 | 0% | 1.63 [1.21, 2.20] | 0.012* | 0.97 [0.79, 1.20] | 0.857 | 0.98 [0.85, 1.12] |
-| kimi27sglang | fortran | 32/40 | 1.00 | 0% | 1.34 [1.06, 1.70] | 0.049* | 0.95 [0.78, 1.16] | 0.801 | 1.01 [0.85, 1.19] |
+| model | language | packet | n | attempts/task | relaunched | speed-up ratio | q | token ratio | q | total tokens |
+|---|---|---|---|---|---|---|---|---|---|---|
+| oss120b | c | lang-skills | 40/40 | 1.00 | 0% | 0.95 [0.67, 1.33] | 0.786 | 1.06 [0.92, 1.22] | 0.712 | 1.01 [0.87, 1.16] |
+| oss120b | fortran | lang-skills | 40/40 | 1.00 | 0% | 0.86 [0.58, 1.27] | 0.712 | 1.05 [0.92, 1.19] | 0.712 | 1.03 [0.91, 1.17] |
+| qwen38 | c | lang-skills | 40/40 | 1.05 | 5% | 1.28 [0.84, 1.95] | 0.593 | 0.98 [0.83, 1.15] | 0.786 | 0.98 [0.80, 1.17] |
+| qwen38 | fortran | lang-skills | 40/40 | 1.02 | 2% | 1.37 [0.91, 2.05] | 0.504 | 0.79 [0.69, 0.90] | 0.010* | 0.83 [0.73, 0.93] |
+| kimi27sglang | c | lang-skills | 40/40 | 1.00 | 0% | 1.46 [1.07, 1.99] | 0.103 | 0.97 [0.79, 1.20] | 0.786 | 0.98 [0.85, 1.12] |
+| kimi27sglang | fortran | lang-skills | 40/40 | 1.00 | 0% | 1.31 [0.86, 2.01] | 0.593 | 0.95 [0.78, 1.16] | 0.786 | 1.01 [0.85, 1.19] |
 
 What the score tool itself buys is the sibling experiment `llrblind-vs-scored`, which pairs these
 arms against the scored arms of `llr-focus40-cpu` kernel by kernel.
