@@ -1,5 +1,9 @@
 # git-scicomp
 
+Note: `data/git-scicomp.db` is not committed yet, so `reproduce.sh` exits 2 with one line naming it;
+the databases land once the re-grade of rows graded before 2026-09-13 finishes (see Status in the top-level README).
+`--extract` rebuilds it on the cluster.
+
 ## Question
 
 Does handing the agent the repository a kernel lives in beat handing it the bare kernel?

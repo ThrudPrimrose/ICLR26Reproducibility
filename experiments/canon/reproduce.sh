@@ -10,5 +10,6 @@ sweep=${CANON_SWEEP:-/capstor/scratch/cscs/ybudanaz/x86_64/canon-llr40-20260910}
 [[ " $* " == *" --extract "* ]] && mkdir -p data \
     && "$PY" "$HPCAGENT_BENCH/scripts/collect_canon.py" --run-dir "$sweep" --db "$db" --label canon-llr40-631260
 
+require_data "$db"
 "$PY" "$HPCAGENT_BENCH/scripts/plot_canon_speedup.py" --db "$db" --out figures
 [[ " $* " == *" --record "* ]] && check --record || check

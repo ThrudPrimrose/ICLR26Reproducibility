@@ -6,9 +6,9 @@ What does DaCe canonicalization buy against plain compilers, with no agent in th
 
 ## Conditions
 
-One toolchain per column, same 40 `llr-focus40` kernels: `numba`, `cc`, `cc_autopar`, `dace_cpu`,
-`dace_cpu_canonicalize`, plus the equivalent GPU columns. Deterministic compiler baselines only,
-run once each.
+One column per toolchain, same 40 `llr-focus40` kernels. The figure draws the five columns the
+committed `figures/canon_speedup.csv` carries: `cc`, `cc_autopar`, `numba`, `dace_cpu_canonicalize`,
+`dace_gpu_canonicalize`. Deterministic compiler baselines only, run once each.
 
 ## Models and kernels
 
@@ -51,7 +51,10 @@ width), preset `fuzzed`. No jobs excluded.
 
 ## Caveats
 
-`dace_cpu` solves 39 of 40 kernels (`fuse_diamond` crashes) and `dace_gpu` solves 38 of 40; every
-other column solves 40 of 40. Both median and geometric mean are reported because autopar and
-Numba help a lot on a few kernels and not at all on most, so either alone misleads; the geometric
-mean is still the headline column.
+Every drawn column validates 40 of 40 kernels. `data/canon.db` also holds the two columns the
+figure leaves out -- `dace_cpu` (DaCe's own parallelizer, 39 of 40; `fuse_diamond` crashes) and
+`dace_gpu` (38 of 40) -- because this figure asks what canonicalization is worth against the
+compilers, not what DaCe is worth against itself; `plot_canon_speedup.py --columns` draws them on
+request. Both median and geometric mean are reported because autopar and Numba help a lot on a few
+kernels and not at all on most, so either alone misleads; the geometric mean is still the headline
+column.

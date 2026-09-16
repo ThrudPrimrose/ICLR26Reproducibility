@@ -1,5 +1,9 @@
 # llrblind
 
+Note: `data/llrblind.db` is not committed yet, so `reproduce.sh` exits 2 with one line naming it;
+the databases land once the re-grade of rows graded before 2026-09-13 finishes (see Status in the top-level README).
+`--extract` rebuilds it on the cluster.
+
 ## Question
 
 Does removing the score tool and allowing only one submission change the outcome, versus the

@@ -1,5 +1,9 @@
 # llr-focus40-gpu
 
+Note: `data/llr-focus40-gpu.db` is not committed yet, so `reproduce.sh` exits 2 with one line naming it;
+the databases land once the re-grade of rows graded before 2026-09-13 finishes (see Status in the top-level README).
+`--extract` rebuilds it on the cluster.
+
 ## Question
 
 Does the same packet help on the GPU, and how do the three delivery languages compare?
@@ -39,6 +43,7 @@ RUNS=/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs \
 |---|---|
 | `figures/gpu.pdf`, `tables/gpu.csv` | geometric mean speed-up and total tokens per arm, across HIP, Triton, OpenMP offload |
 | `figures/paired_skills.pdf`, `tables/paired_skills.csv` | per-kernel paired speed-up/cost ratio, skills on vs off, with significance |
+| `tables/paired_skills-absolute.csv` | the absolute per-kernel points the paired table divides, written beside it |
 
 ## Data provenance
 

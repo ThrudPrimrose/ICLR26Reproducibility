@@ -9,6 +9,7 @@ db=data/llrblind.db
 runs=${RUNS:-/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs}
 [[ " $* " == *" --extract "* ]] && extract "$db" llrblind "$runs"/llrblind-2026*
 
+require_data "$db"
 "$PY" "$HPCAGENT_BENCH/scripts/plot_arm_summary.py" "$db" --experiment llrblind \
     --label "No Score Tool: Language Skill Packet" --out figures/llrblind.pdf --table tables/llrblind.csv
 pairs=()

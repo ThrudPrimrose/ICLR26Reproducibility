@@ -11,7 +11,9 @@ holds only committed data and the commands that turn it into figures and tables.
 | folder | what it is |
 |---|---|
 | `experiments/<name>/` | one experiment: `data/<name>.db`, `figures/`, `tables/` (when it has tables), `reproduce.sh`, `SHA256SUMS` |
-| `experiments/common.sh` | shared shell helpers every `reproduce.sh` sources (`extract`, `check`) |
+| `experiments/common.sh` | shared shell helpers every `reproduce.sh` sources (`require_data`, `extract`, `check`) |
+| `experiments/reproduce_all.sh` | runs every experiment, one status line each, non-zero exit if any failed |
+| `tests/test_common_sh.sh` | exercises the shared shell helpers and the run-all script against a throwaway tree |
 | `skill_histories/` | every version of the **language packet** (Language Skill Packet) the agents read |
 | `notes/` | earlier notes, kept for provenance, not part of the reproduction path |
 | `requirements.txt` | Python dependencies for extraction and plotting |
@@ -25,7 +27,7 @@ holds only committed data and the commands that turn it into figures and tables.
 | `llr-focus40-gpu` | does the packet help on GPU, across delivery languages? | HIP, Triton (Python delivery), C + OpenMP offload, with/without Language Skill Packet | Qwen3.8-27B, GPT-OSS-120B, Kimi-K2.7-Code | same 40 kernels, on the MI300A GPU |
 | `llrblind` | does removing the score tool and capping submissions to one change the outcome? | Language Skill Packet on/off, C vs Fortran, one submission, no score route | GPT-OSS-120B, Qwen3.8-27B, Kimi-K2.7-Code | same 40 kernels, CPU |
 | `git-scicomp` | does handing the agent the whole repository beat handing it the bare kernel? | bare kernel vs repository, 3 agents per kernel | Qwen3.8-27B, GPT-OSS-120B | 10 scientific-computing kernels |
-| `canon` | what does DaCe canonicalization buy against plain compilers, with no agent? | toolchain column: numba, cc, cc_autopar, dace_cpu, dace_cpu_canonicalize (+ GPU columns) | none, deterministic compiler baselines | same 40 kernels |
+| `canon` | what does DaCe canonicalization buy against plain compilers, with no agent? | toolchain column: cc, cc_autopar, numba, dace_cpu_canonicalize, dace_gpu_canonicalize | none, deterministic compiler baselines | same 40 kernels |
 
 ## Reproduce
 
@@ -61,7 +63,9 @@ python3 -m venv /path/to/venv
 /path/to/venv/bin/pip install -r "$ARTIFACT_ROOT/requirements.txt"
 ```
 
-Use HPCAgent-Bench's latest `main`, not a pinned commit.
+Use HPCAgent-Bench's latest `main`, not a pinned commit. Install `requirements.txt` as pinned,
+though: `SHA256SUMS` records the bytes matplotlib 3.11.1 and that exact dependency set draw, and a
+different matplotlib changes a PDF without changing a number.
 
 ### 3. Reproduce the figures and tables
 
@@ -74,13 +78,15 @@ One experiment (any name from the table above):
 All experiments:
 
 ```sh
-for name in llr-focus40-cpu llr-focus40-gpu llrblind git-scicomp canon; do
-    "$ARTIFACT_ROOT/experiments/$name/reproduce.sh"
-done
+"$ARTIFACT_ROOT/experiments/reproduce_all.sh"
 ```
 
+It runs every experiment whatever the earlier ones did, prints `ok <name>` or `FAIL <name> (exit N)`
+for each, and exits non-zero if any failed.
+
 Each run rebuilds `figures/` (and `tables/`, where the experiment has them) from the committed
-`data/<name>.db` and prints `OK: every figure and table matches SHA256SUMS` on success.
+`data/<name>.db` and prints `OK: every figure and table matches SHA256SUMS` on success. Only `canon`
+carries its database today; the other four exit 2 with one line naming the missing file (see Status).
 
 ### 4. Rebuild the data (CSCS cluster only)
 
@@ -91,6 +97,21 @@ Each run rebuilds `figures/` (and `tables/`, where the experiment has them) from
 ```
 
 `--record` rewrites `SHA256SUMS` instead of checking it. Use it only when the data changed on purpose.
+
+`extract_llr40.py` refuses rows graded before the current timing reduction, so on the population this
+repository describes `--extract` needs re-graded rows. The path is three steps, and `REGRADES` is the
+glob `common.sh` forwards as `--regrades`:
+
+```sh
+"$PYTHON" "$HPCAGENT_BENCH/scripts/regrade.py" worklist --observations <db> \
+    --env-dir "$HPCAGENT_BENCH/experiments" --out worklist.jsonl   # what still needs re-timing
+cd "$HPCAGENT_BENCH/experiments" && sbatch --nodes=<N> regrade.sbatch worklist.jsonl <out-dir>
+REGRADES='<out-dir>/regrade-*.db' "$ARTIFACT_ROOT/experiments/llr-focus40-cpu/reproduce.sh" --extract
+```
+
+Without `REGRADES` the extraction stops and names the count it refused. `--allow-unstamped`, passed
+straight to `extract_llr40.py`, extracts them unmigrated and mixes two timing rules in one table;
+nothing in this repository is built that way.
 
 ## What the numbers mean
 

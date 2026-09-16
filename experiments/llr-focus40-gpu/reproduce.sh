@@ -11,6 +11,7 @@ runs=${RUNS:-/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs}
 [[ " $* " == *" --extract "* ]] && extract "$db" gpu-llr-focus40 "$runs"/gpu-llr-focus40-2026* \
     -- 631274 631275 631276 631277
 
+require_data "$db"
 "$PY" "$HPCAGENT_BENCH/scripts/plot_arm_summary.py" "$db" --experiment gpu-llr-focus40 \
     --label "GPU: HIP, Triton, OpenMP Offload" --out figures/gpu.pdf --table tables/gpu.csv
 "$PY" "$HPCAGENT_BENCH/scripts/plot_score_change.py" "$db" --experiment gpu-llr-focus40 --treatment skills \

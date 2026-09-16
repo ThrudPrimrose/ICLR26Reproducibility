@@ -10,6 +10,7 @@ runs=${RUNS:-/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs}
 # 631231: cancelled while the CPF forms directory was being overwritten.
 [[ " $* " == *" --extract "* ]] && extract "$db" cpf-llr-focus40 "$runs"/cpf-llr-focus40-2026* -- 631231
 
+require_data "$db"
 m='(qwen38|oss120b|kimi27sglang|glm53)'
 arm() { "$PY" "$HPCAGENT_BENCH/scripts/plot_arm_summary.py" "$db" --experiment cpf-llr-focus40 "$@"; }
 pair() { "$PY" "$HPCAGENT_BENCH/scripts/plot_score_change.py" "$db" --experiment cpf-llr-focus40 "$@"; }

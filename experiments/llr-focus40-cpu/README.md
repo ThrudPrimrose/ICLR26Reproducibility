@@ -1,5 +1,9 @@
 # llr-focus40-cpu
 
+Note: `data/llr-focus40-cpu.db` is not committed yet, so `reproduce.sh` exits 2 with one line naming it;
+the databases land once the re-grade of rows graded before 2026-09-13 finishes (see Status in the top-level README).
+`--extract` rebuilds it on the cluster.
+
 ## Question
 
 Does a packet or a compiler-derived form help an agent write a faster CPU kernel?
@@ -43,6 +47,7 @@ RUNS=/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs \
 | `figures/cpf.pdf`, `tables/cpf.csv` | geometric mean speed-up and total tokens per arm, no packet vs Canonical Parallel Form page (C only) |
 | `figures/paired_skills.pdf`, `tables/paired_skills.csv` | per-kernel paired speed-up/cost ratio, skills on vs off, with significance |
 | `figures/paired_cpfsrc.pdf`, `tables/paired_cpfsrc.csv` | per-kernel paired speed-up/cost ratio, cpfsrc vs no packet, with significance |
+| `tables/paired_skills-absolute.csv`, `tables/paired_cpfsrc-absolute.csv` | the absolute per-kernel points each paired table divides, written beside it |
 
 ## Data provenance
 
