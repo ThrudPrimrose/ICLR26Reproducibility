@@ -29,9 +29,12 @@ done
     --roster-file "$roster_file" --out tables/paired_arms.csv --arms-out tables/arms.csv \
     --impact-out tables/impact_llrblind_skills.csv
 
-"$PY" "$HPCAGENT_BENCH/scripts/plot_paired_arms.py" tables/paired_arms.csv \
-    --label "No Score Tool: Language Skill Packet" --ratio-label "Skills / No Packet" \
-    --out figures/paired_skills.pdf
+# The same two square slope panels every intervention is drawn with; the pairs CSV supplies both
+# the pairing and the corrected verdicts.
+"$PY" "$HPCAGENT_BENCH/scripts/plot_score_change.py" "$db" \
+    --pairs-csv tables/paired_arms.csv --intervention lang-skills \
+    --label "Language Skill Packet, No Score Tool" --out figures/paired_skills.pdf \
+    --table tables/paired_skills_points.csv
 
 # Per kernel (spec A7): each arm's speed-up and task token total, no paired ratios and no tests.
 for lang in c fortran; do

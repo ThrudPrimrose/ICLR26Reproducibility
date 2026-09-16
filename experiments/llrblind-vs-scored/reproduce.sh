@@ -41,7 +41,7 @@ roster --tag llr-focus40 > "$roster_file"
 # significant.
 "$PY" "$HPCAGENT_BENCH/scripts/plot_score_change.py" "$scored" "$blind" \
     --pairs-csv tables/paired_arms.csv --intervention no-score --label "No Score Tool" \
-    --control-label "Score Tool and Unlimited Submissions" \
+    --control-label "Score Tool and Unlimited Submissions" --rows-by-model \
     --out figures/blind_vs_scored.pdf --table tables/blind_vs_scored_points.csv
 
 # The README quotes its own tables; it is regenerated from them, never edited (spec N4:

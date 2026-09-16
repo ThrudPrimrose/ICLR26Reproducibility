@@ -62,13 +62,16 @@ g=gpu-llr-focus40
 impact playbook_llr_gpu "$llr_gpu" "$llr_roster" latest numba \
     "$g-qwen38-hip-perf-playbook-amd,$g-qwen38-hip" "$g-oss120b-hip-perf-playbook-amd,$g-oss120b-hip"
 
-forest() {  # forest <name> <label>
-    "$PY" "$HPCAGENT_BENCH/scripts/plot_paired_arms.py" "tables/${1}_pairs.csv" --label "$2" \
-        --ratio-label "Playbook / No Packet" --out "figures/${1}_forest.pdf"
+# The same two square slope panels every intervention is drawn with; the pairs CSV supplies both
+# the pairing and the corrected verdicts.
+panels() {  # panels <name> <db> <intervention> <label>
+    "$PY" "$HPCAGENT_BENCH/scripts/plot_score_change.py" "$2" --pairs-csv "tables/${1}_pairs.csv" \
+        --intervention "$3" --label "$4" --out "figures/${1}_forest.pdf" \
+        --table "tables/${1}_points.csv"
 }
-forest playbook_scicomp "Performance Playbook, Scientific Computing"
-forest playbook_llr_cpu "Performance Playbook, Loop-Level C"
-forest playbook_llr_gpu "Performance Playbook, Loop-Level HIP"
+panels playbook_scicomp "$scicomp" perf-playbook-cpu "Performance Playbook, Scientific Computing"
+panels playbook_llr_cpu "$llr_cpu" perf-playbook-cpu "Performance Playbook, Loop-Level C"
+panels playbook_llr_gpu "$llr_gpu" perf-playbook-amd "Performance Playbook, Loop-Level HIP"
 
 # Per kernel (spec A7): each arm's speed-up and task token total, no paired ratios and no tests.
 # The pattern is both the arm selector and the (model, condition) parser; a control matches with no

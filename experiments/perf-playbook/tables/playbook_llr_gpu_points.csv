@@ -1,0 +1,3 @@
+model,language,leg,score_verdict,cost_verdict,kernels,family_size
+qwen38,hip,HIP,not-significant,not-significant,40,4
+oss120b,hip,HIP,not-significant,not-significant,40,4
