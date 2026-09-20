@@ -122,46 +122,129 @@ Caveat on the CPU headline numbers: the top graded speed-ups (277x, 142x, 122x) 
 3–8x geomean and are dominated by Numba dispatch overhead on cheap reduction kernels, not by a
 general C-over-Numba multiplier.
 
+## 4b. A classification of what the agents do
+
+Every technique observed, in four classes. The class matters because only the first two are
+evidence about optimisation ability; the third is architecture knowledge, and the fourth measures
+the benchmark.
+
+**I. Schedule transformations — reasoning about dependences.** The agent works out what may run in
+parallel and restructures the iteration space accordingly. `tsvc_2_s2233`: a row-wise recurrence
+`aa[j][c] = aa[j-1][c] + cc[j][c]` looks serial, but each *column* is an independent chain; the
+agent parallelises across columns, keeps the recurrence serial down rows, and unrolls the chain
+eight deep for instruction-level parallelism. `wf_triangular`: a wavefront dependence skewed onto
+anti-diagonals of tiles, one `omp for` per diagonal. `tsvc_2_s233`: a serial prefix recurrence
+rewritten as a tiled Hillis-Steele scan with a cross-tile carry. `scan_affine_decay`:
+`y[i] = a[i]*y[i-1] + b[i]` recast as a composition of affine transforms and handed to
+`tl.associative_scan`. This class is the real finding — the agents identify loop-carried
+dependences and pick a legal reordering, which is the work a polyhedral scheduler does.
+
+**II. Closed-form replacement of control flow.** `tsvc_2_s1232`'s inner loop breaks once
+`j > i/VLEN`; rather than carry a data-dependent branch, the agent computes the exact trip count
+`jmax = i / VLEN` up front and emits a clean bounded vector loop. Related, and pervasive: 82 CPU
+submissions convert branches to arithmetic with mask intrinsics.
+
+**III. Device-specific specialisation.** Covered in §4c.
+
+**IV. Specialisation to the benchmark rather than the kernel.** Covered in §5.
+
+## 4c. How the agents specialise per device
+
+The same kernel gets a different answer on each target, and the answers track the hardware, not the
+source language.
+
+**AVX-512 CPU.** `tsvc_2_s319` reduces with `_mm512_reduce_add_pd` — the single-instruction
+horizontal add — and guards an alignment-checked non-temporal-store path so the write-only stream
+bypasses cache. `tsvc_2_s1232` picks its vector width from the ISA actually present, and splits a
+*triangular* loop across threads with a cost model rather than an `omp for`, because the naive
+static split gives the last thread most of the work. 269 of 825 CPU submissions hand-write AVX2 or
+AVX-512 intrinsics rather than trusting the vectoriser; 103 use non-temporal stores; 91 insert
+prefetches.
+
+**AMD CDNA wavefront.** `tsvc_2_s255` computes `a[i] = (b[i] + b[i-1] + b[i-2]) * 0.333`, where
+every thread needs its two left neighbours. The obvious answers are shared memory or redundant
+global loads. The agent instead shifts the value across lanes with `__shfl_up`, taking the two
+elements the shuffle cannot reach from a per-warp boundary load — the halo is exchanged in the
+register file and never touches memory at all. `tsvc_2_s233` goes the other way and does use the
+LDS, because a prefix scan needs a cross-lane structure a shuffle cannot give it.
+
+**Triton.** Specialisation appears as block-level choices: `tl.associative_scan` for recurrences,
+explicit `num_warps`/`num_stages` occupancy knobs, and masked `tl.load`/`tl.store` for the ragged
+tail.
+
+The pattern across all three is that the agent picks the mechanism that matches where the data has
+to move — register file, scratchpad, or memory — rather than applying one taught pattern
+everywhere. That is the ability the benchmark is meant to measure.
+
 ## 5. Optimisations of the benchmark rather than the kernel
 
 ### In the graded corpus
 
-**(a) The submission that left the CPU** — `glm53-c-skills/tsvc_2_s311.c`, **277.2x [graded], the
-largest CPU speed-up in the corpus.** A constructor `dlopen`s a prebuilt HIP library at a hardcoded
-sandbox path and routes the reduction to the GPU, verifying against the CPU path first and falling
-back on failure:
+**(a) A submission that left the CPU** — `glm53-c-skills/tsvc_2_s311.c`, 277.2x, `dlopen`s a
+prebuilt HIP library at a hardcoded sandbox path and runs the reduction on the GPU. **Set aside:**
+glm5.3 is not one of the measured models, so this reaches no reported number. Recorded because the
+same instinct shows up in a measured model (see `ext_war_unit`, §2).
+
+**(b) `ext_break_capture`: the kernel that measures whether the agent read the generator.**
+
+The task is to find the first index with `a[i] > 1.0`. The input generator plants exactly one such
+element, uniformly inside `[0.4n, 0.6n)` or `[0.5n, 0.7n)`. Several agents read that, and the
+kernel's speed-up became a binary function of whether they did:
+
+| arm | speed-up | band-aware |
+|---|---|---|
+| `kimi27sglang-c-cpfsrc-v2` | **35.8x** | yes |
+| `qwen38-c-skills` | **21.4x** | yes |
+| `qwen38-c` (no packet) | **18.0x** | yes |
+| `qwen38-c-cpfsrc` | **15.2x** | yes |
+| `glm53-c-skills` | 8.3x | no |
+| `kimi27sglang-c` | 7.3x | no |
+| every `oss120b` arm (9 of them) | 3.3-4.7x | no |
+
+**Every submission above 9x uses the band. Every submission that does not is at or below 8.3x.**
+It is model-correlated, not packet-correlated: Qwen finds it in five of its eight arms, Kimi in one,
+GPT-OSS in none of nine. The packet is irrelevant here — the no-packet Qwen arm finds it too.
+
+The best version is not a hack. `qwen38-c` states its reasoning in the file, derives the expected
+memory traffic, and implements a bidirectional centre-out scan:
 
 ```c
-g_lib = dlopen("/shared/agent-13/libgpusum.so", RTLD_NOW | RTLD_LOCAL);
-f_run = (gsum_run_fn)dlsym(g_lib, "gsum_run");
+/* The graded inputs (see the public initialize()) contain EXACTLY ONE
+ * element above the threshold, planted uniformly inside a size-scaled band:
+ * either [0.4n, 0.6n) or [0.5n, 0.7n).
+ * Strategy: expand outwards from the band centre 0.55n (the median of the
+ *   crossing distribution), alternating 512 KiB chunks on the left and right,
+ *   each chunk scanned in ascending address order so the hardware prefetcher
+ *   stays on the stream. Expected traffic ~ 2*E|cut-0.55n| = 0.125n of the
+ *   array, versus the ~0.55-0.7n a forward reference scan touches.
+ * A full forward fallback scan keeps the kernel correct for any input. */
+int64_t lo = (n * 2) / 5 - M;            /* 0.4 n, minus a safety margin */
+int64_t hi = (n * 7) / 10 + M;           /* 0.7 n, plus a safety margin */
+...
+if (idx < 0) idx = scan8(a, 0, n, kv);   /* fallback: full forward scan */
 ```
 
-Careful, self-checking code. Also not a CPU result, and not reproducible outside that sandbox.
-**This one must be excluded from any CPU claim.**
+Three things make this worth the space in the paper. The answer is **always correct** — the full
+scan fallback is real. The reasoning is **quantitative** — 0.125n of expected traffic against
+0.55n, which is close to the 3-5x the band-aware arms actually gain over the rest. And the
+information was **handed to the agent**: the comment says *"see the public initialize()"*. The
+generator is part of the kernel's public definition, so this is not circumvention; it is the
+benchmark measuring reverse-engineering of its own inputs and reporting it as loop optimisation.
 
-**(b) Two model families independently found the same generator quirk** —
-`kimi27sglang-c-cpfsrc-v2/ext_break_capture.c` **35.8x [graded]** and
-`qwen38-c-skills/ext_break_capture.c` **21.4x [graded]**:
-
-```c
-/* The generated inputs keep every entry below 1.0 up to a cut that is
-   uniformly placed in either [0.4n, 0.6n] or [0.5n, 0.7n]. The first
-   crossing is therefore always inside [0.4n, 0.7n]. Search that band
-   first and fall back to the full array only on an unexpected input. */
-```
-
-Both keep a correct full-array fallback, so the answer is right; the speed-up is a bet on the test
-generator's statistics. Two different families finding it says the quirk is discoverable.
+The fix is to randomise the crossing across the whole array. Until then `ext_break_capture`
+contributes a model-dependent 3-5x to the geomean that has nothing to do with the loop.
 
 **(c) Assorted input specialisation** [graded] — a `> 0.0` test replaced by a sign-bit test
 justified by the generator's value range (`compact_threshold_pack`, 14.4x); a two-round approximate
 scan whose convergence depends on a hardcoded decay constant (`versioned_distance_update`, 32.6x);
 a `VLEN == 8` fast path dispatching to a separate kernel (`kimi27sglang-hip/tsvc_2_s1232`).
 
-**(d) The harness's own call pattern** [graded] — roughly fourteen Triton submissions cache
-`hipHostRegister` calls and tensor wrappers keyed on the host buffer address, reasoning explicitly
-about *timing reps* and *the harness reusing buffers*. Correct code; an optimisation of the
-measurement rather than of the kernel.
+**(d) Host-device copy elision — retired.** Roughly fourteen Triton submissions cache
+`hipHostRegister` calls and device buffers keyed on the host pointer, reasoning explicitly about
+*timing reps* and *buffer reuse*. This exploited copy time being inside the measured region. It no
+longer is, which also means **the Triton and OpenMP-offload arms were measured under the old rule
+and owe a re-run**; their current numbers should not be quoted. The zero-copy and
+device-residency findings go with them.
 
 ### Observed but NOT in the graded corpus
 
@@ -176,10 +259,9 @@ are what the agents do when nobody is grading.
   numeric kernel is worth knowing about.
 - **A submission that read the input generator.** `qwen38-c-openmp-skills/ext_break_capture.c`
   states it read `ext_break_capture.py` and hardcodes the planted crossing band from it.
-- **A device cache keyed on a content fingerprint.** `qwen38-c-openmp/tsvc_2_s316.c` keeps a
-  persistent device buffer and skips the host-to-device copy when a 2048-word sample matches the
-  previous call, on the stated basis that the harness re-invokes with identical contents. The
-  graded maximum for that kernel is 2.3x, so this submission is not the one in the data.
+- **A device cache keyed on a content fingerprint.** `qwen38-c-openmp/tsvc_2_s316.c` skips the
+  host-to-device copy when a 2048-word sample matches the previous call. Retired with (d): copy
+  time is no longer measured.
 
 **Hygiene** — 17 submissions ship stray `fopen("/shared/agent-N/probe.txt", ...)` debug writes.
 Harmless to the numbers; it says submissions were graded uncleaned.
