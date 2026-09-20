@@ -141,21 +141,39 @@ The model with the most exposure has none of the hits. Packet independence is th
 needs no rate: the best version in the corpus is the NO-PACKET `cpf-llr-focus40-qwen38-c` at
 18.04x, against 14.87-21.37x for the packet-bearing setups of the same model and language.
 
-## A corrupted speed-up value, bounded
+## Colliding speed-up values: NOT bounded, and it reaches credited rows
 
-Three rows carry `speedup = 1007.7545761573364` to sixteen digits across TWO different kernels on
-one arm (`gpu-llr-focus40-qwen38-c-openmp-skills`), with different `native_ns` and `baseline_ns`
-each time, so the value is not a measurement of any of them:
+An earlier version of this file said the value `1007.7545761573364` appeared on 3 rows of one arm
+and was the only such repeat. Both halves were wrong; the scan behind them missed most of the
+corpus. Corrected below.
 
-| kernel | native_ns | baseline_ns | implied ratio | stored speedup | suspect |
-|---|---|---|---|---|---|
-| `versioned_distance_update` | 14590 | 479334782 | 32854x | 1007.7545761573364 | 1 |
-| `ext_break_capture` | 20030 | 78823963 | 3935x | 1007.7545761573364 | 1 |
-| `ext_break_capture` | 19810 | 78823963 | 3979x | 1007.7545761573364 | 1 |
-| `ext_break_capture` (honest row) | 154022 | 78823963 | 512x | 482.5842224358388 | 0 |
+**The sentinel.** `1007.7545761573364` appears on **10 rows**, 5 arms, 2 models, 4 kernels
+(`tsvc_2_s316`, `tsvc_2_s1232`, `versioned_distance_update`, `ext_break_capture`) and 2 experiments,
+with `native_ns` from 14,590 to 131,041 and `baseline_ns` from 78M to 479M. No two agree. The value
+cannot be a measurement of any of them. Every one of the 10 carries `suspect = 1`, so these are
+credited 1x and reach nothing.
 
-Across 3,890 graded submission rows this is the ONLY repeated speed-up that spans more than one
-(arm, kernel); the other repeats are 1.0, which is the score of a failed submission and legitimate.
-Every affected row is already `suspect = 1` and credited 1x, so nothing reported depends on the
-value. Do not quote 1007.75x. The two kernels stay on the void list on their source evidence, which
-does not depend on the number.
+**The wider problem, which is not flagged.** Across 5,899 graded rows in 1,320 judge databases there
+are **101 speed-up values shared by more than one (arm, kernel)** at full 17-digit precision,
+carrying **329 rows, of which 326 are credited** (`suspect = 0`). The collisions cross models,
+languages and kernels: `3.6821371900248834` sits on `git-scicomp-qwen38-kernel/dfa`,
+`llrblind-oss120b-c/versioned_distance_update` and `llrblind-oss120b-fortran/tsvc_2_s152`. No
+colliding group shares `(native_ns, baseline_ns)`, so each row has its own timings and only the
+derived speed-up collides.
+
+Exposure is not uniform, and it falls on exactly two experiment families:
+
+| family | graded rows | on a colliding value | share |
+|---|---|---|---|
+| `llrblind` | 888 | 255 | **28.7%** |
+| `git-scicomp` | 390 | 50 | **12.8%** |
+| `gpu-llr-focus40` | 2114 | 21 | 1.0% |
+| `cpf-llr-focus40` | 1775 | 0 | 0.0% |
+
+`cpf-llr-focus40` is clean, so the CPU language-packet panel does not depend on this. `llrblind`
+and `git-scicomp` are the no-score-tool and repository-formulation experiments. Their reported
+numbers should not be quoted until the cause is found. Root cause is not established here; it is
+with the session auditing the scoring path, alongside the finding that 69% of submission rows sit
+in a `(run_id, kernel)` group with more than one row.
+
+Reproduce: `collide_check.py` in this directory.
