@@ -28,6 +28,19 @@ strength reduction in a different arm (Sec. 5c), and "nobody relaxes rounding mo
 Triton submissions do (Sec. 5) -- legally, since fast-math is allowed when verification passes. The solve rates, the geomeans, the `ext_break_capture` survey and
 the per-device specialisation claims were checked against the repaired corpus and stand.
 
+**A second provenance caveat, and it splits this report in two.** The observations extractor
+mis-attributes workers ACROSS ARMS in multi-arm jobs (job `644349` has a worker filed under a `-c-`
+arm whose prompt and judge `runs` row both say the `hip` arm). Every per-arm number in this report
+that comes from extracted observations is suspect until that is fixed — which is **the solve-rate
+tables in Sec. 1 and Sec. 2**, because they are built through `pair_frame` over `load_all`.
+
+The code-level sections do NOT go through the extractor. They read `runs.arm` from the judge
+databases directly and join submissions on `run_id`. That attribution corroborates itself: in 3,050
+of 3,051 judge `runs` rows the arm is the run_id's own prefix, so the arm label and the run identity
+agree independently. (The single exception is a row whose `run_id` is the literal unexpanded
+`${HPCAGENT_BENCH_RUN_ID}` on `cpf-llr-focus40-oss120b-c` — a separate small bug, reported.) So
+Sec. 3 onward stands; Sec. 1 and Sec. 2 wait on the extractor fix.
+
 ## 1. The solve-rate drop for the large model is an attempt-count artefact
 
 Read naively the table says the packet costs Kimi-K2.7-Code solved kernels on the GPU: 38/40 →
@@ -212,9 +225,19 @@ scalar C path on every failure edge. Nothing about the file's build or link look
 `glm53-c-skills/tsvc_2_s311.c`, claimed 277.2x, is the same instinct with less care — `dlopen`
 against a hardcoded sandbox path, also gfx942.
 
-**We detect it.** Both carry `suspect = 1` and score 1.0. Along with the two in §5(b) and the side
-channel below, that is four flagged rows in 1,333 graded submissions, and the screen caught all
-four. glm5.3 is additionally not a measured model, so that row reaches nothing either way.
+**We detect it.** Both carry `suspect = 1`, and along with the two in §5(b) and the side channel
+below that is four flagged rows the screen caught.
+
+**Four is a floor, not a rate.** It is four over the *auditable graded subset*, which is not the
+corpus: 8,022 of 24,755 CPU-device rows have no prompt blob left to read, lost to the quota cleanup
+and the 2026-09-19 dropped-mode deletion. A submission whose text is gone cannot be screened by
+inspection at all. Do not quote "4 in 1,333" as a rate.
+
+**And the rows do not stay at 1.0.** The user's ruling is that the screen catching an exploit after
+the fact is not the same as the contract holding, so the exploit rows are DELETED from completed and
+the kernels marked owed for re-run, rather than graded 1.0 in place. Six kernels are in that
+treatment list; reruns are owned by the other session. Two of the six are not exploits at all but
+the §3 packet-vs-control regressions (`tsvc_2_s2233`, `tsvc_2_s1232`), voided for re-measurement.
 
 **(b) `ext_break_capture`: the kernel that measures whether the agent read the generator.**
 
