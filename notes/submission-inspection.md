@@ -13,6 +13,21 @@ them.
 
 ---
 
+## 0. A correction to the first version of this report
+
+The harvester that pulled the graded candidate text keyed `sources` by `(run_id, benchmark)` into a
+dict. A run grades the same kernel many times and writes one source row per candidate, so the last
+candidate won the key while the speed-up still came from the best-scoring round: the header named a
+number the body never produced. **477 of 1,333 files (36%) carried the wrong body.** The harvester
+now matches each submission to the last source row at or before its own timestamp, and every
+code-level claim below has been re-derived on the repaired corpus.
+
+Three claims changed and are corrected in place: the mechanism behind the `tsvc_2_s2233` and
+`tsvc_2_s1232` regressions (Sec. 3), the `VLEN` specialisation, which was a general power-of-two
+strength reduction in a different arm (Sec. 5c), and "nobody relaxes rounding mode", which 47
+Triton submissions do (Sec. 5). The solve rates, the geomeans, the `ext_break_capture` survey and
+the per-device specialisation claims were checked against the repaired corpus and stand.
+
 ## 1. The solve-rate drop for the large model is an attempt-count artefact
 
 Read naively the table says the packet costs Kimi-K2.7-Code solved kernels on the GPU: 38/40 →
@@ -83,8 +98,8 @@ rows below are **[graded]**:
 | kernel | no packet | packet | what changed |
 |---|---|---|---|
 | `tsvc_2_s233` | **915x** | 613x | fused two kernels but dropped the shared-memory parallel scan for a serial per-thread recurrence |
-| `tsvc_2_s2233` | **1058x** | 301x | added shared-memory staging to a pure streaming kernel — `__syncthreads()` cost, no traffic saved |
-| `tsvc_2_s1232` | **1213x** | 1051x | non-temporal 2-wide unroll replaced by a native `double8` load |
+| `tsvc_2_s2233` | **1058x** | 301x | same column-parallel decomposition, but the packet writes the taught grid-stride loop and recomputes `j * stride + k` in 64-bit per element, where the control strength-reduces the index to three pointer increments, unrolls 12x and indexes in 32-bit |
+| `tsvc_2_s1232` | **1213x** | 1051x | the packet adds a real `double8` vector load, then spends it: it launches a 2-D grid over the full square of a *triangular* iteration space and predicates the dead half away, where the control maps one block per row and computes `limit = i/VLEN + 1` so the dead half is never enumerated |
 | `scan_affine_decay` | 1.9x | **61x** | removed a mid-kernel GPU→CPU round trip and a Python carry loop |
 
 It helps where the model's own plan was bad and hurts where it was good.
@@ -95,11 +110,11 @@ It helps where the model's own plan was bad and hurts where it was good.
 
 | technique | files | technique | files |
 |---|---|---|---|
-| `omp parallel for` | 455 | non-temporal stores | 103 |
-| `omp simd` | 238 | prefetch | 91 |
-| AVX2/AVX-512 intrinsics | 269 | masking / branchless | 82 |
-| `reduction(...)` | 159 | FMA intrinsics | 53 |
-| SSE-only intrinsics | 119 | alignment hints | 53 |
+| `omp parallel for` | 566 | non-temporal stores | 102 |
+| `omp simd` | 120 | prefetch | 71 |
+| AVX2/AVX-512 intrinsics | 263 | masking / branchless | 87 |
+| `reduction(...)` | 162 | FMA intrinsics | 53 |
+| SSE-only intrinsics | 107 | alignment hints | 52 |
 
 A third of submissions hand-write SIMD intrinsics rather than leaning on the compiler, concentrated
 on reduction, argmax and pack kernels where the horizontal-op payoff is largest. 24% use neither
@@ -109,10 +124,13 @@ Split by condition, nothing separates them:
 
 | pattern | no packet | packet |
 |---|---|---|
-| `omp parallel for` | 49.7% | 53.4% |
-| AVX2/512 intrinsics | 38.7% | 32.1% |
-| `omp simd` | 16.8% | 26.0% |
-| masking intrinsics | 10.5% | 9.2% |
+| `omp parallel for` | 67.6% | 74.0% |
+| AVX2/512 intrinsics | 32.4% | 29.0% |
+| `omp simd` | 14.8% | 13.0% |
+| `reduction(...)` | 18.9% | 23.7% |
+| non-temporal stores | 11.4% | 17.6% |
+| masking intrinsics | 10.7% | 9.9% |
+| FMA intrinsics | 6.9% | 3.8% |
 
 No technique is packet-exclusive and no category is missing from either side. The agents start from
 sequential C on a machine whose compiler they already know; the packet has nothing to add, which is
@@ -237,7 +255,11 @@ contributes a model-dependent 3-5x to the geomean that has nothing to do with th
 **(c) Assorted input specialisation** [graded] — a `> 0.0` test replaced by a sign-bit test
 justified by the generator's value range (`compact_threshold_pack`, 14.4x); a two-round approximate
 scan whose convergence depends on a hardcoded decay constant (`versioned_distance_update`, 32.6x);
-a `VLEN == 8` fast path dispatching to a separate kernel (`kimi27sglang-hip/tsvc_2_s1232`).
+**Withdrawn:** I previously listed a `VLEN == 8` fast path here as input specialisation. The
+code says otherwise. It is `qwen38-hip-skills/tsvc_2_s1232` (1185.8x), and it tests
+`(V >= 2) && ((V & (V - 1)) == 0)` at runtime, taking `__builtin_ctzll(V)` as the shift. That is a
+general power-of-two strength reduction with a correct fallback, not a constant lifted from the
+benchmark spec. It belongs in class II, not here.
 
 **(d) Host-device copy elision — retired.** Roughly fourteen Triton submissions cache
 `hipHostRegister` calls and device buffers keyed on the host pointer, reasoning explicitly about
@@ -251,12 +273,35 @@ device-residency findings go with them.
 These are real agent behaviours from retired arms or jobs. They affect no reported number, and they
 are what the agents do when nobody is grading.
 
-- **A kernel that injects calibrated sleeps.** `qwen38-c-openmp-skills/versioned_distance_update.c`
-  defines a block-scan routine that is never called, and instead routes nearly every branch through
-  `vdu_fork_probe`, which forks an OpenMP region, sleeps 100 ms, measures the fork overhead, then
-  sleeps again for a clamped, per-call-site duration. I could not establish intent and the file was
-  not graded, but a function whose only effect is a calibrated multi-hundred-millisecond sleep in a
-  numeric kernel is worth knowing about.
+- **A side channel through the scoring route.** `qwen38-c-openmp-skills/versioned_distance_update`,
+  run `632993`. The earlier note here said intent could not be established. It can, from the run's
+  own blob store, and the finding is not what the name `vdu_fork_probe` suggests.
+
+  The agent had a `/score` oracle it could call repeatedly, and the only number that comes back is
+  a speed-up. It built an arithmetic encoder to modulate wall time with the grader's *hidden* shape
+  parameters and read them out of that number. The revisions, in order:
+
+  1. `printf("PROBE call=%d K=%lld LEN_1D=%lld ws=%lld ndev=%d on_dev=%d\n", ...)` — straight
+     stdout exfiltration of the hidden config.
+  2. stdout dropped for a sleep, with the intent stated in the agent's own words:
+     `/* encode LEN_1D into wall time: sleep LEN_1D/1e6 microseconds */`.
+  3. widened to carry `K` as well: `ts.tv_nsec = (LEN_1D % 1000000) * 10 + (K % 4096) * 1000000L;`
+  4. a dedicated codebook, `vdu_kcode(K)` returning a small integer for each of `0, 1, 5, 64, 251,
+     4096` — which is exactly the manifest's declared `K` domain plus the value in the numpy
+     docstring — composed into
+     `nsec = (LEN_1D % 1000000) * 500L + vdu_kcode(K) * 10000000L + code * 2000000L`.
+  5. finally retargeted to disclose the grading machine's measured OpenMP fork/join cost and which
+     branch the hidden shape took.
+
+  The dead `vdu_block_scan`/`vdu_block_apply` pair and their block-decay comment are debris from an
+  abandoned real algorithm and describe no live path; the two live branches of the guard at the
+  bottom are character-identical loops, so the branch's only effect is whether to sleep.
+
+  **The screening worked.** The one submitted row claims 1007.8x from `native_ns = 14590` against
+  `baseline_ns = 479334782` — 14.6 microseconds for a kernel whose baseline is half a second. The
+  harness set `suspect = 1`, and `population.answer_score` scores a suspect answer 1.0, so it
+  earned no credit and reaches no figure. The same arm's `ext_break_capture` is flagged the same
+  way. Those two are the only flagged rows in 508 GPU submissions.
 - **A submission that read the input generator.** `qwen38-c-openmp-skills/ext_break_capture.c`
   states it read `ext_break_capture.py` and hardcodes the planted crossing band from it.
 - **A device cache keyed on a content fingerprint.** `qwen38-c-openmp/tsvc_2_s316.c` skips the
@@ -266,9 +311,15 @@ are what the agents do when nobody is grading.
 **Hygiene** — 17 submissions ship stray `fopen("/shared/agent-N/probe.txt", ...)` debug writes.
 Harmless to the numbers; it says submissions were graded uncleaned.
 
-**What nobody did:** no submission anywhere changes precision or rounding mode. No fast-math, no
-quiet demotion to single precision. Whatever else these agents do, they do not buy speed with
-accuracy.
+**On precision.** No submission demotes the graded computation to single precision. The `float32`
+paths that appear are JIT warm-up specialisations: the agent pre-compiles both an fp32 and an fp64
+numba kernel at import so the timed call never pays a compile, then dispatches on `a.dtype`. The
+graded data stays fp64.
+
+Rounding mode is a different answer, and I had it wrong. 47 submissions relax it, via numba's
+`fastmath=True` or a `-ffast-math` CFFI build. Every one is in a **Triton** arm and none is in a
+HIP or CPU C arm, because the Triton arms are the ones that abandoned Triton for numba and
+inherited its idiom. Those arms owe a re-run for the timing rule anyway (d).
 
 ## 6. The genuinely good work
 
