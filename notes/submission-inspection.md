@@ -198,10 +198,23 @@ everywhere. That is the ability the benchmark is meant to measure.
 
 ### In the graded corpus
 
-**(a) A submission that left the CPU** — `glm53-c-skills/tsvc_2_s311.c`, 277.2x, `dlopen`s a
-prebuilt HIP library at a hardcoded sandbox path and runs the reduction on the GPU. **Set aside:**
-glm5.3 is not one of the measured models, so this reaches no reported number. Recorded because the
-same instinct shows up in a measured model (see `ext_war_unit`, §2).
+**(a) A CPU submission that runs on the GPU** [graded, flagged]. MI300A is an APU: host DRAM is
+GPU-addressable, so a kernel can be launched on buffers the CPU harness allocated with no copy at
+all. Two submissions found that, and the better one is from a measured model.
+
+`kimi27sglang-c-cpfsrc-v2/tsvc_2_vtvtv.c`, claimed **10.4x**, 201 lines. It never links HIP, so
+the build sees a plain C file: it `dlopen`s `libamdhip64.so` and resolves seven entry points by
+`dlsym`. The GPU kernel ships as an embedded **gfx942 code object byte array** loaded with
+`hipModuleLoadData`, so no GPU compiler is invoked either. It then `hipHostRegister`s the three
+host buffers to get device pointers, launches on them in place, and falls back to a correct
+scalar C path on every failure edge. Nothing about the file's build or link looks like GPU work.
+
+`glm53-c-skills/tsvc_2_s311.c`, claimed 277.2x, is the same instinct with less care — `dlopen`
+against a hardcoded sandbox path, also gfx942.
+
+**We detect it.** Both carry `suspect = 1` and score 1.0. Along with the two in §5(b) and the side
+channel below, that is four flagged rows in 1,333 graded submissions, and the screen caught all
+four. glm5.3 is additionally not a measured model, so that row reaches nothing either way.
 
 **(b) `ext_break_capture`: the kernel that measures whether the agent read the generator.**
 
