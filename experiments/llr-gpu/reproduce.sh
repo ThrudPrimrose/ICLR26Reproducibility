@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # llr-focus40 on the GPU: HIP, Triton and C + OpenMP offload, with and without the Language Skill Packet.
-#   ./reproduce.sh              data/llr-focus40-gpu.db -> figures/ + tables/, then check checksums
+#   ./reproduce.sh              data/llr-gpu.db -> figures/ + tables/, then check checksums
 #   ./reproduce.sh --extract    first rebuild the .db from the judge databases (CSCS cluster only)
 #   ./reproduce.sh --record     rewrite SHA256SUMS instead of checking it
 cd "$(dirname "$0")"
 . ../common.sh
-db=data/llr-focus40-gpu.db
+db=data/llr-gpu.db
 runs=${RUNS:-/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs}
 # 631274-631277: Triton graded while the judge refused Python, so every row is a C submission.
 [[ " $* " == *" --extract "* ]] && extract "$db" gpu-llr-focus40 "$runs"/gpu-llr-focus40-2026* \

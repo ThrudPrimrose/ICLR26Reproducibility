@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # llr-focus40 on the CPU: no packet, Language Skill Packet, CPF page, CPF as source, perf playbook.
-#   ./reproduce.sh              data/llr-focus40-cpu.db -> figures/ + tables/, then check checksums
+#   ./reproduce.sh              data/llr-cpu.db -> figures/ + tables/, then check checksums
 #   ./reproduce.sh --extract    first rebuild the .db from the judge databases (CSCS cluster only)
 #   ./reproduce.sh --record     rewrite SHA256SUMS instead of checking it
 cd "$(dirname "$0")"
 . ../common.sh
-db=data/llr-focus40-cpu.db
+db=data/llr-cpu.db
 runs=${RUNS:-/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs}
 # 631231: cancelled while the CPF forms directory was being overwritten.
 [[ " $* " == *" --extract "* ]] && extract "$db" cpf-llr-focus40 "$runs"/cpf-llr-focus40-2026* -- 631231

@@ -1,6 +1,6 @@
-# llr-focus40-gpu
+# llr-gpu
 
-Note: `data/llr-focus40-gpu.db` is not committed yet, so `reproduce.sh` exits 2 with one line naming it;
+Note: `data/llr-gpu.db` is not committed yet, so `reproduce.sh` exits 2 with one line naming it;
 the databases land once the re-grade of rows graded before 2026-09-13 finishes (see Status in the top-level README).
 `--extract` rebuilds it on the cluster.
 
@@ -23,9 +23,9 @@ on the MI300A GPU.
 Set `ARTIFACT_ROOT`, `HPCAGENT_BENCH`, `PYTHON` (and `RUNS` for `--extract`) as in the top-level README, then:
 
 ```sh
-"$ARTIFACT_ROOT/experiments/llr-focus40-gpu/reproduce.sh"                     # data/llr-focus40-gpu.db -> figures/ + tables/, check SHA256SUMS
-"$ARTIFACT_ROOT/experiments/llr-focus40-gpu/reproduce.sh" --extract           # CSCS only: rebuild the .db from $RUNS first
-"$ARTIFACT_ROOT/experiments/llr-focus40-gpu/reproduce.sh" --extract --record  # also rewrite SHA256SUMS
+"$ARTIFACT_ROOT/experiments/llr-gpu/reproduce.sh"                     # data/llr-gpu.db -> figures/ + tables/, check SHA256SUMS
+"$ARTIFACT_ROOT/experiments/llr-gpu/reproduce.sh" --extract           # CSCS only: rebuild the .db from $RUNS first
+"$ARTIFACT_ROOT/experiments/llr-gpu/reproduce.sh" --extract --record  # also rewrite SHA256SUMS
 ```
 
 Example on CSCS Beverin:
@@ -34,7 +34,7 @@ Example on CSCS Beverin:
 HPCAGENT_BENCH=/capstor/scratch/cscs/ybudanaz/x86_64/optarena \
 PYTHON=/capstor/scratch/cscs/ybudanaz/x86_64/venv-optarena-314/bin/python \
 RUNS=/capstor/scratch/cscs/ybudanaz/x86_64/hpcagent-bench-runs \
-    /capstor/scratch/cscs/ybudanaz/x86_64/ICLR26Reproducibility/experiments/llr-focus40-gpu/reproduce.sh
+    /capstor/scratch/cscs/ybudanaz/x86_64/ICLR26Reproducibility/experiments/llr-gpu/reproduce.sh
 ```
 
 ## Outputs
