@@ -245,6 +245,12 @@ The task is to find the first index with `a[i] > 1.0`. The input generator plant
 element, uniformly inside `[0.4n, 0.6n)` or `[0.5n, 0.7n)`. Several agents read that, and the
 kernel's speed-up became a binary function of whether they did:
 
+**Superseded by [`notes/evasion/band-evidence.md`](evasion/band-evidence.md)**, which decides all
+47 setups on SOURCE rather than on speed-up and lists the evidence line for each of the 10 that
+read the generator. The speed-up ordering below is kept for context only: a cut anywhere in it
+keeps a band-aware setup (`qwen38-triton`, 5.9x) and voids an honest one
+(`kimi27sglang-hip-clean`, 178x).
+
 | arm | speed-up | band-aware |
 |---|---|---|
 | `kimi27sglang-c-cpfsrc-v2` | **35.8x** | yes |
