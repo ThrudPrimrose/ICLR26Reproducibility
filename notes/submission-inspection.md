@@ -25,7 +25,7 @@ code-level claim below has been re-derived on the repaired corpus.
 Three claims changed and are corrected in place: the mechanism behind the `tsvc_2_s2233` and
 `tsvc_2_s1232` regressions (Sec. 3), the `VLEN` specialisation, which was a general power-of-two
 strength reduction in a different arm (Sec. 5c), and "nobody relaxes rounding mode", which 47
-Triton submissions do (Sec. 5). The solve rates, the geomeans, the `ext_break_capture` survey and
+Triton submissions do (Sec. 5) -- legally, since fast-math is allowed when verification passes. The solve rates, the geomeans, the `ext_break_capture` survey and
 the per-device specialisation claims were checked against the repaired corpus and stand.
 
 ## 1. The solve-rate drop for the large model is an attempt-count artefact
@@ -329,10 +329,19 @@ paths that appear are JIT warm-up specialisations: the agent pre-compiles both a
 numba kernel at import so the timed call never pays a compile, then dispatches on `a.dtype`. The
 graded data stays fp64.
 
-Rounding mode is a different answer, and I had it wrong. 47 submissions relax it, via numba's
-`fastmath=True` or a `-ffast-math` CFFI build. Every one is in a **Triton** arm and none is in a
-HIP or CPU C arm, because the Triton arms are the ones that abandoned Triton for numba and
-inherited its idiom. Those arms owe a re-run for the timing rule anyway (d).
+**On rounding mode: relaxing it is allowed.** A submission may use fast-math pragmas and flags
+provided it still passes numerical verification, and verification is the gate that makes that safe.
+It has two legs (`scoring.py`): the output must REPRODUCE across two runs, measured as the residual
+over what reassociating `n_accum` terms in this dtype can move the answer, and it must GRADE
+correct against the whole-domain NumPy oracle at the datatype's `rtol/atol`. A reassociation that
+stays inside that band is a legal reordering; a race, an uninitialised read or a data-dependent bug
+moves a whole term and exceeds it by orders of magnitude.
+
+47 graded submissions take that route, via numba's `fastmath=True` or a `-ffast-math` CFFI build.
+All 47 passed verification, so all 47 are legal. Where they sit is still worth recording: every one
+is in a **Triton** arm, none in a HIP or CPU C arm, because the Triton arms are the ones that
+abandoned Triton for numba and inherited its idiom. Those arms owe a re-run for the timing rule
+anyway (d).
 
 ## 6. The genuinely good work
 
