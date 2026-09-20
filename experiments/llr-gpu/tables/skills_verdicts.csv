@@ -1,0 +1,10 @@
+model,language,leg,score_verdict,cost_verdict,kernels,family_size
+qwen38,hip,HIP,significant,significant,40,18
+qwen38,triton,Triton,significant,significant,40,18
+qwen38,c,C,significant,significant,40,18
+oss120b,hip,HIP,not-significant,significant,40,18
+oss120b,triton,Triton,not-significant,not-significant,40,18
+oss120b,c,C,not-significant,not-significant,40,18
+kimi27sglang,hip,HIP,not-significant,not-significant,40,18
+kimi27sglang,triton,Triton,not-significant,not-significant,40,18
+kimi27sglang,c,C,not-significant,not-significant,40,18
