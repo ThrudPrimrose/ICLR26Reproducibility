@@ -166,7 +166,7 @@ in one table is the failure this reset exists to avoid.
 
 ## The archive branch
 
-Everything this repository held before the reset is on **`archive/pre-iclr26-fresh-20260920`**,
+Everything this repository held before the reset is on **`archive-pre-iclr26-fresh-20260920`**,
 branched from the last commit of the old `main`. Nothing was deleted -- that branch is the complete
 prior state, including:
 
@@ -175,14 +175,15 @@ prior state, including:
 * every earlier figure and table, under the score rule and the population of its own time.
 
 ```sh
-git log --oneline archive/pre-iclr26-fresh-20260920      # what was there
-git show archive/pre-iclr26-fresh-20260920:experiments/canon/README.md
-git checkout archive/pre-iclr26-fresh-20260920 -- experiments/canon   # take a file back
+git log --oneline archive-pre-iclr26-fresh-20260920      # what was there
+git show archive-pre-iclr26-fresh-20260920:experiments/canon/README.md
+git checkout archive-pre-iclr26-fresh-20260920 -- experiments/canon   # take a file back
 ```
 
-Two older branches predate even that and are kept as they are: `archive/paper-artifacts-20260915`
-(a fuller tree, an ancestor of the old `main`, so it carries nothing `main` lacked) and the
-unmerged `restructure` and `llr40-reduction`.
+Older history lives on **`archive`**, a single branch the earlier archive branches were folded
+into (`archive/paper-artifacts-20260915` and the two `x86_64_old` branches). A slash-free name is
+therefore required for any new archive branch: git cannot create `archive/<x>` while a branch named
+`archive` exists. The unmerged `restructure` and `llr40-reduction` are kept as they are.
 
 ### The skill histories are NOT archived
 
