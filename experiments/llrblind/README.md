@@ -1,8 +1,9 @@
 # llrblind
 
-Note: `data/llrblind.db` is not committed yet, so `reproduce.sh` exits 2 with one line naming it;
-the databases land once the re-grade of rows graded before 2026-09-13 finishes (see Status in the top-level README).
-`--extract` rebuilds it on the cluster.
+`data/llrblind.db` was extracted on 2026-09-21 with `--regrades`: the 447 submissions graded on
+2026-09-12 (GPT-OSS-120B and Qwen3.8-27B) carry no timing stamp and their sources are purged, so they
+are dropped and their kernels are owed reruns (5 in C, 90 in Fortran). The old `llrblind-*` arms
+read as `llrblind-cmp-*`, the name the campaign runs under now.
 
 ## Question
 
@@ -11,8 +12,8 @@ normal iterate-and-score loop?
 
 ## Conditions
 
-CPU, `llr-focus40` roster, C and Fortran, Language Skill Packet on and off. One submission per
-episode (`AGENT_SINGLE_SUBMISSION=1`); no score route at all (`AGENT_SCORE_TOOL=0` withholds the
+CPU, `llr-focus40` roster, C and Fortran, Language Skill Packet on and off. Blind submission mode: one submission per
+episode; no score route at all (`AGENT_SCORE_TOOL=0` withholds the
 tool, `HPCAGENT_BENCH_SERVICE_SCORE_ENABLED=0` closes the HTTP route an agent could otherwise
 call itself).
 
