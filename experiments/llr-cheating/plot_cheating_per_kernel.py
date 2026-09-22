@@ -1,10 +1,13 @@
 # Copyright 2021 ETH Zurich and the HPCAgent-Bench authors.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Per-kernel speed-up of three models in C, on the CPU and GPU loop-level tracks.
+"""Per-kernel speed-up of three models on the loop-level tracks: C on the CPU, C + OpenMP offload and
+HIP on the GPU.
 
-Model is the COLOUR and device the SHAPE, so one kernel column carries both tracks of every model;
-the summary column gives each series' geomean with its 95% interval and value. Drawn by
-:func:`hpcagent_bench.stats.figures.per_kernel.figure_one` at the ICLR text width.
+Model is the COLOUR and device the SHAPE, so one kernel column carries every model on every device;
+the summary column ("Geomean" tick) gives each series' geomean with its 95% interval and value. A
+kernel run more than once counts its runs pooled (``repeats="median"``), the interim rule of the
+paper's other figures. Drawn by :func:`hpcagent_bench.stats.figures.per_kernel.figure_one` at the
+ICLR text width, which gives the print panel height and the compact kernel names.
 
 Usage::
 
@@ -27,23 +30,29 @@ from hpcagent_bench import experiment_tags
 from hpcagent_bench.stats import palette, style
 from hpcagent_bench.stats.figures import per_kernel
 
-#: The C control arm on each track: no packet, so the figure reads model and device only.
-ARMS: dict[str, str] = {"CPU": "cpf-llr-focus40-{model}-c", "GPU": "gpu-llr-focus40-{model}-c-openmp"}
+#: The control arm per device: no packet, so the figure reads model and device only.
+ARMS: dict[str, str] = {
+    "CPU": "cpf-llr-focus40-{model}-c",
+    "OMP": "gpu-llr-focus40-{model}-c-openmp",
+    "HIP": "gpu-llr-focus40-{model}-hip",
+}
+#: Which extracted table each device's arms live in.
+TRACK: dict[str, str] = {"CPU": "cpu", "OMP": "gpu", "HIP": "gpu"}
 
 MODELS: tuple[str, ...] = ("qwen38", "oss120b", "kimi27sglang")
 
-#: Device is the shape. A filled circle and an open triangle stay apart in print and for a
-#: colour-blind reader, which two filled shapes of the same size do not.
-DEVICE_MARK: dict[str, tuple[str, bool]] = {"CPU": ("o", True), "GPU": ("^", False)}
-DEVICE_NAME: dict[str, str] = {"CPU": "CPU", "GPU": "GPU (OpenMP Offload)"}
-
+#: Device is the shape. A filled circle and two open shapes stay apart in print and for a
+#: colour-blind reader, which filled shapes of one size do not.
+DEVICE_MARK: dict[str, tuple[str, bool]] = {"CPU": ("o", True), "OMP": ("^", False), "HIP": ("s", False)}
+DEVICE_NAME: dict[str, str] = {"CPU": "CPU (C)", "OMP": "GPU (OpenMP Offload)", "HIP": "GPU (HIP)"}
 
 def series_of(frames: dict[str, pd.DataFrame]) -> list[per_kernel.Series]:
-    """One series per (model, device) with an answer, each kernel at its latest run's answer."""
+    """One series per (model, device) with an answer, each kernel's runs pooled."""
     out: list[per_kernel.Series] = []
     for model in MODELS:
-        for device, frame in frames.items():
-            cells = per_kernel.answer_cells(frame[frame.arm == ARMS[device].format(model=model)])
+        for device, arm in ARMS.items():
+            frame = frames[TRACK[device]]
+            cells = per_kernel.answer_cells(frame[frame.arm == arm.format(model=model)], repeats="median")
             if cells:
                 marker, filled = DEVICE_MARK[device]
                 label = f"{experiment_tags.model_name(model)} {device}"
@@ -72,7 +81,7 @@ def main() -> None:
     ap.add_argument("--gpu", type=pathlib.Path, required=True)
     ap.add_argument("--out", type=pathlib.Path, required=True)
     args = ap.parse_args()
-    frames = {"CPU": pd.read_csv(args.cpu, low_memory=False), "GPU": pd.read_csv(args.gpu, low_memory=False)}
+    frames = {"cpu": pd.read_csv(args.cpu, low_memory=False), "gpu": pd.read_csv(args.gpu, low_memory=False)}
     series = series_of(frames)
     if not series:
         raise SystemExit("no arms matched")
