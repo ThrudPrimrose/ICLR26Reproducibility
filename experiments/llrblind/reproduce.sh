@@ -21,6 +21,6 @@ for model in oss120b qwen38 kimi27sglang; do
 done
 mkdir -p tables
 "$PY" "$HPCAGENT_BENCH/statistics/paired_arms.py" --observations "$db" --family llrblind-skills \
-    --policy solved --cost-model billed "${pairs[@]}" \
+    --policy solved --repeats median --cost-model billed "${pairs[@]}" \
     --out tables/skills_billed.csv --arms-out tables/skills_billed_arms.csv
 [[ " $* " == *" --record "* ]] && check --record || check
