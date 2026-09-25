@@ -9,8 +9,8 @@ Two sources, because they answer different questions:
                  that predate the campaign get in, and how a future version is added.
 
 Usage:
-    python3 snapshot.py --from-run ../paper_artifacts/problems --into v4-as-run
-    python3 snapshot.py --from-git /path/to/optarena --at ca2be2a7 --into v4
+    python3 snapshot.py --from-run ../paper_artifacts/problems --into v04-as-run
+    python3 snapshot.py --from-git /path/to/optarena --at ca2be2a7 --into v04
 """
 import argparse
 import json
@@ -33,7 +33,7 @@ def pages_from_packet(task: str) -> dict[str, str]:
 
     The packet sits at the TOP of the task text and the per-problem assignment follows it, so the
     last page must stop where the assignment begins -- carving to end-of-string put the line
-    "Optimize benchmark kernel <name>" inside v7's openmp pages, which reads as corpus leakage in
+    "Optimize benchmark kernel <name>" inside v07's openmp pages, which reads as corpus leakage in
     a page that never contained it.
     """
     end = task.find("\nOptimize benchmark kernel ")
@@ -100,7 +100,7 @@ def from_git(repo: pathlib.Path, commit: str) -> dict[str, dict[str, str]]:
 
         models = [p for p in sorted(bodies) if p not in ("lang-c", "lang-cpp", "lang-fortran") and applies(p)]
         out[language] = {name: bodies[name] for name in [lang_page] + models}
-        # v6 on: the general-optimization hints ride in the MAIN prompt ({{HINTS}}), charged per
+        # v06 on: the general-optimization hints ride in the MAIN prompt ({{HINTS}}), charged per
         # turn exactly like the packet, so the record carries them beside it.
         hints = strip_frontmatter(show(repo, commit, "containers/agent/hints.md"))
         if hints:
