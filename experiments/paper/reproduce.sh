@@ -138,7 +138,7 @@ gpu_cmp="comparators=$T/comparators.csv;comparator-set=ppcg_hip:HIP"
     --pair "harness20-qwen38-openhands,harness20-qwen38-claude,OpenHands" \
     --pair "cpf-llr-focus40-qwen38-c-cpfsrc-v2,cpf-llr-focus40-qwen38-c,CPF" \
     --pair "gpu-llr-focus40-oss120b-hip-skills,gpu-llr-focus40-oss120b-hip,HIP Skills" \
-    --width 2.1 --out "$F/cost_weighting" --table "$T/fig4.csv"
+    --width 1.75 --out "$F/cost_weighting" --table "$T/fig4.csv"
 # Fig 5: distributed ML scaling, speed-up over PyTorch on one GPU.
 "$PY" "$plot/plot_scaling.py" "$W/mlscale-torch.db" --experiment mlscale- --arm '^mlscale-(qwen38|oss120b)-hip(-dist-rccl-amd)?(-clean)?$' --figure mode-grid --quantity speedup \
     --kernels dist_layer_norm dist_cross_entropy dist_softmax --print-width 5.5 \
