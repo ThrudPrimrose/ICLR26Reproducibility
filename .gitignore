@@ -6,3 +6,6 @@ tools/cluster.env
 
 # anonymous.4open.science replacement terms (identifying, never committed)
 .anonymize-terms.txt
+
+# Local run mirror (tools/pull.sh); data, never committed.
+/mirror/
