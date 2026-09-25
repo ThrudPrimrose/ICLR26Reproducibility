@@ -36,8 +36,23 @@ for exp in mlscale mlscale-part2; do
         --benchmarks "$HPCAGENT_BENCH/hpcagent_bench/benchmarks" --out "$tmp" --no-sources --db "$D/$exp.db"
     rm -rf "$tmp"
 done
-canon=$(find "$MIRROR" -name canon.db -path '*canon*' | head -1)
-[[ -n $canon ]] && cp "$canon" "$D/canon.db"
+# canon.db: each pulled sweep replaces its own run's rows; runs not in the mirror (JAX) are kept.
+for sweep in "$MIRROR"/canon-sweep/*/; do
+    tmp=$(mktemp -d)
+    (cd "$HPCAGENT_BENCH" && "$PY" scripts/collect_canon.py --run-dir "$sweep" --db "$tmp/one.db" >/dev/null)
+    "$PY" - "$D/canon.db" "$tmp/one.db" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute("attach ? as one", (sys.argv[2],))
+if not db.execute("select 1 from sqlite_master where name = 'canon'").fetchone():
+    db.execute("create table canon as select * from one.canon where 0")
+db.execute("delete from canon where run in (select distinct run from one.canon)")
+cols = ", ".join(f'"{r[1]}"' for r in db.execute("pragma one.table_info(canon)"))
+db.execute(f"insert into canon ({cols}) select {cols} from one.canon")
+db.commit()
+PY
+    rm -rf "$tmp"
+done
 # The GH200 regrade ran on a second machine; data/gh200 comes only with the archive.
 [[ -d $D/gh200 ]] && (cd "$ROOT" && "$PY" "$L/gh200_collect.py" "$D/gh200" "$MIRROR/hb/experiments" "$D/transfer.csv")
 echo "data: $(ls "$D" | tr '\n' ' ')"

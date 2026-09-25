@@ -10,6 +10,7 @@ blank, so the plot reads the solved share off the roster.
 import argparse
 import csv
 import pathlib
+import re
 import sqlite3
 
 #: comparator -> (device, canon columns it is the best of).
@@ -28,13 +29,22 @@ def roster(observations: pathlib.Path) -> list[str]:
 
 
 def latest_valid(canon: pathlib.Path, kernels: list[str]) -> dict[tuple[str, str], float]:
-    """``(column, kernel) -> median_ms`` of the latest validated row with a positive time (rowid order)."""
+    """``(column, kernel) -> median_ms`` of the latest validated row with a positive time: latest by
+    the sweep date in the run name (``...-YYYYMMDD[...]``), then by rowid within one date, so a
+    rebuilt canon.db that inserts sweeps in another order picks the same rows."""
     query = (
-        "select column, kernel, median_ms from canon where validated = 'True' and median_ms > 0 "
-        f"and kernel in ({','.join('?' * len(kernels))}) order by rowid"
+        "select run, rowid, column, kernel, median_ms from canon where validated = 'True' and median_ms > 0 "
+        f"and kernel in ({','.join('?' * len(kernels))})"
     )
     with sqlite3.connect(f"file:{canon}?mode=ro", uri=True) as db:
-        return {(str(column), str(kernel)): float(ms) for column, kernel, ms in db.execute(query, kernels)}
+        rows_ = sorted(db.execute(query, kernels), key=lambda r: (sweep_date(str(r[0])), r[1]))
+    return {(str(column), str(kernel)): float(ms) for _, _, column, kernel, ms in rows_}
+
+
+def sweep_date(run: str) -> str:
+    """The ``YYYYMMDD`` a sweep's run name carries, or ``""`` (oldest) when it carries none."""
+    match = re.search(r"(20\d{6})", run)
+    return match.group(1) if match else ""
 
 
 def rows(times: dict[tuple[str, str], float], kernels: list[str]) -> list[dict[str, str]]:

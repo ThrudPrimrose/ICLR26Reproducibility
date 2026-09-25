@@ -66,3 +66,6 @@ family scicomp-toolkit "$S" -- "${p[@]}"
 p=(); for m in qwen38 oss120b; do for h in miniswe openhands; do p+=("harness20-$m-$h,harness20-$m-claude"); done; done
 for m in qwen38 oss120b; do p+=("harness20-$m-claude-autokernel,harness20-$m-claude"); done
 family harness20 "$H" -- "${p[@]}"
+p=(); for m in qwen38 oss120b; do p+=("cpf-llr-focus40-$m-c-caveman,cpf-llr-focus40-$m-c" "gpu-llr-focus40-$m-hip-caveman,gpu-llr-focus40-$m-hip"); done
+family terse-llr "$L40" -- "${p[@]}"
+family terse-harness20 "$H" -- "harness20-caveman-qwen38-c,harness20-qwen38-claude"

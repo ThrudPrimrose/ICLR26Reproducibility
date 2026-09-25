@@ -33,7 +33,7 @@ pull audit-20260918/frozen-observations-0919 frozen-observations || failed+=(fro
 pull mlscale-grade mlscale-grade || failed+=(mlscale-grade)
 pull ICLR26Reproducibility ICLR26Reproducibility --exclude='__pycache__/' --exclude='.git/' \
     || failed+=(ICLR26Reproducibility)
-pull canon-sweep-0923 canon-sweep --prune-empty-dirs --exclude='dacecache/' --exclude='dbg*/' \
+pull .hpcagentbench-cache/runs/canon canon-sweep --prune-empty-dirs --exclude='dacecache/' --exclude='dbg*/' \
     --include='*/' --include='*.csv' --include='*.db' --exclude='*' || failed+=(canon-sweep)
 
 fetch "echo hpcagent-bench \$(git -C '$CLUSTER_SCRATCH/hpcagent-bench' rev-parse HEAD); echo pulled $(date -Is)" \
