@@ -20,11 +20,11 @@ figure also has its own script, so one figure can be redrawn after `./stats.sh`:
 | Script | Output | Paper |
 |---|---|---|
 | `stats.sh` | `work/*.db` (pooled answers), `tables/*.csv` (paired tests) | all figures |
-| `fig2.sh` | `figures/efficacy_packets_and_scope.pdf` | Figure 2 |
-| `fig3.sh` | `figures/scope_row.pdf` | Figure 3 |
-| `fig4.sh` | `figures/cost_weighting.pdf` | Figure 4 |
-| `fig5.sh` | `figures/ml_scaling.pdf` | Figure 5 |
-| `fig8.sh` | `figures/cheating_per_kernel.pdf` | Figure 8 (appendix) |
+| `fig2.sh` | `figures/efficacy_packets_and_scope.pdf` | Figure 3 |
+| `fig3.sh` | `figures/scope_row.pdf` | Figure 4 |
+| `fig4.sh` | `figures/cost_weighting.pdf` | Figure 5 |
+| `fig5.sh` | `figures/ml_scaling.pdf` | Figure 6 |
+| `fig8.sh` | `figures/cheating_per_kernel.pdf` | Figure 7 (appendix) |
 | `tab3.sh` | `tables/gh200-transfer-table.tex` | Table 3 |
 
 `./run_all.sh --record` rewrites `SHA256SUMS`. No step needs a GPU or model access.
