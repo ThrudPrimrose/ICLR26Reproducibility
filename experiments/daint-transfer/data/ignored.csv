@@ -1,0 +1,21 @@
+db,run_id,benchmark,arm,s_bar,status,reason,original_speedup,n_cells,n_credited,regrade_ts,backend,language,detail
+hpcagent-bench-runs/gpu-llr-focus40-20260921/645712/judge/rank-1/hpcagent_bench1.db,gpu-llr-focus40-qwen38-triton-device-clean.n0.p21.w21,tsvc_2_s252,gpu-llr-focus40-qwen38-triton-device-clean,,error,no cell produced a measurement,53.10953028017907,4.0,0.0,1790282373723.0,triton,,"h_tsvc_2_s252_7492hywl/tsvc_2_s252_submission.py"", line 89, in s252
+    _launcher(0, g, 1, 1, _GRID0, _function, None, _packed, None, None, None,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              a.data.ptr, b.data.ptr, c.data.ptr, n, _BLOCK)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: a bytes-like object is required, not 'int'
+"
+hpcagent-bench-runs/gpu-llr-focus40-20260921/645712/judge/rank-2/hpcagent_bench2.db,gpu-llr-focus40-qwen38-triton-device-clean.n0.p6.w6,fuse_stencil_through_transient,gpu-llr-focus40-qwen38-triton-device-clean,,error,no cell produced a measurement,69.68960716509508,4.0,0.0,1790282717686.0,triton,,"y._malloc
+  File ""cupy/cuda/memory.pyx"", line 119, in cupy.cuda.memory.Memory.__init__
+  File ""cupy_backends/cuda/api/runtime.pyx"", line 519, in cupy_backends.cuda.api.runtime.malloc
+  File ""cupy_backends/cuda/api/runtime.pyx"", line 146, in cupy_backends.cuda.api.runtime.check_status
+cupy_backends.cuda.api.runtime.CUDARuntimeError: cudaErrorIllegalAddress: an illegal memory access was encountered
+"
+hpcagent-bench-runs/gpu-llr-focus40-20260921/645737/judge/rank-1/hpcagent_bench1.db,gpu-llr-focus40-qwen38-triton-device-skills-clean.n0.p13.w13,tsvc_2_s1232,gpu-llr-focus40-qwen38-triton-device-skills-clean,,error,no cell produced a measurement,687.2692306000062,4.0,0.0,1790283587324.0,triton,,"""/iopsstor/scratch/cscs/lhulsbergen/v2/llr40-daint-regrade/hpcagent-bench/hpcagent_bench/harness/native_call.py"", line 1573, in timed_call
+    result = func(*args)
+  File ""/tmp/agentbench_tsvc_2_s1232_7uj664dp/tsvc_2_s1232_submission.py"", line 149, in s1232
+    cfg(pa, pb, pc, N, vlen, BLOCK, full)
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: function takes exactly 16 arguments (18 given)
+"

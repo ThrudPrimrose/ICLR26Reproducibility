@@ -14,6 +14,8 @@ holds only committed data and the commands that turn it into figures and tables.
 | `experiments/common.sh` | shared shell helpers every `reproduce.sh` sources (`require_data`, `extract`, `check`) |
 | `experiments/reproduce_all.sh` | runs every experiment, one status line each, non-zero exit if any failed |
 | `tests/test_common_sh.sh` | exercises the shared shell helpers and the run-all script against a throwaway tree |
+| `tools/` | data acquisition from the cluster (`pull.sh`, `collect.sh`, `owed_worklist.sh`), the Daint regrade pack (`daint_pack.py`) and the per-kernel submission browser (`build_llr40_folder.py`); settings in the untracked `tools/cluster.env` (template: `cluster.env.example`) |
+| `tests/test_tools_sh.sh` | exercises `tools/cluster.sh` and the tools' argument handling with fake `ssh`/`rsync`, no cluster |
 | `skill_histories/` | every version of the **language packet** (Language Skill Packet) the agents read |
 | `notes/` | earlier analysis, kept for provenance, not part of the reproduction path and superseded by the rebuilt numbers |
 | `requirements.txt` | Python dependencies for extraction and plotting |
@@ -134,6 +136,21 @@ REGRADES='<out-dir>/regrade-*.db' "$ARTIFACT_ROOT/experiments/llr-cpu/reproduce.
 Without `REGRADES` the extraction stops and names the count it refused. `--allow-unstamped`, passed
 straight to `extract_llr40.py`, extracts them unmigrated and mixes two timing rules in one table;
 nothing in this repository is built that way.
+
+## Pull and rebuild
+
+The paper figures (`experiments/paper/`) are built from a local mirror of the cluster runs:
+
+```sh
+cp tools/cluster.env.example tools/cluster.env   # once: cluster host, jump host, scratch root, MIRROR
+tools/pull.sh                                    # incremental, read-only on the cluster; re-run to resume
+MIRROR=/path/to/mirror experiments/paper/reproduce.sh --extract   # mirror -> experiments/paper/data/
+experiments/paper/reproduce.sh                   # data/ -> pooled work/ -> tables/ + figures/
+```
+
+`tools/pull.sh` never deletes, locally or on the cluster, so runs of deleted jobs stay in the mirror.
+`tools/collect.sh` writes a dated, zipped snapshot instead; `tools/owed_worklist.sh` lists the final
+submissions still waiting for the final grade.
 
 ## What the numbers mean
 
