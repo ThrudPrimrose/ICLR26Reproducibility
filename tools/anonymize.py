@@ -3,7 +3,7 @@
     python tools/anonymize.py --out /path/to/anon <dir>...
 
 Every file under the given roots is copied: a ``*.db`` as a database, any other file as UTF-8 text,
-and a binary unchanged to ``<out>/<same relative path>``, every text value is
+and a binary unchanged, to ``<out>/<relative path>`` with the terms applied to every path component; every text value is
 rewritten with the terms of ``.anonymize-terms.txt`` (``pattern=>replacement``; a bare pattern becomes
 ``XXXX``), and a database copy is vacuumed so no old page keeps the original text. The run fails if any term
 still matches the raw bytes of a copy, so a binary that carries an identifier stops the release.
@@ -89,7 +89,11 @@ def check(roots: list[pathlib.Path], terms: list[tuple[re.Pattern[str], str]]) -
     found = 0
     for root in roots:
         for path in sorted(p for p in root.rglob("*") if p.is_file()):
-            hits = leaks(path, terms)
+            hits = leaks(path, terms) + [
+                f"path:{pattern.pattern}"
+                for pattern, replacement in terms
+                if pattern.search(str(path.relative_to(root)))
+            ]
             if hits:
                 found += 1
                 print(f"LEAK\t{path}\t{' '.join(hits)}")
@@ -129,7 +133,10 @@ def main() -> int:
             source = source.resolve()
             if out in source.parents or not source.is_file():
                 continue
-            target = out / source.relative_to(pathlib.Path.cwd().resolve())
+            relative = source.relative_to(pathlib.Path.cwd().resolve())
+            target = out / pathlib.Path(
+                *(scrub(part, terms) for part in relative.parts)
+            )
             if source.suffix == ".db":
                 anonymize(source, target, terms)
             elif source.suffix in (".db-shm", ".db-wal"):

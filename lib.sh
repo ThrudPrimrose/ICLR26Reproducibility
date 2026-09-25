@@ -6,8 +6,8 @@ set -euo pipefail
 # quota is inodes. Slurm propagates the SUBMITTER's core limit, so the floor has to be set here.
 ulimit -c 0
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# Inside the benchmark's release this folder is reproducibility/paper/, and the checkout is two levels up.
-[[ -z ${HPCAGENT_BENCH:-} && -d $ROOT/../../hpcagent_bench ]] && HPCAGENT_BENCH=$(cd "$ROOT/../.." && pwd)
+# In the release package this folder sits beside the benchmark checkout, hpcagent-bench/.
+[[ -z ${HPCAGENT_BENCH:-} && -d $ROOT/../hpcagent-bench/hpcagent_bench ]] && HPCAGENT_BENCH=$(cd "$ROOT/../hpcagent-bench" && pwd)
 : "${HPCAGENT_BENCH:?set HPCAGENT_BENCH to the hpcagent-bench checkout at the paper-experiments tag}"
 export HPCAGENT_BENCH
 PY=${PYTHON:-python3}
