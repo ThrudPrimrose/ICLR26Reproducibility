@@ -14,7 +14,7 @@ import shutil
 import sqlite3
 
 HERE = pathlib.Path(__file__).resolve().parent
-LLR_DB = HERE.parent / "paper" / "data" / "llr-focus40.db"
+LLR_DB = HERE.parent / "data" / "llr-focus40.db"
 
 #: (case directory, paper section, job, run id, arm, kernel, what the paper says about it).
 PINNED = [
