@@ -1,6 +1,8 @@
 # Sourced by every script: paths, the Python that runs hpcagent_bench, and the checksum check.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# Inside the benchmark's release this folder is reproducibility/paper/, and the checkout is two levels up.
+[[ -z ${HPCAGENT_BENCH:-} && -d $ROOT/../../hpcagent_bench ]] && HPCAGENT_BENCH=$(cd "$ROOT/../.." && pwd)
 : "${HPCAGENT_BENCH:?set HPCAGENT_BENCH to the hpcagent-bench checkout at the paper-experiments tag}"
 PY=${PYTHON:-python3}
 export PYTHONPATH="$HPCAGENT_BENCH:$HPCAGENT_BENCH/hpcagent_bench/numpy_translators/src"
