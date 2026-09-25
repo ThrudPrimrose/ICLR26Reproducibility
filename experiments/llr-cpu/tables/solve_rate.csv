@@ -1,4 +1,0 @@
-Experiment,Model,Delivery,No Skill Packet,Language Skill Packet,No Skill Packet (1st),Language Skill Packet (1st)
-LLR (CPU),Kimi-K2.7-Code,C,40/40,38/40,35/40,38/40
-LLR (CPU),GPT-OSS-120B,C,37/40,39/40,37/40,37/40
-LLR (CPU),Qwen3.8-27B,C,29/40,29/40,27/40,26/40

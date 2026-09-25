@@ -9,3 +9,9 @@ tools/cluster.env
 
 # Local run mirror (tools/pull.sh); data, never committed.
 /mirror/
+
+# Downloaded or extracted data (download.sh) and derived working copies; never committed.
+/data/
+/work/
+*.db-shm
+*.db-wal

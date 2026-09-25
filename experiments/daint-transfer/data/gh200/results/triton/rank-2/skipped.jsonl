@@ -1,1 +1,0 @@
-{"run_id": "gpu-llr-focus40-qwen38-triton-device-skills-clean.n0.p20.w20", "arm": "gpu-llr-focus40-qwen38-triton-device-skills-clean", "benchmark": "tsvc_2_s235", "language": "python", "reason": "not portable: AMD-only Triton option in 3c7ac08c50bdbaa2366c490ef6bb4073763459a40963db1afa3eebdc7edac3aa.txt"}

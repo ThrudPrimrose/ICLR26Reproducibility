@@ -1,4 +1,0 @@
-model,language,leg,score_verdict,cost_verdict,kernels,family_size
-qwen38,,,not-significant,not-significant,10,6
-oss120b,,,not-significant,not-significant,10,6
-kimi27sglang,,,not-significant,not-significant,10,6
