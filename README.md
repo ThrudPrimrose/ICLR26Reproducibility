@@ -37,7 +37,7 @@ figure also has its own script, so one figure can be redrawn after `./stats.sh`:
 | `figures/`, `tables/` | the committed outputs that `SHA256SUMS` covers |
 | `case-studies/` | full submission sources behind Sections 4.4 and 4.5 (`INDEX.md`; `MISSING.md` lists sources that no longer exist) |
 | `skill_histories/` | every version of the skill packets the agents read |
-| `tools/` | `pull.sh` (authors: mirror the cluster runs), `make_archive.sh` (build the anonymized data archive), `anonymize_dbs.py` |
+| `tools/` | `pull.sh` (authors: mirror the cluster runs), `make_archive.sh` (build the anonymized data archive), `anonymize.py` (the terms of `.anonymize-terms.txt` over databases, text and figures), `make_zenodo.sh` (the anonymized Zenodo package) |
 
 ## Data from the cluster (authors)
 
