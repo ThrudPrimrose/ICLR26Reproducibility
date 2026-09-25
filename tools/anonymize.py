@@ -12,6 +12,7 @@ still matches the raw bytes of a copy, so a binary that carries an identifier st
 import argparse
 import pathlib
 import re
+import shutil
 import sqlite3
 import sys
 
@@ -152,6 +153,7 @@ def main() -> int:
                     target.write_bytes(
                         source.read_bytes()
                     )  # a binary (figure) is copied, then checked below
+            shutil.copymode(source, target)
             found = leaks(target, terms)
             failed |= bool(found)
             print(f"{'LEAK' if found else 'ok'}\t{target}\t{' '.join(found)}")
