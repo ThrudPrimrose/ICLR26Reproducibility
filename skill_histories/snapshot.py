@@ -12,6 +12,7 @@ Usage:
     python3 snapshot.py --from-run ../paper_artifacts/problems --into v04-as-run
     python3 snapshot.py --from-git /path/to/optarena --at ca2be2a7 --into v04
 """
+
 import argparse
 import json
 import pathlib
@@ -21,9 +22,21 @@ import subprocess
 HERE = pathlib.Path(__file__).resolve().parent
 HEAD = re.compile(r"(?m)^## Skill: (\S+)$")
 #: The pages that can appear in a packet. A version that lacks one simply has no file for it.
-PACKET_PAGES = ("lang-c", "lang-cpp", "lang-fortran", "loop-transformations-c", "loop-transformations-cpp",
-                "loop-transformations-fortran", "openmp", "openmp-c", "openmp-cpp", "openmp-fortran", "openacc",
-                "doconcurrent-fortran", "stdpar-cpp")
+PACKET_PAGES = (
+    "lang-c",
+    "lang-cpp",
+    "lang-fortran",
+    "loop-transformations-c",
+    "loop-transformations-cpp",
+    "loop-transformations-fortran",
+    "openmp",
+    "openmp-c",
+    "openmp-cpp",
+    "openmp-fortran",
+    "openacc",
+    "doconcurrent-fortran",
+    "stdpar-cpp",
+)
 #: Which pages make up the packet for a language, per version, for the INDEX totals.
 LANGUAGES = ("c", "cpp", "fortran")
 
@@ -41,7 +54,7 @@ def pages_from_packet(task: str) -> dict[str, str]:
         task = task[:end]
     marks = list(HEAD.finditer(task))
     return {
-        m.group(1): task[m.end():marks[i + 1].start() if i + 1 < len(marks) else len(task)].strip()
+        m.group(1): task[m.end() : marks[i + 1].start() if i + 1 < len(marks) else len(task)].strip()
         for i, m in enumerate(marks)
     }
 
@@ -89,6 +102,7 @@ def from_git(repo: pathlib.Path, commit: str) -> dict[str, dict[str, str]]:
         lang_page = f"lang-{language}"
         if lang_page not in bodies:
             continue
+
         # The model pages a language can spell, in the order make_problems.py inlines them. A page
         # with a language suffix (openmp-c, stdpar-cpp, doconcurrent-fortran) belongs to that
         # language alone; a bare page (openmp, openacc) applied to every language of its era.

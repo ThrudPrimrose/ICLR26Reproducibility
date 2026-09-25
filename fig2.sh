@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # Figure 2: skill packets and the CPF on the CPU (with Pluto), skills on the GPU (with PPCG), blind vs. scored.
+
+# Beverin's core_pattern is the machine-global `core_%h_%p` and a dump lands in the crashing
+# process's CWD, littering the checkout with core_<host>_<pid> files on a filesystem whose
+# quota is inodes. Slurm propagates the SUBMITTER's core limit, so the floor has to be set here.
+ulimit -c 0
 . "$(dirname "$0")/lib.sh"
 require "$W/llr-focus40.db" "$W/llr-focus40-blind.db" "$T/llr-cpu-packets.csv" "$T/llr-gpu-skills.csv" "$T/blind-vs-scored.csv"
 "$PY" "$STATS/plot_score_change.py" "$W/llr-focus40.db" "$W/llr-focus40-blind.db" \

@@ -36,7 +36,9 @@ def pool(con: sqlite3.Connection) -> int:
     # An answer graded before the best-of baseline existed keeps its grade and is pooled.
     con.execute("alter table observations add column pooled_policy_from text")
     con.execute("update observations set pooled_policy_from = baseline_policy")
-    best = con.execute("select baseline_policy from observations where baseline_policy like 'best-of%' limit 1").fetchone()
+    best = con.execute(
+        "select baseline_policy from observations where baseline_policy like 'best-of%' limit 1"
+    ).fetchone()
     if best:
         con.execute(
             f"update observations set baseline_policy = ? where {ANSWERS} and coalesce(baseline_policy, '') not like 'best-of%'",
@@ -67,7 +69,9 @@ def main() -> None:
     parser.add_argument("source", type=pathlib.Path)
     parser.add_argument("target", type=pathlib.Path)
     parser.add_argument("--roster", type=pathlib.Path, help="keep only the kernels this file lists")
-    parser.add_argument("--git-correct", action="store_true", help="count the git vs. kernel answers at their live grade")
+    parser.add_argument(
+        "--git-correct", action="store_true", help="count the git vs. kernel answers at their live grade"
+    )
     args = parser.parse_args()
     args.target.unlink(missing_ok=True)
     con = sqlite3.connect(args.target)

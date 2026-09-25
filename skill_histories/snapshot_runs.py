@@ -59,7 +59,9 @@ def main() -> None:
     for number, (tree, commits) in enumerate(ordered, start=FIRST_VERSION):
         out = HERE / f"v{number:02d}"
         out.mkdir(exist_ok=True)
-        archive = subprocess.run(["git", "-C", str(args.bench), "archive", commits[0], SKILLS], check=True, capture_output=True).stdout
+        archive = subprocess.run(
+            ["git", "-C", str(args.bench), "archive", commits[0], SKILLS], check=True, capture_output=True
+        ).stdout
         with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
             for member in tar.getmembers():
                 if member.isfile():
@@ -71,9 +73,16 @@ def main() -> None:
             for record in records_of[commit]:
                 uses[(record["EXPERIMENT"], record["PACKET"] or "none")] += 1
         first = min(dated[c] for c in commits)
-        lines = [f"# v{number:02d} (as run)", "", f"Skills tree `{tree[:12]}`, first run {first}.", "",
-                 "Commits: " + ", ".join(f"`{c[:9]}`" for c in sorted(commits, key=dated.get)), "",
-                 "| Experiment | Packet | Jobs |", "|---|---|---|"]
+        lines = [
+            f"# v{number:02d} (as run)",
+            "",
+            f"Skills tree `{tree[:12]}`, first run {first}.",
+            "",
+            "Commits: " + ", ".join(f"`{c[:9]}`" for c in sorted(commits, key=dated.get)),
+            "",
+            "| Experiment | Packet | Jobs |",
+            "|---|---|---|",
+        ]
         lines += [f"| {e} | {p} | {n} |" for (e, p), n in sorted(uses.items())]
         (out / "INDEX.md").write_text("\n".join(lines) + "\n")
         rows.append((number, first, len(commits), sum(uses.values())))

@@ -27,14 +27,12 @@ def load_terms(path: pathlib.Path) -> list[tuple[re.Pattern[str], str]]:
     for line in path.read_text().splitlines():
         if not line.strip() or line.startswith("#"):
             continue
-        pattern, _, replacement = line.partition("=>")
+        pattern, arrow, replacement = line.partition("=>")
         if WORD_TERM.fullmatch(pattern):
             pattern = rf"\b{pattern}\b"
         elif ACCOUNT_TERM.fullmatch(pattern):
             pattern = rf"(?<![A-Za-z0-9]){pattern}(?![0-9])"
-        terms.append(
-            (re.compile(pattern, re.IGNORECASE), replacement or DEFAULT_REPLACEMENT)
-        )
+        terms.append((re.compile(pattern, re.IGNORECASE), replacement or DEFAULT_REPLACEMENT))
     return terms
 
 
@@ -45,9 +43,7 @@ def scrub(text: str, terms: list[tuple[re.Pattern[str], str]]) -> str:
     return text
 
 
-def anonymize(
-    source: pathlib.Path, target: pathlib.Path, terms: list[tuple[re.Pattern[str], str]]
-) -> None:
+def anonymize(source: pathlib.Path, target: pathlib.Path, terms: list[tuple[re.Pattern[str], str]]) -> None:
     """Copy one database to target and rewrite every text value in the copy."""
     target.parent.mkdir(parents=True, exist_ok=True)
     target.unlink(missing_ok=True)
@@ -57,21 +53,12 @@ def anonymize(
     ):
         src.backup(dst)
     connection = sqlite3.connect(target)
-    connection.create_function(
-        "anon", 1, lambda value: scrub(value, terms), deterministic=True
-    )
-    tables = [
-        row[0]
-        for row in connection.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )
-    ]
+    connection.create_function("anon", 1, lambda value: scrub(value, terms), deterministic=True)
+    tables = [row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")]
     for table in tables:
         for column in connection.execute(f'PRAGMA table_info("{table}")').fetchall():
             name = column[1]
-            connection.execute(
-                f'UPDATE "{table}" SET "{name}" = anon("{name}") WHERE typeof("{name}") = \'text\''
-            )
+            connection.execute(f'UPDATE "{table}" SET "{name}" = anon("{name}") WHERE typeof("{name}") = \'text\'')
     connection.commit()
     connection.execute("VACUUM")
     connection.close()
@@ -80,20 +67,14 @@ def anonymize(
 def leaks(target: pathlib.Path, terms: list[tuple[re.Pattern[str], str]]) -> list[str]:
     """Terms that still match the raw bytes of a copy."""
     raw = target.read_bytes().decode("latin-1")
-    return [pattern.pattern for pattern, _ in terms if pattern.search(raw)]
+    return [pattern.pattern for pattern, replacement in terms if pattern.search(raw)]
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "roots", nargs="+", type=pathlib.Path, help="directories searched for *.db"
-    )
-    parser.add_argument(
-        "--out", required=True, type=pathlib.Path, help="directory for the copies"
-    )
-    parser.add_argument(
-        "--terms", type=pathlib.Path, default=pathlib.Path(".anonymize-terms.txt")
-    )
+    parser.add_argument("roots", nargs="+", type=pathlib.Path, help="directories searched for *.db")
+    parser.add_argument("--out", required=True, type=pathlib.Path, help="directory for the copies")
+    parser.add_argument("--terms", type=pathlib.Path, default=pathlib.Path(".anonymize-terms.txt"))
     args = parser.parse_args()
     terms = load_terms(args.terms)
     out = args.out.resolve()

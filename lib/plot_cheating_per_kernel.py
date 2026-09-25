@@ -112,8 +112,13 @@ def legend() -> list[matplotlib.lines.Line2D]:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--db", type=pathlib.Path, required=True, help="pooled observations DB; takes each kernel's final answer "
-                    "exactly as statistics/paired_arms.py does, so the geomeans match the paper's pair tables")
+    ap.add_argument(
+        "--db",
+        type=pathlib.Path,
+        required=True,
+        help="pooled observations DB; takes each kernel's final answer "
+        "exactly as statistics/paired_arms.py does, so the geomeans match the paper's pair tables",
+    )
     ap.add_argument("--out", type=pathlib.Path, required=True)
     args = ap.parse_args()
     frame = final_answers(args.db)
@@ -135,13 +140,9 @@ def main() -> None:
         summary_values=False,
     )
     for one in metric.series:
-        point, low, high = metric.summary_reducer(
-            [cell for cell in one.cells if cell.kernel in kernels]
-        )
+        point, low, high = metric.summary_reducer([cell for cell in one.cells if cell.kernel in kernels])
         repeated = sum(len(cell.episodes) > 1 for cell in one.cells)
-        print(
-            f"{one.label}: geomean {point:.2f} [{low:.2f}, {high:.2f}], {repeated}/{len(one.cells)} kernels repeated"
-        )
+        print(f"{one.label}: geomean {point:.2f} [{low:.2f}, {high:.2f}], {repeated}/{len(one.cells)} kernels repeated")
     print(f"figure -> {per_kernel.save(fig, args.out, print_size=True)}")
 
 

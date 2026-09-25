@@ -2,6 +2,11 @@
 # one ssh transport definition, a retried read-only rsync pull and a retried remote fetch.
 # Never writes on the cluster.
 set -euo pipefail
+
+# Beverin's core_pattern is the machine-global `core_%h_%p` and a dump lands in the crashing
+# process's CWD, littering the checkout with core_<host>_<pid> files on a filesystem whose
+# quota is inodes. Slurm propagates the SUBMITTER's core limit, so the floor has to be set here.
+ulimit -c 0
 here_tools=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # usage: the calling script's leading comment block, without the '#'.

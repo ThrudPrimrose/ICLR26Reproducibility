@@ -38,7 +38,7 @@ def latest_valid(canon: pathlib.Path, kernels: list[str]) -> dict[tuple[str, str
     )
     with sqlite3.connect(f"file:{canon}?mode=ro", uri=True) as db:
         rows_ = sorted(db.execute(query, kernels), key=lambda r: (sweep_date(str(r[0])), r[1]))
-    return {(str(column), str(kernel)): float(ms) for _, _, column, kernel, ms in rows_}
+    return {(str(row[2]), str(row[3])): float(row[4]) for row in rows_}
 
 
 def sweep_date(run: str) -> str:

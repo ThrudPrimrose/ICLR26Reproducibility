@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Step 2: pool every answer at its final grade (work/*.db) and write the paired-arm tables the
 # figures draw (tables/*.csv): Benjamini-Hochberg within each family, one family per panel.
+
+# Beverin's core_pattern is the machine-global `core_%h_%p` and a dump lands in the crashing
+# process's CWD, littering the checkout with core_<host>_<pid> files on a filesystem whose
+# quota is inodes. Slurm propagates the SUBMITTER's core limit, so the floor has to be set here.
+ulimit -c 0
 . "$(dirname "$0")/lib.sh"
 M3=(qwen38 oss120b kimi27sglang)
 require "$D"/{llr-focus40,llr-focus40-blind,git-scicomp,scicomp-focus40,harness20,mlscale,canon}.db
