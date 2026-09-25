@@ -1,0 +1,7 @@
+model,language,leg,score_verdict,cost_verdict,kernels,family_size
+qwen38,c,mini-SWE-agent,not-significant,not-significant,9,9
+qwen38,c,OpenHands,not-significant,significant,6,9
+oss120b,c,mini-SWE-agent,underpowered,significant,4,9
+oss120b,c,OpenHands,underpowered,not-significant,3,9
+qwen38,c,AutoKernel,not-significant,not-significant,8,9
+oss120b,c,AutoKernel,underpowered,not-significant,4,9

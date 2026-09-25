@@ -2,3 +2,7 @@ data/*.db-journal
 __pycache__/
 .venv/
 hpcagent-bench/
+tools/cluster.env
+
+# anonymous.4open.science replacement terms (identifying, never committed)
+.anonymize-terms.txt
