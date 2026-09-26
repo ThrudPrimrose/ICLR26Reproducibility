@@ -17,6 +17,9 @@ for db in llr-focus40 llr-focus40-blind harness20; do "$PY" "$L/pool.py" "$D/$db
 GEMM_OPS=(dist_gemm_add_relu dist_gemm_gn_swish dist_matmul_gelu_softmax dist_matmul_large_k dist_sdpa)
 "$PY" "$L/torch_anchor.py" "$D/mlscale.db" "$W/mlscale-torch.db" --drop "${GEMM_OPS[@]}" \
     --best-of mlscale-oss120b-hip-gemmhint=mlscale-oss120b-hip mlscale-qwen38-hip-gemmhint=mlscale-qwen38-hip
+# The 1-16 GPU grade: its PyTorch anchor is the torch_dist curve at P = 1.
+"$PY" "$L/torch_anchor.py" "$D/mlscale-grade16.db" "$W/mlscale16-torch.db" --drop dist_mlp_tp \
+    --best-of mlscale-oss120b-hip-gemmhint=mlscale-oss120b-hip mlscale-qwen38-hip-gemmhint=mlscale-qwen38-hip
 "$PY" "$L/comparators.py" "$D/canon.db" "$W/llr-focus40.db" --out "$T/comparators.csv"
 "$PY" "$L/comparator_ratios.py" "$W/llr-focus40.db" "$T/comparators.csv" --out "$T/comparator_ratios.csv"
 

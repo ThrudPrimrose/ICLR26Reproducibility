@@ -42,6 +42,18 @@ for exp in mlscale mlscale-part2; do
         --benchmarks "$HPCAGENT_BENCH/hpcagent_bench/benchmarks" --out "$tmp" --no-sources --db "$D/$exp.db"
     rm -rf "$tmp"
 done
+# The multi-node scaling grade (1-16 GPUs, with its torch.distributed curve) of both ML parts.
+grades=()
+for dir in "$MIRROR"/mlscale-grade/mlscale-20260924b "$MIRROR"/mlscale-grade/mlscale-20260924b-kimi \
+    "$MIRROR"/mlscale-grade/mlscale-part2-20260925 "$MIRROR"/mlscale-grade/mlscale-part2-20260925-kimi; do
+    [[ -d $dir ]] && grades+=(--runs "$dir")
+done
+if ((${#grades[@]})); then
+    tmp=$(mktemp -d)
+    "$PY" "$HPCAGENT_BENCH/reproducibility/llr40/extract_llr40.py" "${grades[@]}" \
+        --benchmarks "$HPCAGENT_BENCH/hpcagent_bench/benchmarks" --out "$tmp" --no-sources --db "$D/mlscale-grade16.db"
+    rm -rf "$tmp"
+fi
 # canon.db: each pulled sweep replaces its own run's rows; runs not in the mirror (JAX) are kept.
 for sweep in "$MIRROR"/canon-sweep/*/; do
     tmp=$(mktemp -d)
