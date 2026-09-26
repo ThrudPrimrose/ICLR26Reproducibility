@@ -30,7 +30,9 @@ def tasks(paths: list[pathlib.Path]) -> pd.DataFrame:
     rows = pd.concat(frames, ignore_index=True)
     # The MI300A cluster records the judge DB by absolute path, the GH200 pack relative to the runs root.
     rows["db"] = rows.db.str.replace(r"^.*?(hpcagent-bench-runs/)", r"\1", regex=True)
-    return rows.sort_values("regrade_ts").drop_duplicates(KEY, keep="last")
+    # The newest GRADED row wins; a later error never replaces a grade (the last valid grade stands).
+    rows = rows.assign(graded=rows.status == "graded")
+    return rows.sort_values(["graded", "regrade_ts"]).drop_duplicates(KEY, keep="last").drop(columns="graded")
 
 
 def cell_errors(gh200_dir: pathlib.Path) -> pd.DataFrame:

@@ -1,10 +1,11 @@
 """The paper's observations: EVERY latest answer, graded once (2026-09-25).
 
 An answer re-timed under the final 4x5 grade keeps that grade; every other one (still queued for its
-re-time, or unable to get one because its source was deleted) keeps the grade it got when it was
-scored and is pooled as if final. The stamps it carried stay in ``pooled_from``,
-``pooled_policy_from`` and ``pooled_baseline_from``, so a row is always traceable to how it was
-measured. Nothing is imputed.
+re-time, unable to get one because its source was deleted, or re-timed with no input measured: the
+per-run time limit, a crash) keeps its last valid grade -- an earlier final grade, else the one it
+got when it was scored -- and is pooled as if final (user, 2026-09-26). The stamps it carried stay in
+``pooled_from``, ``pooled_policy_from`` and ``pooled_baseline_from``, so a row is always traceable to
+how it was measured. Nothing is imputed.
     python pool.py data/llr-focus40.db work/llr-focus40.db
     python pool.py data/scicomp-focus40.db work/scicomp-focus40.db --roster kernels-scicomp35.txt
     python pool.py data/git-scicomp.db work/git-scicomp.db --git-correct
@@ -17,6 +18,16 @@ import sqlite3
 FINAL = "mw4x5-final-v2"
 FINALS = ("mw4x5-final", "mw4x5-final-v2")
 ANSWERS = "record in ('submission', 'attempt')"
+#: regrade_status of an answer whose final re-timing gave no grade and that keeps its live one.
+LIVE_FALLBACK = "live-fallback"
+#: Where each answer's grade comes from, one label per row.
+SOURCE = f"""case
+    when final_grade_source = 'live-exempt' then 'live:exempt'
+    when pooled_from = '{FINAL}' then 'final-v2'
+    when pooled_from = 'mw4x5-final' then 'final-v1'
+    when regrade_status = '{LIVE_FALLBACK}' then 'live:no-final-grade'
+    when pooled_from like 'override:%' then 'live:git-override'
+    else 'live:not-re-timed' end"""
 
 
 def roster_kernels(path: pathlib.Path) -> list[str]:
@@ -49,7 +60,22 @@ def pool(con: sqlite3.Connection) -> int:
     con.execute("alter table observations add column pooled_baseline_from text")
     con.execute("update observations set pooled_baseline_from = baseline")
     con.execute(f"update observations set baseline = 'kernel' where {ANSWERS} and coalesce(baseline, '') != ''")
+    # A re-timing that errored or measured no input gave no grade: the live one is the last valid one.
+    con.execute(
+        "update observations set regrade_status = ? where record = 'submission' and regrade_status = 'error'",
+        (LIVE_FALLBACK,),
+    )
     return changed
+
+
+def grade_sources(con: sqlite3.Connection, out: pathlib.Path) -> None:
+    """Write how many answers per arm rest on each grade source (:data:`SOURCE`) to ``out``."""
+    rows = con.execute(
+        f"select arm, {SOURCE} as source, count(*) from observations where {ANSWERS} group by 1, 2 order by 1, 2"
+    ).fetchall()
+    out.write_text("arm,source,answers\n" + "".join(f"{arm},{source},{n}\n" for arm, source, n in rows))
+    fallback = sum(n for _, source, n in rows if source != "final-v2")
+    print(f"{out.name}: {fallback} of {sum(n for *_, n in rows)} answers rest on a grade other than {FINAL}")
 
 
 def count_git_answers_live(con: sqlite3.Connection) -> int:
@@ -85,6 +111,7 @@ def main() -> None:
         print(f"{args.source}: {dropped} rows outside {args.roster.name} ({len(kernels)} kernels)")
     if args.git_correct:
         print(f"{args.source}: {count_git_answers_live(con)} unsolved answers counted at their live grade")
+    grade_sources(con, args.target.with_name(f"{args.target.stem}-grade-sources.csv"))
     con.commit()
     total = con.execute("select count(*) from observations where record = 'submission'").fetchone()[0]
     print(f"{args.source}: {total} submission rows, {changed} graded rows pooled from a live grade")
