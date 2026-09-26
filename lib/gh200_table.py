@@ -34,7 +34,7 @@ def main(source: str, target: str) -> None:
     lines = [
         "\\begin{tabular}{@{}lrrrr@{}}",
         "\\toprule",
-        "& Skipped & Correct & $\\rho$ & Gain \\\\",
+        "& Skipped & Correct & $r_s$ & Gain \\\\",
         "\\midrule",
     ]
     for language, frame in answers.groupby("language", sort=False):
