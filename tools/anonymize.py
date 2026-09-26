@@ -519,6 +519,13 @@ def leaks(target: pathlib.Path, terms: list[Term], name: str) -> list[str]:
     return found
 
 
+def root_files(root: pathlib.Path) -> list[pathlib.Path]:
+    """Every file under a directory root, sorted; a file root is itself."""
+    return (
+        [root] if root.is_file() else sorted(p for p in root.rglob("*") if p.is_file())
+    )
+
+
 #: The terms of this run, inherited by the forked workers (a commit term's closure does not pickle).
 TERMS: list[Term] = []
 
@@ -542,7 +549,11 @@ def check_one(item: tuple[pathlib.Path, ...]) -> str:
 def check(roots: list[pathlib.Path], terms: list[Term]) -> int:
     """Report every file under ``roots`` a term still matches (bytes, members or path); 1 if any does."""
     TERMS[:] = terms
-    items = [(p, root) for root in roots for p in root.rglob("*") if p.is_file()]
+    items = [
+        (p, root.parent if root.is_file() else root)
+        for root in roots
+        for p in root_files(root)
+    ]
     found = sorted(line for line in parallel(check_one, items) if line)
     for line in found:
         print(line)
@@ -570,7 +581,7 @@ def main() -> int:
         "roots",
         nargs="+",
         type=pathlib.Path,
-        help="directories whose files are anonymized",
+        help="directories (or single files) whose files are anonymized",
     )
     parser.add_argument("--out", type=pathlib.Path, help="directory for the copies")
     parser.add_argument(
@@ -609,7 +620,7 @@ def main() -> int:
     TERMS[:] = terms
     items = []
     for root in args.roots:
-        for source in sorted(root.rglob("*")):
+        for source in root_files(root):
             source = source.resolve()
             if (
                 out in source.parents
