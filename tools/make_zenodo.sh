@@ -35,6 +35,8 @@ sed "s/@CHECKSUMS@/$(wc -l <"$root/SHA256SUMS")/" "$root/tools/zenodo-README.md"
 find "$stage/src" \( -name '*.db-shm' -o -name '*.db-wal' \) -delete
 keep=$(grep -oE 'git\+https://github\.com/[^"]*/dace\.git@[0-9a-f]{40}' "$stage/src/hpcagent-bench/pyproject.toml" || true)
 anon=(python3 "$root/tools/anonymize.py" --terms "$terms" --commits "$bench" --commits "$root" ${keep:+--keep "$keep"})
+# EXTRA_COMMITS="<repo> ..." pseudonymizes commit ids of more histories (e.g. the DaCe checkout); the pinned install line stays.
+for repo in ${EXTRA_COMMITS:-}; do anon+=(--commits "$repo"); done
 lap "staged $(git -C "$bench" rev-parse --short "$ref") and $(git -C "$root" rev-parse --short HEAD)"
 if ! (cd "$stage/src" && "${anon[@]}" --out "$stage/out" README.md hpcagent-bench reproducibility >"$stage/anonymize.log"); then
     grep -v '^ok' "$stage/anonymize.log" >&2
