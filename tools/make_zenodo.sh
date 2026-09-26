@@ -36,6 +36,9 @@ if ! (cd "$stage/src" && "${anon[@]}" --out "$stage/out" hpcagent-bench reproduc
 fi
 lap "anonymized"
 repro=$stage/out/reproducibility
+# A committed output that carried an identifier (a table quoting a path) is now its anonymized copy, which is
+# what run_all.sh regenerates from the anonymized data: record that copy's checksum.
+(cd "$repro" && awk '{print $2}' SHA256SUMS | xargs sha256sum >SHA256SUMS.new && mv SHA256SUMS.new SHA256SUMS)
 (cd "$repro/data" && find . -type f | LC_ALL=C sort | xargs sha256sum) >"$repro/DATA_SHA256SUMS"
 tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner \
     --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -C "$repro/data" -c . | zstd -q -19 -o "$repro/data.tar.zst"
