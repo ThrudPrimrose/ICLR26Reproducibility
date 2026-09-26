@@ -1,6 +1,7 @@
 """Observations for the ML figures: each scaling row's T_1 replaced by the PyTorch single-GPU
 time recorded with the same submission (``baseline_ns`` of its submission row), the anchor the grade
-uses from 2026-09-25 on. Rows graded before that were self-anchored; a row without a PyTorch time is
+uses from 2026-09-25 on, or, in a multi-node grade DB without submission rows, the operator's own
+``torch_dist`` time at P = 1 under the same scaling law. Rows graded before that were self-anchored; a row without a PyTorch time is
 dropped, never given another anchor. ``--drop`` leaves operators out entirely (every record of them).
 ``--best-of VARIANT=BASE`` pools a prompt variant into its base arm: per (operator, scaling mode) the
 curve with the higher mean log speed-up over PyTorch is kept, whichever prompt produced it.
@@ -33,9 +34,18 @@ def best_of(scaling: pd.DataFrame, variant: str, base: str) -> pd.DataFrame:
 def main(source: str, target: str, drop: list[str], pools: list[str]) -> None:
     rows = pd.read_sql("select * from observations", sqlite3.connect(source))
     rows = rows[~rows.benchmark.isin(drop)]
+    for column in ("ranks", "ranked_ns", "single_rank_ns", "work_ratio", "baseline_ns"):
+        rows[column] = pd.to_numeric(rows[column], errors="coerce")
     torch = rows[(rows.record == "submission") & (rows.baseline == "torch")][[*KEY, "baseline_ns"]]
-    scaling = rows[rows.record == "scaling"].merge(torch.rename(columns={"baseline_ns": "torch_ns"}), on=KEY)
-    scaling = scaling[scaling.torch_ns > 0].assign(single_rank_ns=lambda f: f.torch_ns).drop(columns="torch_ns")
+    scaling = rows[rows.record == "scaling"].merge(
+        torch.rename(columns={"baseline_ns": "torch_ns"}), on=KEY, how="left"
+    )
+    # A multi-node grade DB has no submission rows; its torch_dist curve at P = 1 is the same anchor.
+    single = rows[(rows.record == "scaling") & (rows.arm == "torch_dist") & (rows.ranks.astype(float) == 1)]
+    dist_ns = single.groupby(["benchmark", "scaling_mode"]).ranked_ns.median().rename("dist_ns").reset_index()
+    scaling = scaling.merge(dist_ns, on=["benchmark", "scaling_mode"], how="left")
+    scaling["torch_ns"] = scaling.torch_ns.fillna(scaling.dist_ns)
+    scaling = scaling[scaling.torch_ns > 0].assign(single_rank_ns=lambda f: f.torch_ns).drop(columns=["torch_ns", "dist_ns"])
     scaling["efficiency"] = float("nan")  # recomputed by the figure from the new T_1
     for spec in pools:
         variant, base = spec.split("=")
