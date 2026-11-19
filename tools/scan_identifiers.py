@@ -22,8 +22,8 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from anonymize import KEEP, kind, png_chunks, views  # noqa: E402
 
-#: Tokens of a history that are no person (bots, placeholders).
-NOT_PEOPLE = {"anonymous", "github", "claude", "noreply", "root", "users"}
+#: Tokens of a history that are no person (bots, placeholders; "hpcagent-bench" is the project's own placeholder author).
+NOT_PEOPLE = {"anonymous", "github", "claude", "noreply", "root", "users", "hpcagent", "bench"}
 PATTERNS: list[tuple[str, re.Pattern[str]]] = []
 ALLOW: list[re.Pattern[str]] = []
 
