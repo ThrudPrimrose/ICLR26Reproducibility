@@ -1,0 +1,36 @@
+\begin{widetable}[!ht]
+\begin{center}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.6cm}>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{6.8cm}r@{}}
+\toprule
+\textbf{Source} & \textbf{Dwarf} & \textbf{Extracted kernel(s)} & \textbf{n} \\
+\midrule
+ECMWF IFS (\texttt{dwarf-p-cloudsc}) & Structured grid, Dense LA & cloud-microphysics column \rev{(and monolithic variant)}, tendency initialization, liquid/ice fraction, small-cloud tidy, per-column LU solve\rev{, cover and solver carries, ice supersaturation, rain evaporation, saturation, sedimentation, snow autoconversion, subsidence forcing} & \rev{13} \\
+ICON~\citep{zaengl2015icon} & Structured / unstructured grid & velocity tendencies \rev{(single and multi-block)}, half-level edge nest, gather, scatter, \texttt{zekinh} gather-scatter\rev{, graupel microphysics, edge gradient of $w$, vertical $w$ solve} & \rev{9} \\
+LS3DF~\citep{wang2008ls3df} & Dense LA, Map-reduce, Spectral & Kleinman--Bylander projection, Rayleigh--Ritz rotation, patch density, LDA XC potential, SCF stencil & 5 \\
+Rodinia~3.1~\citep{che2009rodinia} & Structured grid, N-body, Unstructured grid, Dense LA, Spectral, Dynamic prog., Map-reduce, Graph traversal & HotSpot (2-D, 3-D, and upstream), SRAD, lavaMD, unstructured Euler flux, Gaussian elimination, \texttt{dwt2d}, PathFinder, Needleman--Wunsch, $k$-means, BFS & 12 \\
+OMEN / QuaTrEx~\citep{luisier2006omen,vetsch2025quatrex} & Sparse LA, Dense LA & RGF recursion, contour integral, scattering self-energies & 3 \\
+BOUT++~\citep{dudson2009bout} & Structured grid & Arakawa bracket, Hasegawa--Wakatani RHS, ELM-PB & 3 \\
+WarpX~\citep{myers2021warpx} & N-body & Esirkepov current deposition, Boris push, field gather & 3 \\
+DBCSR~\citep{borstnik2014dbcsr} / CP2K & Sparse LA, Structured grid & block SpGEMM, TRS4 purification, grid integrate & 3 \\
+Quantum ESPRESSO~\citep{giannozzi2009qe} & Spectral, Dense LA & \texttt{vexx} exact exchange, block-Davidson eigensolver, \texttt{vloc\_psi\_k} local potential, \texttt{addusxx\_g} and \texttt{newdxx\_g} augmentation & 5 \\
+SeisSol~\citep{uphoff2020seissol} & Dense LA & batched small GEMM, rank-3 tensor contraction & 2 \\
+LAMMPS / ExaMiniMD~\citep{thompson2022lammps} & N-body & ExaMiniMD LJ force, LJ pair force over a full neighbor list & 2 \\
+FV3 (PyFV3)~\citep{putman2007fv3} & Structured grid & PPM horizontal transport, \texttt{xppm} flux & 2 \\
+Halide apps~\citep{ragankelley2013halide} / GridTools~\citep{afanasyev2021gridtools} & Structured grid, Map-reduce & Harris corner, histogram equalization, \texttt{hdiff}, \texttt{vadv} & 4 \\
+GROMACS~\citep{pall2013gromacs} & N-body & Nbnxm $4{\times}4$ cluster-pair nonbonded & 1 \\
+XSBench (OpenMC proxy)~\citep{tramm2014xsbench} & Map-reduce & unionized-grid cross-section lookup & 1 \\
+LULESH~\citep{karlin2013lulesh} & Unstructured grid & full Lagrange-leapfrog hydro cycle & 1 \\
+miniFE & Sparse LA & CSR matvec and CG vector kernels & 1 \\
+CoMet~\citep{joubert2018comet} & Dense LA & 2-bit-encoded comparison GEMM & 1 \\
+GraphAIBench & Graph traversal & triangle count & 1 \\
+SpBench & Sparse LA & hash SpGEMM & 1 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\caption{Application and proxy-application sources of \rev{$73$} of the \rev{\releasecount{}} released kernels, with the
+hotspots taken from each and their count $n$. \rev{Counts include kernels written after an application or carried via NPBench or OpenDwarfs.} The kernels drawn from TSVC-2, KernelBench, and PolyBench are
+counted in Table~\ref{tab:corpus} and not repeated here.}
+\label{tab:selection}
+\end{widetable}

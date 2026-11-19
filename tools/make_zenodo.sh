@@ -27,6 +27,8 @@ mkdir -p "$stage/src/hpcagent-bench" "$stage/src/reproducibility"
 git -C "$bench" archive "$ref" | tar -x -C "$stage/src/hpcagent-bench"
 git -C "$root" archive HEAD | tar -x -C "$stage/src/reproducibility"
 cp -a "$root/data" "$stage/src/reproducibility/data"
+# The revision's measurements (untracked like data/), shipped extracted beside its scripts.
+[[ -d $root/revision/data ]] && cp -a "$root/revision/data" "$stage/src/reproducibility/revision/data"
 # work/ as stats.sh and tab3.sh write it: pooled databases, grade sources, graded arms, GH200 transfer plots.
 mkdir "$stage/src/reproducibility/work"
 (cd "$root/work" && cp -a ./*.db ./*-grade-sources.csv graded-arms.txt ./gh200-transfer-*.{pdf,png} "$stage/src/reproducibility/work/")
@@ -48,6 +50,10 @@ repro=$stage/out/reproducibility
 # what run_all.sh regenerates from the anonymized data: record that copy's checksum.
 (cd "$repro" && awk '{print $2}' SHA256SUMS | xargs sha256sum >SHA256SUMS.new && mv SHA256SUMS.new SHA256SUMS)
 (cd "$repro/data" && find . -type f | LC_ALL=C sort | xargs sha256sum) >"$repro/DATA_SHA256SUMS"
+if [[ -d $repro/revision ]]; then
+    (cd "$repro/revision" && awk '{print $2}' SHA256SUMS | xargs sha256sum >SHA256SUMS.new && mv SHA256SUMS.new SHA256SUMS)
+    (cd "$repro/revision/data" && find . -type f | LC_ALL=C sort | xargs sha256sum) >"$repro/revision/DATA_SHA256SUMS"
+fi
 tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner \
     --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -C "$repro/data" -c . | zstd -q -19 -o "$repro/data.tar.zst"
 lap "data archive packed"

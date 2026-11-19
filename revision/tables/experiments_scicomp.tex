@@ -1,0 +1,34 @@
+\begin{widetable}[!ht]
+\begin{center}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}llc@{\hspace{12pt}}llc@{}}
+\toprule
+\textbf{Kernel} & \textbf{Source} & \textbf{L} & \textbf{Kernel} & \textbf{Source} & \textbf{L} \\
+\midrule
+\texttt{velocity\_tendencies} & ICON & 3 & \texttt{bicgstab} & new & 2 \\
+\texttt{ls3df\_scf} & LS3DF & 3 & \texttt{cegterg} & Quantum ESPRESSO & 3 \\
+\texttt{vloc\_psi\_k\_acc} & Quantum ESPRESSO & 3 & \texttt{gemm} & PolyBench/C, NPBench & 1 \\
+\texttt{jacobi\_2d} & PolyBench/C, NPBench & 2 & \texttt{gem} & OpenDwarfs & 2 \\
+\texttt{cp2k\_grid\_integrate}$^\dagger$ & CP2K & 3 & \texttt{quatrex\_rgf} & QuaTrEx & 3 \\
+\texttt{rayleigh\_ritz\_rotation} & LS3DF & 3 & \texttt{fv3\_dycore} & FV3 & 3 \\
+\texttt{cp2k\_density\_matrix\_trs4} & CP2K & 3 & \texttt{seidel\_2d} & PolyBench/C, NPBench & 1 \\
+\texttt{fft\_1d} & new & 2 & \texttt{warpx\_boris\_push} & WarpX & 2 \\
+\texttt{vexx\_k} & Quantum ESPRESSO & 3 & \texttt{cloudsc} & ECMWF IFS, NPBench & 3 \\
+\texttt{channel\_flow} & CFD Python, NPBench & 3 & \texttt{minife} & miniFE & 3 \\
+\texttt{fv3\_xppm} & FV3 & 3 & \texttt{seissol\_batched\_gemm} & SeisSol & 1 \\
+\texttt{dwt2d} & Rodinia & 2 & \texttt{fdtd\_2d} & PolyBench/C, NPBench & 2 \\
+\texttt{bout\_elm\_pb} & BOUT++ & 3 & \texttt{lulesh} & LULESH & 3 \\
+\texttt{examinimd} & ExaMiniMD & 3 & \texttt{heat\_3d} & PolyBench/C, NPBench & 2 \\
+\texttt{lavamd} & Rodinia & 3 & \rev{\texttt{warpx\_field\_gather}} & \rev{WarpX} & \rev{3} \\
+\texttt{nussinov} & PolyBench/C, NPBench & 2 & \rev{\texttt{spgemm\_hash}} & \rev{cuBool} & \rev{3} \\
+\texttt{warpx\_esirkepov\_deposition} & WarpX & 3 & \rev{\texttt{triangle\_count}} & \rev{GraphAIBench} & \rev{2} \\
+\texttt{amg\_setup} & hypre, PyAMG & 3 & \rev{\texttt{nfa\_frontier}} & \rev{ANMLZoo} & \rev{2} \\
+\texttt{gromacs\_nbnxm} & GROMACS & 3 & \rev{\texttt{bout\_arakawa}} & \rev{BOUT++} & \rev{2} \\
+\texttt{seissol\_tensor\_contraction} & SeisSol & 2 & \rev{\makecell[tl]{\texttt{ls3df\_kleinman\_}\\\texttt{bylander\_nonlocal}}} & \rev{LS3DF} & \rev{2} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\caption{The \rev{40} SC kernels of \rev{SciComp40} with their level (L). \emph{Source} is the code or suite a kernel is ported from, via NPBench where named second; \emph{new} marks a kernel written for this benchmark. \rev{SciComp40 is SciComp35 without \texttt{sw4\_rhs4sg} and with the six kernels in blue; Git-SciComp uses its 27 kernels whose NumPy reference calls no BLAS or LAPACK routine.} $^\dagger$Baseline: a vendored upstream parallel Fortran implementation.}
+\label{tab:exp-sc}
+\end{widetable}

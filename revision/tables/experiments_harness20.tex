@@ -1,0 +1,27 @@
+\begin{widetable}[!ht]
+\begin{center}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}llc@{\hspace{12pt}}llc@{}}
+\toprule
+\textbf{Kernel} & \textbf{Source} & \textbf{L} & \textbf{Kernel} & \textbf{Source} & \textbf{L} \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{SC}} & \texttt{warpx\_boris\_push} & see Table~\ref{tab:exp-sc} & 2 \\
+\texttt{bicgstab} & see Table~\ref{tab:exp-sc} & 2 & \texttt{gemm} & see Table~\ref{tab:exp-sc} & 1 \\
+\texttt{bout\_hasegawa\_wakatani} & BOUT++ & 2 & \texttt{seidel\_2d} & see Table~\ref{tab:exp-sc} & 1 \\
+\texttt{dwt2d} & see Table~\ref{tab:exp-sc} & 2 & \texttt{seissol\_batched\_gemm} & see Table~\ref{tab:exp-sc} & 1 \\
+\texttt{fdtd\_2d} & see Table~\ref{tab:exp-sc} & 2 & \multicolumn{3}{l}{\emph{LLR}} \\
+\texttt{fft\_1d} & see Table~\ref{tab:exp-sc} & 2 & \texttt{s235} & see Table~\ref{tab:exp-llr} & 2 \\
+\texttt{gem} & see Table~\ref{tab:exp-sc} & 2 & \texttt{argmax\_with\_index} & see Table~\ref{tab:exp-llr} & 2 \\
+\texttt{heat\_3d} & see Table~\ref{tab:exp-sc} & 2 & \texttt{scan\_affine\_decay} & see Table~\ref{tab:exp-llr} & 2 \\
+\texttt{jacobi\_2d} & see Table~\ref{tab:exp-sc} & 2 & \texttt{segment\_reduce\_ragged} & see Table~\ref{tab:exp-llr} & 2 \\
+\texttt{nussinov} & see Table~\ref{tab:exp-sc} & 2 & \texttt{compact\_threshold\_pack} & see Table~\ref{tab:exp-llr} & 2 \\
+\texttt{seissol\_tensor\_contraction} & see Table~\ref{tab:exp-sc} & 2 & \texttt{fuse\_stencil\_through\_transient} & see Table~\ref{tab:exp-llr} & 2 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\caption{The twenty kernels of Harness20: fourteen SC kernels (thirteen from
+\rev{SciComp40}, plus \texttt{bout\_hasegawa\_wakatani} from BOUT++~\citep{dudson2009bout}) and six level-2
+kernels from LLR-Focus40; 17 at level 2 and 3 at level 1.}
+\label{tab:exp-harness20}
+\end{widetable}

@@ -1,0 +1,60 @@
+\begin{widetable}[!p]\revstart
+\centering\tiny
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}llllrrrlllrr@{}}
+\toprule
+Intervention & Experiment & Model & Lang. & $n$ & Solved & $\Delta R$ & $\rho_S$ [95\%] & $\rho_C$ [95\%] & $R$/$S$/$C$ & MDE$_S$ & MDE$_C$ \\
+\midrule
+Language packet & LLR CPU & Qwen3.8-27B & C & 40 & 39/39 & 0 & 1.22 [1.05, 1.43] & 1.02 [0.78, 1.33] & i/d/i & 1.25 & 1.47 \\
+Language packet & LLR CPU & Qwen3.8-27B & Fortran & 40 & 39/40 & +2.5 & 1.11 [0.92, 1.34] & 1.39 [1.10, 1.77] & i/i/d & 1.31 & 1.40 \\
+Language packet & LLR CPU & OSS-120B & C & 40 & 40/39 & -2.5 & 1.03 [0.95, 1.11] & 0.90 [0.68, 1.19] & i/e/i & 1.12 & 1.50 \\
+Language packet & LLR CPU & OSS-120B & Fortran & 40 & 39/38 & -2.5 & 0.93 [0.80, 1.07] & 0.74 [0.55, 0.99] & i/i/i & 1.24 & 1.52 \\
+Language packet & LLR CPU & Kimi-K2.7 & C & 40 & 40/39 & -2.5 & 1.00 [0.89, 1.13] & 1.21 [1.02, 1.45] & i/e/i & 1.19 & 1.29 \\
+Language packet & LLR CPU & Kimi-K2.7 & Fortran & 40 & 39/38 & -2.5 & 1.21 [1.09, 1.35] & 1.14 [0.96, 1.35] & i/d/i & 1.17 & 1.27 \\
+CPF & LLR CPU & Qwen3.8-27B & C & 40 & 40/37 & -7.5 & 1.11 [0.90, 1.37] & 2.05 [1.45, 2.92] & i/i/d & 1.41 & 1.59 \\
+CPF & LLR CPU & OSS-120B & C & 40 & 38/38 & 0 & 1.23 [1.08, 1.39] & 0.97 [0.68, 1.41] & i/d/i & 1.26 & 1.62 \\
+CPF & LLR CPU & Kimi-K2.7 & C & 40 & 40/39 & -2.5 & 0.92 [0.73, 1.15] & 0.98 [0.74, 1.29] & i/i/i & 1.42 & 1.48 \\
+Language packet & LLR GPU & Qwen3.8-27B & HIP & 40 & 39/37 & -5.0 & 0.96 [0.89, 1.02] & 0.95 [0.77, 1.16] & i/e/i & 1.10 & 1.34 \\
+Language packet & LLR GPU & Qwen3.8-27B & Triton & 40 & 37/39 & +5.0 & 1.10 [0.85, 1.49] & 1.08 [0.95, 1.23] & i/i/i & 1.62 & 1.20 \\
+Language packet & LLR GPU & OSS-120B & HIP & 40 & 39/39 & 0 & 1.28 [0.89, 1.84] & 0.93 [0.72, 1.21] & i/i/i & 1.68 & 1.44 \\
+Language packet & LLR GPU & OSS-120B & Triton & 40 & 33/32 & -2.5 & 0.79 [0.50, 1.19] & 0.84 [0.61, 1.17] & i/i/i & 1.97 & 1.58 \\
+Language packet & LLR GPU & Kimi-K2.7 & HIP & 40 & 39/40 & +2.5 & 1.22 [0.98, 1.53] & 1.11 [0.90, 1.38] & i/i/i & 1.39 & 1.36 \\
+Language packet & LLR GPU & Kimi-K2.7 & Triton & 40 & 38/39 & +2.5 & 1.14 [0.91, 1.44] & 0.92 [0.75, 1.14] & i/i/i & 1.41 & 1.35 \\
+Language packet & LLR blind & Qwen3.8-27B & C & 40 & 36/37 & +2.5 & 1.01 [0.84, 1.22] & 1.04 [0.79, 1.38] & i/i/i & 1.31 & 1.48 \\
+Language packet & LLR blind & Qwen3.8-27B & Fortran & 40 & 40/39 & -2.5 & 1.09 [0.92, 1.29] & 1.10 [0.82, 1.48] & i/i/i & 1.28 & 1.53 \\
+Language packet & LLR blind & Qwen3.8-27B & HIP & 40 & 37/40 & +7.5 & 0.89 [0.53, 1.53] & 0.95 [0.80, 1.13] & i/i/i & 2.19 & 1.28 \\
+Language packet & LLR blind & OSS-120B & C & 40 & 38/37 & -2.5 & 1.06 [0.94, 1.20] & 0.92 [0.73, 1.16] & i/i/i & 1.19 & 1.39 \\
+Language packet & LLR blind & OSS-120B & Fortran & 40 & 35/35 & 0 & 0.87 [0.69, 1.09] & 0.79 [0.65, 0.97] & i/i/i & 1.39 & 1.33 \\
+Language packet & LLR blind & OSS-120B & HIP & 40 & 34/32 & -5.0 & 0.92 [0.66, 1.31] & 0.78 [0.61, 0.99] & i/i/i & 1.66 & 1.42 \\
+Language packet & LLR blind & Kimi-K2.7 & C & 40 & 37/37 & 0 & 1.05 [0.88, 1.27] & 1.01 [0.82, 1.24] & i/i/i & 1.30 & 1.34 \\
+Language packet & LLR blind & Kimi-K2.7 & Fortran & 40 & 38/39 & +2.5 & 1.06 [0.91, 1.23] & 1.19 [0.91, 1.55] & i/i/i & 1.25 & 1.46 \\
+Blind & LLR & Kimi-K2.7 & C & 40 & 40/37 & -7.5 & 0.83 [0.73, 0.95] & 2.65 [2.04, 3.45] & i/d/d & 1.21 & 1.45 \\
+Blind & LLR & OSS-120B & C & 40 & 40/38 & -5.0 & 0.94 [0.82, 1.07] & 1.08 [0.78, 1.50] & i/i/i & 1.20 & 1.60 \\
+Git framing & Git-SciComp & Qwen3.8-27B & C & 27 & 27/26 & -3.7 & 1.15 [0.73, 1.77] & 0.87 [0.67, 1.14] & i/i/i & 1.88 & 1.47 \\
+Git framing & Git-SciComp & OSS-120B & C & 27 & 21/26 & +18.5 & 0.90 [0.73, 1.10] & 0.62 [0.40, 0.95] & i/i/d & 1.34 & 1.86 \\
+Git framing & Git-SciComp & Kimi-K2.7 & C & 27 & 26/26 & 0 & 0.78 [0.70, 0.88] & 1.99 [1.58, 2.52] & i/d/d & 1.18 & 1.39 \\
+Perf.\ toolkit & SciComp40 & Qwen3.8-27B & C & 40 & 39/35 & -10.0 & 1.19 [0.80, 1.73] & 1.10 [0.87, 1.39] & i/i/i & 1.78 & 1.39 \\
+Perf.\ toolkit & SciComp40 & OSS-120B & C & 40 & 30/37 & +17.5 & 1.00 [0.91, 1.10] & 0.98 [0.70, 1.38] & i/e/i & 1.15 & 1.63 \\
+Perf.\ toolkit & SciComp40 & Kimi-K2.7 & C & 40 & 38/36 & -5.0 & 0.72 [0.54, 0.97] & 2.29 [1.82, 2.87] & i/i/d & 1.51 & 1.38 \\
+Perf.\ toolkit & SciComp40 & Qwen3.8-27B & Fortran & 40 & 32/34 & +5.0 & 1.57 [1.09, 2.28] & 1.22 [0.99, 1.49] & i/i/i & 1.70 & 1.34 \\
+Perf.\ toolkit & SciComp40 & OSS-120B & Fortran & 40 & 30/28 & -5.0 & 0.95 [0.79, 1.15] & 1.28 [0.87, 1.86] & i/i/i & 1.31 & 1.71 \\
+Perf.\ toolkit & SciComp40 & Qwen3.8-27B & HIP & 40 & 31/30 & -2.5 & 0.64 [0.41, 0.92] & 0.96 [0.82, 1.11] & i/d/i & 1.94 & 1.24 \\
+Perf.\ toolkit & SciComp40 & OSS-120B & HIP & 40 & 29/26 & -7.5 & 0.86 [0.58, 1.26] & 1.04 [0.68, 1.61] & i/i/i & 1.74 & 1.84 \\
+mini-SWE-agent & Harness20 & Qwen3.8-27B & C & 20 & 20/19 & -5.0 & 1.48 [0.92, 2.39] & 0.96 [0.70, 1.31] & i/i/i & 1.95 & 1.56 \\
+OpenHands & Harness20 & Qwen3.8-27B & C & 20 & 20/19 & -5.0 & 1.01 [0.72, 1.41] & 1.59 [0.98, 2.60] & i/i/i & 1.60 & 1.99 \\
+AutoKernel & Harness20 & Qwen3.8-27B & C & 20 & 20/20 & 0 & 1.24 [0.79, 1.95] & 1.06 [0.80, 1.40] & i/i/i & 1.91 & 1.49 \\
+mini-SWE-agent & Harness20 & OSS-120B & C & 20 & 19/17 & -10.0 & 0.99 [0.65, 1.53] & 1.35 [0.98, 1.87] & i/i/i & 1.85 & 1.60 \\
+OpenHands & Harness20 & OSS-120B & C & 20 & 19/16 & -15.0 & 1.09 [0.78, 1.56] & 0.45 [0.29, 0.67] & i/i/d & 1.65 & 1.80 \\
+AutoKernel & Harness20 & OSS-120B & C & 20 & 19/20 & +5.0 & 0.82 [0.57, 1.16] & 0.87 [0.59, 1.29] & i/i/i & 1.66 & 1.75 \\
+Terse & LLR & Qwen3.8-27B & C & 40 & 39/40 & +2.5 & 1.06 [0.89, 1.27] & 0.75 [0.59, 0.95] & i/i/d & 1.29 & 1.40 \\
+Terse & LLR & Qwen3.8-27B & HIP & 40 & 39/40 & +2.5 & 1.03 [0.93, 1.13] & 0.94 [0.77, 1.15] & i/e/i & 1.15 & 1.33 \\
+Terse & LLR & OSS-120B & C & 40 & 40/40 & 0 & 0.93 [0.82, 1.05] & 1.54 [1.14, 2.08] & i/i/d & 1.19 & 1.53 \\
+Terse & LLR & OSS-120B & HIP & 40 & 39/39 & 0 & 1.06 [0.67, 1.66] & 1.20 [0.93, 1.54] & i/i/i & 1.91 & 1.43 \\
+Terse & Harness20 & Qwen3.8-27B & C & 20 & 20/20 & 0 & 1.21 [0.78, 1.94] & 1.28 [0.96, 1.70] & i/i/i & 1.93 & 1.50 \\
+RCCL hints & MLScale & Qwen3.8-27B & HIP & 20 & 15/12 & -15.0 & 0.87 [0.41, 1.55] & 1.05 [0.83, 1.34] & i/i/i & 2.69 & 1.40 \\
+RCCL hints & MLScale & OSS-120B & HIP & 20 & 11/10 & -5.0 & 1.02 [0.24, 7.53] & 0.81 [0.53, 1.24] & i/i/i & 9.32 & 1.82 \\
+\bottomrule
+\end{tabular}
+\caption{All \rev{48} comparisons, \rev{2} of them blind against open submission, \rev{every one except CPF from runs under the limits of Table~\ref{tab:experiments},} under the tests of Appendix~\ref{app:efficacy-statistics}. Solved: control/treated; $\Delta R$: solve-rate change in points; verdicts for solve rate, speed, and cost: d different, e equivalent, i inconclusive; MDE$_S$, MDE$_C$: smallest speed and cost ratio detectable at 80\% power. Intervals are uncorrected; verdicts control the \rev{false discovery rate at 5\% (Benjamini--Hochberg) within each experiment and measure}. $\rho_C>1$: treated cheaper. Blind rows compare blind with open submission.}
+\label{tab:all-comparisons}
+\revend\end{widetable}

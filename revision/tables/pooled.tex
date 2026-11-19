@@ -1,0 +1,23 @@
+
+\begin{widetable}[!htbp]\revstart
+\centering\scriptsize
+\setlength{\tabcolsep}{1.6pt}
+\begin{tabular}{@{}lrlllllr@{}}
+\toprule
+Intervention & Comp. & Speed (95\%) & Verdict & Solve rate (95\%) & Verdict & Cost (95\%) & Verdict  \\
+\midrule
+Language packet & 20 & $1.05\times$ ($0.99$--$1.11$) & equiv. & $-0.1$ ($-2.0$ to $1.8$) & equiv. & $0.99\times$ ($0.94$--$1.04$) & equiv.  \\
+Blind vs.\ Open & 2 & $0.88\times$ ($0.81$--$0.97$) & diff. & $-6.2$ ($-13.8$ to $-1.4$) & incon. & $1.69\times$ ($1.35$--$2.13$) & diff.  \\
+Blind vs.\ Single, SciComp40 & 3 & $0.81\times$ ($0.69$--$0.94$) & diff. & $-8.3$ ($-17.2$ to $0.3$) & incon. & $1.78\times$ ($1.49$--$2.12$) & diff.  \\
+Blind vs.\ Single, Focus40 & 9 & $0.86\times$ ($0.78$--$0.95$) & diff. & $-5.6$ ($-9.2$ to $-2.2$) & diff. & $1.42\times$ ($1.30$--$1.55$) & diff.  \\
+Git framing & 3 & $0.94\times$ ($0.79$--$1.11$) & incon. & $+4.9$ ($-2.3$ to $13.2$) & incon. & $1.02\times$ ($0.83$--$1.26$) & incon.  \\
+Perf.\ toolkit & 7 & $0.96\times$ ($0.84$--$1.09$) & incon. & $-1.1$ ($-5.9$ to $3.7$) & equiv. & $1.21\times$ ($1.08$--$1.36$) & diff.  \\
+CPF$^{\dagger}$ & 3 & $1.07\times$ ($0.96$--$1.20$) & incon. & $-3.3$ ($-8.3$ to $-0.1$) & equiv. & $1.29\times$ ($1.05$--$1.59$) & diff.  \\
+Harnesses & 4 & $1.14\times$ ($0.94$--$1.38$) & incon. & $-8.8$ ($-18.0$ to $-0.7$) & incon. & $0.98\times$ ($0.79$--$1.21$) & incon.  \\
+AutoKernel plugin & 2 & $1.02\times$ ($0.76$--$1.36$) & incon. & $+2.5$ ($-6.5$ to $12.9$) & incon. & $0.96\times$ ($0.76$--$1.21$) & incon.  \\
+Terse & 5 & $1.04\times$ ($0.92$--$1.17$) & equiv. & $+1.1$ ($-1.6$ to $4.3$) & equiv. & $1.09\times$ ($0.97$--$1.23$) & incon.  \\
+\bottomrule
+\end{tabular}
+\caption{Pooled effect of each intervention, kernels as the unit; cost ratio above $1\times$: cheaper; solve rates in points. Verdicts: Benjamini--Hochberg over the \rev{nine rows without CPF, per measure} (Table~\ref{tab:protocol-defaults}). \rev{Every row except CPF comes from runs under the limits of Table~\ref{tab:experiments}; $^{\dagger}$CPF keeps its first runs. Blind vs.\ Open: Kimi-K2.7 $0.83\times$, OSS-120B $0.94\times$.}}
+\label{tab:pooled}
+\revend\end{widetable}

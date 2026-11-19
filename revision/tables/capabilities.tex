@@ -1,0 +1,93 @@
+\providecommand{\cmark}{\textcolor{green!60!black}{\scalebox{1.25}{\ensuremath{\bm{\checkmark}}}}}
+\providecommand{\xmark}{\textcolor{red!85!black}{\scalebox{1.25}{\ensuremath{\bm{\times}}}}}
+
+\begin{widetable}[!t]
+\centering
+\renewcommand{\arraystretch}{1}
+\setlength{\tabcolsep}{3pt}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lcccccccccccc@{}}
+\toprule
+ & & & & & & & \multicolumn{5}{c}{\rev{\textbf{\scriptsize Protocol}}} \\
+\cmidrule(l){8-12}
+\textbf{\small Benchmark} &
+\makecell{\textbf{\scriptsize Low-level /}\\\textbf{\scriptsize Parallelism}\\\textbf{\scriptsize Reasoning}} &
+\makecell{\textbf{\scriptsize HPC}\\\textbf{\scriptsize Proxy-Apps}} &
+\rev{\makecell{\textbf{\scriptsize ML}\\\textbf{\scriptsize Kernels}}} &
+\makecell{\textbf{\scriptsize Multi-}\\\textbf{\scriptsize Node}} &
+\rev{\textbf{\scriptsize Devices}} &
+\textbf{\scriptsize Baselines} &
+\rev{\makecell{\textbf{\scriptsize Hidden}\\\textbf{\scriptsize inputs}}} &
+\rev{\makecell{\textbf{\scriptsize Held-out}\\\textbf{\scriptsize final grade}}} &
+\rev{\makecell{\textbf{\scriptsize Tested}\\\textbf{\scriptsize comparisons}}} &
+\rev{\makecell{\textbf{\scriptsize Interval}}} &
+\rev{\makecell{\textbf{\scriptsize Cost}}} \\
+\midrule
+
+\textbf{HPCAgent-Bench (ours)}
+    & \cmark & \cmark & \rev{\cmark} & \cmark & \rev{C+G} & U, F & \rev{\cmark} & \rev{\cmark} & \rev{\cmark} & \rev{\cmark} & \rev{\cmark} \\
+
+ParEval~\citep{nichols2024pareval}
+    & \rev{\cmark} & \xmark & \rev{\xmark} & \cmark & \rev{C+G} & U & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\cmark} \\
+
+AlgoTune~\citep{press2025algotune}
+    & \xmark & \xmark & \rev{\xmark} & \xmark & \rev{C} & F & \rev{\cmark} & \rev{\cmark} & \rev{\xmark} & \rev{\xmark} & \rev{\cmark} \\
+
+KernelBench~\citep{ouyang2025kernelbench}
+    & \xmark & \xmark & \rev{\cmark} & \xmark & \rev{G} & F & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} \\
+
+TritonBench~\citep{li2025tritonbench}
+    & \xmark & \xmark & \rev{\cmark} & \xmark & \rev{G} & E, F & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} \\
+
+MultiKernelBench~\citep{wen2025multikernelbench}
+    & \xmark & \xmark & \rev{\cmark} & \xmark & \rev{G+O} & F & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} \\
+
+robust-kbench~\citep{lange2025robustkbench}
+    & \xmark & \xmark & \rev{\cmark} & \xmark & \rev{G} & F & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\cmark} \\
+
+PCEBench~\citep{chen2025pcebench}
+    & \xmark & \xmark & \rev{\xmark} & \xmark & \rev{C} & U & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} \\
+
+SWE-Perf~\citep{he2025sweperf}
+    & \xmark & \xmark & \rev{\xmark} & \xmark & \rev{C} & U, E & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} \\
+
+SWE-fficiency~\citep{ma2026sweefficiency}
+    & \xmark & \xmark & \rev{\xmark} & \xmark & \rev{C} & U, E & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\cmark} & \rev{\cmark} \\
+
+GSO~\citep{shetty2025gso}
+    & \cmark & \xmark & \rev{\xmark} & \xmark & \rev{C} & U, E & \rev{\cmark} & \rev{\cmark} & \rev{\xmark} & \rev{\cmark} & \rev{\xmark} \\
+
+KernelGenBench~\citep{zang2026kernelgenbench}
+    & \xmark & \xmark & \rev{\cmark} & \xmark & \rev{G+O} & E, F & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\cmark} & \rev{\cmark} \\
+
+CUDAHercules~\citep{li2026cudahercules}
+    & \xmark & \cmark & \rev{\cmark} & \xmark & \rev{G} & E, F & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} \\
+
+PerfCodeBench~\citep{jing2026perfcodebench}
+    & \xmark & \xmark & \rev{\cmark} & \xmark & \rev{C+G} & U, E & \rev{\cmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\cmark} \\
+
+FormulaCode~\citep{sehgal2026formulacode}
+    & \xmark & \xmark & \rev{\xmark} & \xmark & \rev{C} & U, E & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\cmark} \\
+
+CommBench~\citep{ma2026commbench}
+    & \cmark & \xmark & \rev{\cmark} & \cmark & \rev{G} & E & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\cmark} \\
+
+PTXBench~\citep{zhang2026ptxbench}
+    & \cmark & \xmark & \rev{\cmark} & \xmark & \rev{G} & F & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\cmark} & \rev{\cmark} \\
+
+\rev{ParallelKernelBench~\citep{chan2026parallelkernelbench}}
+    & \rev{\cmark} & \rev{\xmark} & \rev{\cmark} & \rev{\xmark} & \rev{G} & \rev{F} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} \\
+
+\rev{D2K-Bench~\citep{li2026d2kbench}}
+    & \rev{\cmark} & \rev{\xmark} & \rev{\cmark} & \rev{\xmark} & \rev{G} & \rev{E, F} & \rev{\cmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\cmark} \\
+
+\rev{KB-Verified~\citep{zhang2026kernelbenchverifiedllmgeneratedkernelsactually}}
+    & \rev{\xmark} & \rev{\xmark} & \rev{\cmark} & \rev{\xmark} & \rev{G} & \rev{F} & \rev{\cmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} & \rev{\xmark} \\
+
+\bottomrule
+\end{tabular}}
+\vspace{-0.5em}
+\caption{\label{tab:capabilities-matrix}
+Capabilities of agentic code-optimization benchmarks (definitions in Appendix~\ref{app:capabilities}). \rev{Ours: one problem accepts any language behind a shared C ABI. KB-Verified: KernelBench-Verified. \emph{Devices}: \textbf{C} CPU, \textbf{G} GPU, \textbf{O} other accelerators.} \emph{Baselines}: \textbf{U} sequential, \textbf{F} library-optimized, \textbf{E} expert-written.}
+\end{widetable}

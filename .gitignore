@@ -17,3 +17,6 @@ tools/cluster.env
 *.db-shm
 *.db-wal
 .identifier-patterns.txt
+
+# The revision's measurements (anonymized and shipped by tools/make_zenodo.sh); never committed.
+/revision/data/

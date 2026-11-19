@@ -1,0 +1,20 @@
+\begin{widetable}[ht]
+\centering\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}llp{0.32\textwidth}lrr@{}}
+\toprule
+Experiment & Kernels & Languages (device) & Models & Tokens & \rev{Output} \\
+\midrule
+LLR-Focus40 & 40 LLR (Focus40) & C, Fortran (CPU); HIP, Triton \rev{(GPU)} & Q, K, O & \rev{50M} & \rev{12M} \\
+\rev{CPF} & \rev{the same 40} & \leavevmode\rev{C (CPU)} & \rev{Q, K, O} & \rev{12M} & \rev{none} \\
+\rev{Blind vs.\ Open} & the same 40 & \leavevmode\rev{C (CPU)} & \rev{K, O} & \rev{50M} & \rev{12M} \\
+Git-SciComp & \rev{27 SC (in SciComp40)} & C (CPU) & Q, K, O & \rev{50M} & \rev{12M} \\
+\rev{SciComp40} & \rev{40} SC & C (CPU)\rev{; Fortran (CPU), HIP (GPU): Q, O} & Q, K, O & \rev{50M} & \rev{12M} \\
+Harness20 & 14 SC, 6 LLR & C (CPU) & Q, O & \rev{48M} & \rev{12M} \\
+\rev{Blind vs.\ Single} & \rev{Focus40; SciComp40} & \leavevmode\rev{C (CPU); on Focus40 also Fortran (CPU; K) and HIP (GPU; Q, O)} & \rev{Q, K, O} & \rev{50M} & \rev{12M} \\
+MLScale & \rev{20} distributed ML models & HIP with RCCL (1--16 GPUs, 4 nodes) & Q, K, O & \rev{50M} & \rev{12M} \\
+\bottomrule
+\end{tabular}
+\caption{Experiments. Focus40: the 40-kernel LLR focus set; Q, K, O: Qwen3.8-27B, Kimi-K2.7, OSS-120B. Per-episode limits\rev{, which every counted answer stayed within}: \emph{Tokens}, total tokens (\S\ref{sec:token-cost}; every turn's input counts in full, cached part included); \rev{\emph{Output}, output tokens. Episodes also had a wall-time limit; it is not compared across setups, as serving speed differs by model (Kimi-K2.7 needed up to 32\,h for the same tokens).} \rev{Exceptions in Table~\ref{tab:exp-setups} and Appendix~\ref{app:budgets}.}}
+\label{tab:experiments}
+\end{widetable}

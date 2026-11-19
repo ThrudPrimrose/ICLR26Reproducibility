@@ -1,0 +1,37 @@
+\begin{widetable}[!ht]
+\begin{center}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}ll>{\raggedright\arraybackslash}p{5.0cm}lcc@{}}
+\toprule
+\textbf{Kernel} & \textbf{Source} & \textbf{Computes} & \textbf{Split} & \textbf{$k$} & \textbf{L} \\
+\midrule
+\texttt{dist\_all\_to\_all\_transpose} & new & transpose $x^\top$ of a row-split matrix, one all-to-all & rows & 1 & 1 \\
+\texttt{dist\_causal\_attention} & new & causal attention $\mathrm{softmax}(QK^\top/\sqrt{d}+\text{mask})\,V$ & sequence & 2 & 1 \\
+\texttt{dist\_cross\_entropy} & KernelBench & per-row cross-entropy loss & classes & 1 & 1 \\
+\texttt{dist\_layer\_norm} & KernelBench & layer normalization over the trailing dimensions & features & 1 & 1 \\
+\texttt{dist\_matmul\_large\_k} & KernelBench & $AB$ with a large inner dimension $K$ & $K$ & 1 & 1 \\
+\texttt{dist\_rmsnorm} & new & RMS normalization over the hidden dimension & hidden & 1 & 1 \\
+\texttt{dist\_sdpa} & KernelBench & non-causal attention $\mathrm{softmax}(QK^\top/\sqrt{d})\,V$ & sequence & 2 & 1 \\
+\texttt{dist\_softmax} & KernelBench & row softmax & row length & 1 & 1 \\
+\texttt{dist\_split\_kv\_decode} & new & one-token decode attention over a long key-value cache & KV length & 1 & 1 \\
+\texttt{dist\_sync\_batchnorm} & new & training-mode batch normalization, per-channel statistics & batch & 1 & 1 \\
+\texttt{dist\_vocab\_embedding} & new & token embedding lookup from a vocabulary-split table & tokens & 1 & 1 \\
+\texttt{dist\_adamw\_zero} & new & one AdamW step with global gradient-norm clipping & parameters & 1 & 2 \\
+\texttt{dist\_contrastive\_loss} & new & per-row contrastive (InfoNCE) loss against every other row & batch & 2 & 2 \\
+\texttt{dist\_conv2d\_halo} & new & $3\times3$ convolution with bias & height & 1 & 2 \\
+\texttt{dist\_gemm\_add\_relu} & KernelBench & $\mathrm{ReLU}(xW^\top+b_1+b_2)$ & input features & 1 & 2 \\
+\texttt{dist\_gemm\_gn\_swish} & KernelBench & GEMM, GroupNorm, Swish, multiply by a weight, Swish & output features & 1 & 2 \\
+\texttt{dist\_matmul\_gelu\_softmax} & KernelBench & row softmax of $\mathrm{GELU}(xW^\top+b)$ & output features & 1 & 2 \\
+\rev{\texttt{dist\_mlp\_tp}} & \rev{KernelBench} & \rev{tensor-parallel MLP: $\mathrm{logsumexp}(\sigma(xW_1^\top+b_1)W_2^\top+b_2)$} & \rev{hidden} & \rev{1} & \rev{2} \\
+\texttt{dist\_moe\_dispatch} & new & top-2 mixture of experts: softmax gate, $\mathrm{GELU}(xW_e^\top+b_e)$ per expert,
+gate-weighted sum & tokens, experts & 1 & 2 \\
+\texttt{dist\_moe\_router} & new & top-1 mixture-of-experts routing with expert capacity: softmax, argmax, capacity count & tokens & 1 & 2 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\caption{The \rev{twenty} bf16 models graded in MLScale, by level: \rev{nine} distributed versions of KernelBench
+models~\citep{ouyang2025kernelbench} and eleven new models. \emph{Split} is the dimension the
+manifest decomposes over GPUs, and $k$ the degree of the work in it (Appendix~\ref{app:distributed}). Figure~\ref{fig:ml-scaling} labels \texttt{dist\_moe\_router}, \texttt{dist\_sdpa}, \texttt{dist\_all\_to\_all\_transpose} and \texttt{dist\_softmax} as MoE Router, SDPA, All-to-All, and Vocab Softmax.}
+\label{tab:exp-ml}
+\end{widetable}

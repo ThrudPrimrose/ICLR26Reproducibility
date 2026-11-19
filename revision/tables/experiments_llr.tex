@@ -1,0 +1,38 @@
+\begin{widetable}[!ht]
+\begin{center}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}ll>{\raggedright\arraybackslash}p{2.65cm}c@{\hspace{8pt}}ll>{\raggedright\arraybackslash}p{2.65cm}c@{}}
+\toprule
+\textbf{Kernel} & \textbf{Source} & \textbf{Computes} & \textbf{L} & \textbf{Kernel} & \textbf{Source} & \textbf{Computes} & \textbf{L} \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Loop-carried dependences}} & \multicolumn{4}{l}{\emph{Reductions and scans}} \\
+\texttt{s115} & TSVC-2 & $a_i \mathrel{-}= aa_{ji}\,a_j$, $i>j$ & 1 & \texttt{s311} & TSVC-2 & $\sum_i a_i$ & 1 \\
+\texttt{s119} & TSVC-2 & $aa_{ij}=aa_{i-1,j-1}+bb_{ij}$ & 1 & \texttt{s3111} & TSVC-2 & $\sum_i a_i$ over $a_i>0$ & 1 \\
+\texttt{s1244} & TSVC-2 & $a_i=b_i+c_i^2+b_i^2+c_i$, $d_i=a_i+a_{i+1}$ ($a_{i+1}$ read before written) & 1 & \texttt{s3112} & TSVC-2 & prefix sum $b_i=\sum_{k\le i}a_k$ & 1 \\
+\texttt{s252} & TSVC-2 & $a_i=b_ic_i+b_{i-1}c_{i-1}$ through a carried temporary & 1 & \texttt{s316} & TSVC-2 & $\min_i a_i$ & 1 \\
+\texttt{s255} & TSVC-2 & $a_i=0.333\,(b_i+b_{i-1}+b_{i-2})$, indices wrap, two carried scalars & 1 & \texttt{s319} & TSVC-2 & $a_i=c_i+d_i$, $b_i=c_i+e_i$, one sum $\sum_i(a_i+b_i)$ & 1 \\
+\texttt{s323} & TSVC-2 & $a_i=b_{i-1}+c_id_i$, $b_i=a_i+c_ie_i$ & 1 & \texttt{s3110} & TSVC-2 & $\max_{ij} aa_{ij}$ and its indices & 2 \\
+\texttt{ext\_war\_unit} & TSVC-2.5 & $a_i=a_{i+1}+b_i$ (write after read; varies \texttt{s121}) & 1 & \texttt{s318} & TSVC-2 & $\max|a|$ and its index at a run-time stride & 2 \\
+\makecell[tl]{\texttt{versioned\_}\\\texttt{distance\_update}} & TSVC-2.5 & $a_i=0.75\,a_{i-K}+b_ic_i$, $K$ known at run time & 2 & \texttt{argmax\_with\_index} & TSVC-2.5 & $\max_i a_i$ and its index (varies \texttt{s315}) & 2 \\
+\multicolumn{4}{@{}l}{\emph{Loop interchange and distribution}} & \makecell[tl]{\texttt{quasi\_affine\_}\\\texttt{reduce\_odd}} & TSVC-2.5 & $\sum_{i\text{ odd}} a_i$ & 1 \\
+\texttt{s1232} & TSVC-2 & $aa_{ij}=bb_{ij}+cc_{ij}$, $i\ge 8j$, $j$ outer & 1 & \texttt{scan\_affine\_decay} & TSVC-2.5 & $y_i=c_iy_{i-1}+x_i$ & 2 \\
+\texttt{s231} & TSVC-2 & $aa_{ji}=aa_{j-1,i}+bb_{ji}$ & 1 & \multicolumn{4}{l}{\emph{Indirect addressing and packing}} \\
+\texttt{s2233} & TSVC-2 & $aa_{ji}=aa_{j-1,i}+cc_{ji}$, $bb_{ij}=bb_{i-1,j}+cc_{ij}$, two inner loops & 1 & \texttt{s4112} & TSVC-2 & $a_i \mathrel{+}= 2\,b_{ip_i}$ & 1 \\
+\texttt{s233} & TSVC-2 & $aa_{ji}=aa_{j-1,i}+cc_{ji}$, $bb_{ji}=bb_{j,i-1}+cc_{ji}$, two inner loops & 2 & \texttt{vag} & TSVC-2 & $a_i=b_{ip_i}$ & 1 \\
+\texttt{s235} & TSVC-2 & $a_i \mathrel{+}= b_ic_i$, then $aa_{ji}=aa_{j-1,i}+bb_{ji}a_i$ & 2 & \texttt{scatter\_accum\_dup} & TSVC-2.5 & $bins_{ip_i} \mathrel{+}= src_i$, $ip$ may repeat & 2 \\
+\texttt{s2275} & TSVC-2 & $aa_{ji} \mathrel{+}= bb_{ji}cc_{ji}$ and $a_i=b_i+c_id_i$ in one nest & 1 & \makecell[tl]{\texttt{segment\_reduce\_}\\\texttt{ragged}} & TSVC-2.5 & $out_s=\sum_e val_e\,w_e$ per CSR segment & 2 \\
+\texttt{s152} & TSVC-2 & $b_i=d_ie_i$, then $a_i \mathrel{+}= b_ic_i$ & 2 & \makecell[tl]{\texttt{compact\_threshold\_}\\\texttt{pack}} & TSVC-2.5 & pack $src_i\,weight_i$ where $src_i>0$, and count & 2 \\
+\multicolumn{4}{@{}l}{\emph{Control flow}} & \multicolumn{4}{l}{\emph{Fusion and elementwise}} \\
+\texttt{s2710} & TSVC-2 & nested branches on $a_i>b_i$ and on invariant conditions & 1 & \texttt{fuse\_diamond} & TSVC-2.5 & $t=a_i^2$, $u=t+1$, $v=t-1$, $out_i=uv$ in four loops & 2 \\
+\texttt{s275} & TSVC-2 & if $aa_{0i}>0$: $aa_{ji}=aa_{j-1,i}+bb_{ji}cc_{ji}$ & 2 & \texttt{fuse\_move\_ifs} & TSVC-2.5 & $a_{ij}=2\,src_{ij}$ if $cond_i>0$; $b_{ij}=src_{ij}+1$ if $K>0$ & 2 \\
+\texttt{ext\_break\_capture} & TSVC-2.5 & first $i$ with $a_i>K$, and $a_i$ (varies \texttt{s332}) & 2 & \makecell[tl]{\texttt{fuse\_stencil\_}\\\texttt{through\_transient}} & TSVC-2.5 & $t_i=a_{i-1}+a_i+a_{i+1}$, then $out_i=t_it_{i+1}$ & 2 \\
+\multicolumn{4}{@{}l}{\emph{Wavefronts}} & \texttt{vpvts} & TSVC-2 & $a_i \mathrel{+}= b_i S$ & 1 \\
+\texttt{wf\_diff\_skew} & TSVC-2.5 & $a_{ij} \mathrel{+}= a_{i-1,j}+a_{i-1,j+1}$ & 1 & \texttt{vtvtv} & TSVC-2 & $a_i \mathrel{*}= b_ic_i$ & 1 \\
+\texttt{wf\_triangular} & TSVC-2.5 & $a_{ij} \mathrel{+}= a_{i-1,j}+a_{i,j-1}$, $1\le i\le j$ & 1 & & & & \\
+\bottomrule
+\end{tabular}
+\end{center}
+\caption{The forty kernels of LLR-Focus40 by the loop pattern they test, with source and level (L): 26 TSVC-2 loops~\citep{maleki2011tsvc2} (prefix \texttt{tsvc\_2\_} dropped) and 14 TSVC-2.5 kernels, the benchmark's extension of TSVC-2. In TSVC-2, $a$--$e$ are 1-D, $aa$--$cc$ 2-D and $ip$ an index array; $K$ and $S$ are run-time scalars.}
+\label{tab:exp-llr}
+\end{widetable}

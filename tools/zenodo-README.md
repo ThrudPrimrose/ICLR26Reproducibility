@@ -24,6 +24,7 @@ Inside `reproducibility/`:
 | `case-studies/` | full submission sources behind the case studies (`INDEX.md`) |
 | `skill_histories/` | every version of the skill packets the agents read |
 | `lib/`, `tools/` | the pipeline's helpers and the anonymization tools |
+| `revision/` | the revised paper's data, scripts, tables and figures; `revision/README.md` maps them to the paper |
 
 ## Quick start: regenerate every figure and table (no GPU, no model access)
 

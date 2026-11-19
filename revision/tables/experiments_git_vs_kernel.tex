@@ -1,0 +1,21 @@
+\begin{table}[!ht]
+\begin{center}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\texttt{amg\_setup} & \texttt{fft\_1d} & \texttt{nussinov} \\
+\texttt{bout\_arakawa} & \texttt{fv3\_dycore} & \texttt{seidel\_2d} \\
+\texttt{bout\_elm\_pb} & \texttt{fv3\_xppm} & \texttt{spgemm\_hash} \\
+\texttt{channel\_flow} & \texttt{gem} & \texttt{triangle\_count} \\
+\texttt{cloudsc} & \texttt{gromacs\_nbnxm} & \texttt{velocity\_tendencies} \\
+\texttt{cp2k\_density\_matrix\_trs4} & \texttt{heat\_3d} & \texttt{vloc\_psi\_k\_acc} \\
+\texttt{dwt2d} & \texttt{jacobi\_2d} & \texttt{warpx\_boris\_push} \\
+\texttt{examinimd} & \texttt{lavamd} & \texttt{warpx\_esirkepov\_deposition} \\
+\texttt{fdtd\_2d} & \texttt{nfa\_frontier} & \texttt{warpx\_field\_gather} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\caption{\rev{The 27 kernels of Git-SciComp: the SciComp40 kernels whose NumPy reference calls no BLAS or LAPACK routine (sources in Table~\ref{tab:exp-sc}).}}
+\label{tab:exp-git-vs-kernel}
+\end{table}

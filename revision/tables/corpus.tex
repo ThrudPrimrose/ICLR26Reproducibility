@@ -1,0 +1,44 @@
+\begin{widetable}[!ht]
+\begin{center}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llrrrr}
+\toprule
+\textbf{Track} & \textbf{Dwarf / group} & \textbf{L1} & \textbf{L2} & \textbf{L3} & \textbf{Kernels} \\
+\midrule
+\multirow{3}{*}{\textbf{LLR}}
+ & TSVC-2 & 130 & 20 & 0 & 150 \\
+ & outside TSVC-2 (see caption) & \rev{89} & \rev{23} & 0 & \rev{112} \\
+\cmidrule{2-6}
+ & \emph{subtotal} & \rev{219} & \rev{43} & 0 & \rev{262} \\
+\midrule
+\multirow{13}{*}{\textbf{SC}}
+ & dense\_linear\_algebra      & \rev{10} & \rev{27} &  4 & \rev{41} \\
+ & structured\_grids           & \rev{16} & \rev{14} & \rev{22} & \rev{52} \\
+ & sparse\_linear\_algebra     &  1 & \rev{8} & \rev{11} & \rev{20} \\
+ & map\_reduce & 2 & 6 & 6 & 14 \\
+ & spectral\_methods           &  0 &  2 &  9 & 11 \\
+ & n\_body\_methods            & \rev{1} &  2 &  7 & \rev{10} \\
+ & unstructured\_grids         & \rev{5} &  0 & \rev{4} &  9 \\
+ & dynamic\_programming        &  0 &  5 &  0 &  5 \\
+ & graph\_traversal            &  0 &  4 &  0 &  4 \\
+ & finite\_state\_machine      &  0 & \rev{7} &  0 & \rev{7} \\
+ & backtrack\_branch\_bound    &  0 &  0 &  2 &  2 \\
+ & combinational\_logic        &  0 &  2 &  0 &  2 \\
+ & graphical\_models           &  0 &  2 &  0 &  2 \\
+\cmidrule{2-6}
+ & \emph{subtotal}             & \rev{35} & \rev{79} & \rev{65} & \rev{179} \\
+\midrule
+\multirow{3}{*}{\textbf{ML}}
+ & KernelBench & \rev{79} & \rev{104} & 50 & \rev{233} \\
+ & outside KernelBench (see caption) & \rev{17} & \rev{26} & 5 & \rev{48} \\
+\cmidrule{2-6}
+ & \emph{subtotal} & \rev{96} & \rev{130} & 55 & \rev{281} \\
+\midrule
+\multicolumn{2}{l}{\textbf{Total}} & \rev{\textbf{350}} & \rev{\textbf{252}} & \rev{\textbf{120}} & \rev{\textbf{\releasecount}} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\caption{Corpus \rev{of the release}: \rev{\releasecount{}} kernels by track, category, and level (L1: one primitive; L2: fused, composite, or data-dependent; L3: application scale). \rev{The experiments ran on the \kernelcount{}-kernel freeze; the release then dropped 27 duplicate KernelBench tasks and added 60 kernels, none of which an experiment uses.}}
+\label{tab:corpus}
+\end{widetable}

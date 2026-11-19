@@ -1,0 +1,28 @@
+\begin{widetable}[!ht]
+\begin{center}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lll>{\raggedright\arraybackslash}p{1.35cm}l>{\raggedright\arraybackslash}p{1.6cm}>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{2.3cm}@{}}
+\toprule
+\textbf{Experiment} & \textbf{Dev.} & \textbf{Harness} & \textbf{Languages} & \textbf{Models} & \textbf{Control} & \textbf{Treatment} & \textbf{Budget} \\
+\midrule
+LLR-Focus40 & CPU & CC & C\rev{, Fortran} & Q, K, O & no skill packet & Language skill packet & \rev{50M (12M output)} \\
+LLR-Focus40 & GPU & CC & HIP, Triton & Q, K, O & no skill packet & Language skill packet & \rev{50M (12M output)} \\
+LLR-Focus40 & CPU & CC & C & Q, O & no skill packet & CPF page and tool (variant) & 12M \\
+LLR-Focus40 & CPU & CC & C & Q, K, O & no skill packet & CPF as starting source & 12M \\
+\rev{Blind vs.\ Open} & CPU & CC & C & \rev{K, O} & open-submission & blind & \rev{50M (12M output)} \\
+\rev{LLR blind} & \rev{both} & \rev{CC} & \rev{C, Fortran, HIP} & \rev{Q, K, O} & \rev{no skill packet} & \rev{Language skill packet (HIP: Q, O)} & \rev{50M (12M output)} \\
+\rev{SciComp40} & \rev{both} & CC & C\rev{; Fortran, HIP (Q, O)} & Q, K, O & no skill packet & Performance Toolkit & \rev{50M (12M output)} \\
+Git-SciComp & CPU & CC & C & Q, K, O & bare kernel & git reformulation & \rev{50M (12M output)} \\
+Harness20 & CPU & see text & C & Q, O & CC & mini-SWE-agent, OpenHands, AutoKernel & \rev{48M (12M output)} \\
+Terse & both & CC & C, HIP & Q, O & no instruction & brief-message instruction (Harness20: Q, C; LLR-Focus40: C, HIP) & \rev{50M (12M output)} \\
+MLScale & GPU & CC & HIP, RCCL & Q, K, O & no skill packet & RCCL hints (Q, O only) & \rev{50M (12M output)} \\
+\rev{Blind vs.\ Single} & \rev{both} & \rev{CC} & \rev{C; Fortran (K); HIP (Q, O)} & \rev{Q, K, O} & \rev{single submission} & \rev{blind} & \rev{50M (12M output)} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\caption{Setups. Both setups of a pair share model, language, device, and kernels and differ only in
+\emph{Treatment}. Q: Qwen3.8-27B, K: Kimi-K2.7, O: OSS-120B.
+CC: Claude Code. \emph{Budget}: tokens per episode \rev{(wall time is not compared, Table~\ref{tab:experiments})}.}
+\label{tab:exp-setups}
+\end{widetable}
