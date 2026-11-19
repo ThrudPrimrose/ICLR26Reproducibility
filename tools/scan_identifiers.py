@@ -49,8 +49,8 @@ PEOPLE: set[str] = set()
 
 
 def phrases_blanked(text: str) -> str:
-    """``text`` with every match of a multi-word allow rule (one with a space, e.g. a public credit "Nicolas P.
-    Rougier") blanked, so its words are no person; the same word elsewhere still counts."""
+    """``text`` with every match of a multi-word allow rule (one with a space, e.g. an upstream author's credit)
+    blanked, so its words are no person; the same word elsewhere still counts."""
     for allow in ALLOW:
         if " " in allow.pattern:
             text = allow.sub(lambda m: "\0" * len(m.group(0)), text)
