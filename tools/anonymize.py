@@ -308,23 +308,31 @@ def pdf_text(data: bytes) -> bytes:
 
 
 def rewrite_pdf(data: bytes, terms: list[Term]) -> bytes:
-    """The PDF uncompressed (qpdf QDF), every term applied, offsets repaired and recompressed."""
-    qdf = subprocess.run(
-        ["qpdf", "--qdf", "--object-streams=disable", "-", "-"],
-        input=data,
-        capture_output=True,
-        check=True,
-    ).stdout
-    qdf = scrub(qdf.decode("latin-1"), terms).encode("latin-1", "replace")
-    fixed = subprocess.run(
-        ["fix-qdf"], input=qdf, capture_output=True, check=True
-    ).stdout
-    return subprocess.run(
-        ["qpdf", "--compress-streams=y", "--object-streams=generate", "-", "-"],
-        input=fixed,
-        capture_output=True,
-        check=True,
-    ).stdout
+    """The PDF uncompressed (qpdf QDF), every term applied, offsets repaired and recompressed.
+    qpdf reads no PDF from stdin, so each step goes through files; they live in /tmp because the distribution's
+    AppArmor profile for qpdf denies hidden directories such as ~/.cache, where TMPDIR may point."""
+    with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
+        source, qdf, out = (pathlib.Path(tmp, n) for n in ("in.pdf", "qdf.pdf", "out.pdf"))
+        source.write_bytes(data)
+        subprocess.run(
+            ["qpdf", "--qdf", "--object-streams=disable", source, qdf],
+            capture_output=True,
+            check=True,
+        )
+        text = scrub(qdf.read_bytes().decode("latin-1"), terms)
+        fixed = subprocess.run(
+            ["fix-qdf"],
+            input=text.encode("latin-1", "replace"),
+            capture_output=True,
+            check=True,
+        ).stdout
+        qdf.write_bytes(fixed)
+        subprocess.run(
+            ["qpdf", "--compress-streams=y", "--object-streams=generate", qdf, out],
+            capture_output=True,
+            check=True,
+        )
+        return out.read_bytes()
 
 
 def unpack(name: str, data: bytes) -> tuple[str, list[tuple[str, bytes]]]:
