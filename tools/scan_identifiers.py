@@ -48,6 +48,24 @@ WORD = re.compile(r"[^\W\d_]+")
 PEOPLE: set[str] = set()
 
 
+def phrases_blanked(text: str) -> str:
+    """``text`` with every match of a multi-word allow rule (one with a space, e.g. a public credit "Nicolas P.
+    Rougier") blanked, so its words are no person; the same word elsewhere still counts."""
+    for allow in ALLOW:
+        if " " in allow.pattern:
+            text = allow.sub(lambda m: "\0" * len(m.group(0)), text)
+    return text
+
+
+def person_hits(text: str) -> int:
+    """Words of ``text`` that are a history's person words, outside multi-word allow matches."""
+    return sum(
+        1
+        for w in WORD.findall(phrases_blanked(text))
+        if w.lower() in PEOPLE and not any(allow.fullmatch(w) for allow in ALLOW)
+    )
+
+
 def scan_one(item: tuple[pathlib.Path, pathlib.Path]) -> list[str]:
     path, root = item
     name = str(path.relative_to(root))
@@ -60,12 +78,7 @@ def scan_one(item: tuple[pathlib.Path, pathlib.Path]) -> list[str]:
                 if not any(allow.fullmatch(match.group(0)) for allow in ALLOW):
                     counts[category] += 1
         if PEOPLE:
-            counts["person"] += sum(
-                1
-                for w in WORD.findall(text)
-                if w.lower() in PEOPLE
-                and not any(allow.fullmatch(w) for allow in ALLOW)
-            )
+            counts["person"] += person_hits(text)
     counts = +counts
     return [
         f"{name}\t{category}\t{count}" for category, count in sorted(counts.items())
@@ -119,6 +132,12 @@ def byte_scan(root: pathlib.Path) -> int:
             noise += 1
             continue
         category = next((c for c, p in PATTERNS if p.fullmatch(text)), "person")
+        if category == "person":
+            data = pathlib.Path(path).read_bytes()
+            at = int(offset)
+            window = data[max(0, at - 200) : at + 200].decode("latin-1")
+            if phrases_blanked(window)[min(at, 200) : min(at, 200) + len(text)] != text:
+                continue  # inside a multi-word allow match (a public credit)
         real[(str(pathlib.Path(path).relative_to(root)), category)] += 1
     for (path, category), count in sorted(real.items()):
         print(f"{path}\t{category}\t{count}")
